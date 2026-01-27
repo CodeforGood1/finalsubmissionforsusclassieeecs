@@ -1,12 +1,55 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-// Component for embedding Jitsi Meet video calls
-// Uses 8x8.vc public Jitsi servers (no account required)
+// ============================================================
+// JITSI MEET COMPONENT - ON-PREMISE EDITION
+// ============================================================
+// Supports both self-hosted Jitsi and public Jitsi servers
+// For offline deployment, use self-hosted Jitsi Meet
+// ============================================================
+
+// Configuration - can be set via environment or defaults
+const JITSI_CONFIG = {
+  // Self-hosted Jitsi server (for on-premise deployment)
+  // Set VITE_JITSI_SERVER_URL in .env for self-hosted
+  serverUrl: import.meta.env.VITE_JITSI_SERVER_URL || null,
+  
+  // Fallback to public Jitsi (requires internet)
+  publicServer: 'meet.jit.si',
+  
+  // Whether to use self-hosted (auto-detect based on serverUrl)
+  get isSelfHosted() {
+    return !!this.serverUrl;
+  },
+  
+  // Get the domain to use
+  get domain() {
+    if (this.serverUrl) {
+      // Extract domain from URL
+      try {
+        const url = new URL(this.serverUrl);
+        return url.host;
+      } catch {
+        return this.serverUrl;
+      }
+    }
+    return this.publicServer;
+  },
+  
+  // Get the API script URL
+  get apiScriptUrl() {
+    if (this.serverUrl) {
+      return `${this.serverUrl}/external_api.js`;
+    }
+    return `https://${this.publicServer}/external_api.js`;
+  }
+};
+
 function JitsiMeet({ roomName, displayName, onClose, isTeacher = false }) {
   const jitsiContainerRef = useRef(null);
   const apiRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [connectionMode, setConnectionMode] = useState(JITSI_CONFIG.isSelfHosted ? 'local' : 'public');
 
   useEffect(() => {
     // Load the Jitsi Meet External API script
@@ -18,10 +61,24 @@ function JitsiMeet({ roomName, displayName, onClose, isTeacher = false }) {
         }
 
         const script = document.createElement('script');
-        script.src = 'https://8x8.vc/vpaas-magic-cookie-7e7e7e7e7e7e7e7e/external_api.js';
+        script.src = JITSI_CONFIG.apiScriptUrl;
         script.async = true;
         script.onload = resolve;
-        script.onerror = () => reject(new Error('Failed to load Jitsi script'));
+        script.onerror = () => {
+          // If self-hosted fails, try public Jitsi
+          if (JITSI_CONFIG.isSelfHosted) {
+            console.warn('Self-hosted Jitsi unavailable, falling back to public server');
+            setConnectionMode('public');
+            const fallbackScript = document.createElement('script');
+            fallbackScript.src = `https://${JITSI_CONFIG.publicServer}/external_api.js`;
+            fallbackScript.async = true;
+            fallbackScript.onload = resolve;
+            fallbackScript.onerror = () => reject(new Error('Failed to load Jitsi script'));
+            document.body.appendChild(fallbackScript);
+          } else {
+            reject(new Error('Failed to load Jitsi script'));
+          }
+        };
         document.body.appendChild(script);
       });
     };
@@ -38,6 +95,8 @@ function JitsiMeet({ roomName, displayName, onClose, isTeacher = false }) {
           .replace(/\s+/g, '-')
           .replace(/[^a-z0-9-]/g, '');
 
+        const domain = connectionMode === 'local' ? JITSI_CONFIG.domain : JITSI_CONFIG.publicServer;
+
         const options = {
           roomName: cleanRoomName,
           parentNode: jitsiContainerRef.current,
@@ -48,6 +107,11 @@ function JitsiMeet({ roomName, displayName, onClose, isTeacher = false }) {
             startWithVideoMuted: true,
             prejoinPageEnabled: true,
             disableDeepLinking: true,
+            // P2P for better LAN performance
+            p2p: {
+              enabled: true,
+              preferredCodec: 'VP9'
+            }
           },
           interfaceConfigOverwrite: {
             TOOLBAR_BUTTONS: [
@@ -68,19 +132,30 @@ function JitsiMeet({ roomName, displayName, onClose, isTeacher = false }) {
           }
         };
 
-        // Create Jitsi instance using 8x8.vc (public Jitsi server)
-        apiRef.current = new window.JitsiMeetExternalAPI('8x8.vc', options);
+        // Create Jitsi instance using configured server (self-hosted or public)
+        console.log(`Connecting to Jitsi server: ${domain} (${connectionMode} mode)`);
+        apiRef.current = new window.JitsiMeetExternalAPI(domain, options);
 
         apiRef.current.addListener('videoConferenceJoined', () => {
           setLoading(false);
+          console.log('Connected to video conference');
         });
 
         apiRef.current.addListener('videoConferenceLeft', () => {
+          console.log('Left video conference');
           if (onClose) onClose();
         });
 
         apiRef.current.addListener('readyToClose', () => {
           if (onClose) onClose();
+        });
+
+        // Handle connection errors for self-hosted
+        apiRef.current.addListener('errorOccurred', (event) => {
+          console.error('Jitsi error:', event);
+          if (connectionMode === 'local') {
+            setError('Connection to local Jitsi server failed. Check if the server is running.');
+          }
         });
 
       } catch (err) {
@@ -97,7 +172,7 @@ function JitsiMeet({ roomName, displayName, onClose, isTeacher = false }) {
         apiRef.current.dispose();
       }
     };
-  }, [roomName, displayName, onClose]);
+  }, [roomName, displayName, onClose, connectionMode]);
 
   if (error) {
     return (
@@ -107,6 +182,11 @@ function JitsiMeet({ roomName, displayName, onClose, isTeacher = false }) {
         </svg>
         <p className="text-red-600 font-bold mb-2">Failed to load video call</p>
         <p className="text-red-500 text-sm">{error}</p>
+        {connectionMode === 'local' && (
+          <p className="text-slate-600 text-xs mt-2">
+            Tip: Ensure your local Jitsi server is running at {JITSI_CONFIG.serverUrl}
+          </p>
+        )}
         <button 
           onClick={onClose}
           className="mt-4 px-6 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700"
@@ -124,6 +204,14 @@ function JitsiMeet({ roomName, displayName, onClose, isTeacher = false }) {
         <div className="flex items-center gap-3">
           <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
           <span className="text-white font-bold">Live Session: {roomName}</span>
+          {/* Connection Mode Badge */}
+          <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+            connectionMode === 'local' 
+              ? 'bg-emerald-500/20 text-emerald-400' 
+              : 'bg-blue-500/20 text-blue-400'
+          }`}>
+            {connectionMode === 'local' ? '🏠 Local Server' : '☁️ Public Server'}
+          </span>
         </div>
         <button 
           onClick={onClose}
@@ -139,7 +227,12 @@ function JitsiMeet({ roomName, displayName, onClose, isTeacher = false }) {
           <div className="text-center">
             <div className="w-16 h-16 border-4 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
             <p className="text-white font-bold">Connecting to live session...</p>
-            <p className="text-slate-400 text-sm mt-2">Please allow camera/microphone access when prompted</p>
+            <p className="text-slate-400 text-sm mt-2">
+              {connectionMode === 'local' 
+                ? 'Connecting to local Jitsi server...'
+                : 'Please allow camera/microphone access when prompted'
+              }
+            </p>
           </div>
         </div>
       )}

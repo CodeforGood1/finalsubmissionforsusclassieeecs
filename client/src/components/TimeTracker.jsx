@@ -8,7 +8,21 @@ const BREAK_DURATION_MINUTES = 5;
 const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 function TimeTracker() {
-  const [sessionTime, setSessionTime] = useState(0); // seconds since session start
+  // Retrieve persisted session time from localStorage
+  const getPersistedSessionTime = () => {
+    const stored = localStorage.getItem('sessionStartTime');
+    const storedSessionTime = localStorage.getItem('currentSessionTime');
+    if (stored && storedSessionTime) {
+      const elapsed = Math.floor((Date.now() - parseInt(stored)) / 1000);
+      // If less than 30 minutes since last activity, restore session time
+      if (elapsed < 30 * 60) {
+        return parseInt(storedSessionTime) || 0;
+      }
+    }
+    return 0;
+  };
+
+  const [sessionTime, setSessionTime] = useState(getPersistedSessionTime); // seconds since session start
   const [totalDailyTime, setTotalDailyTime] = useState(0); // seconds from database for today
   const [showBreakReminder, setShowBreakReminder] = useState(false);
   const [isOnBreak, setIsOnBreak] = useState(false);
@@ -21,6 +35,14 @@ function TimeTracker() {
   const token = localStorage.getItem('token');
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Persist session time to localStorage whenever it changes
+  useEffect(() => {
+    if (sessionTime > 0) {
+      localStorage.setItem('currentSessionTime', sessionTime.toString());
+      localStorage.setItem('sessionStartTime', (Date.now() - sessionTime * 1000).toString());
+    }
+  }, [sessionTime]);
 
   // Check if on video page (exempt from auto-logout)
   const isOnVideoPage = location.pathname.includes('/learning/') || 
@@ -78,7 +100,9 @@ function TimeTracker() {
         // Clear token and redirect to login
         localStorage.removeItem('token');
         localStorage.removeItem('userRole');
-        navigate('/login', { state: { message: 'Logged out due to inactivity' } });
+        localStorage.removeItem('user_role');
+        localStorage.removeItem('user_data');
+        navigate('/', { state: { message: 'Logged out due to inactivity' } });
       }
     }, 30000); // Check every 30 seconds
 

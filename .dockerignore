@@ -1,0 +1,89 @@
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.github/
+
+# Documentation (not needed in container)
+*.md
+!README.md
+
+# Test files
+tests/
+__tests__/
+*.test.js
+*.spec.js
+test-*.ps1
+test-*.sh
+
+# Uploads and generated data
+uploads/
+backend/uploads/
+backend/data/
+client/uploads/
+
+# Database files
+*.db
+*.sqlite
+
+# Logs
+logs/
+*.log
+
+# Development scripts
+start-local.ps1
+setup-notifications.ps1
+setup-notifications.sh
+*.ps1
+*.sh
+
+# CSV samples
+*-sample.csv
+*.csv
+
+# Docker files (not needed inside container)
+docker-compose*.yml
+Dockerfile
+
+# Nginx config (copied separately if needed)
+nginx/
+
+# SQL migration files (run separately)
+*.sql
+
+# Seed scripts (run separately)
+seed*.js
+check-data.js
+create-module-completion.js
+run-inapp-fix.js
+test-*.js
+
+# Local services (not used in production)
+localEmailService.js
+localStorageService.js

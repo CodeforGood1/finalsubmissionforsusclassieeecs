@@ -32,6 +32,20 @@ Thumbs.db
 *.db
 *.sqlite
 
+# Uploads and generated data
+uploads/
+backend/uploads/
+backend/data/
+client/uploads/
+
 # Logs
 logs/
 *.log
+
+# Test scripts and internal docs
+test-api.ps1
+setup-notifications.ps1
+setup-notifications.sh
+start-local.ps1
+*-sample.csv
+dsp-test-sample.csv

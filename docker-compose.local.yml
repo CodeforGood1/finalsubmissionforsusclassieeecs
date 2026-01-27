@@ -1,0 +1,52 @@
+version: '3.8'
+
+# ============================================================
+# SUSTAINABLE CLASSROOM - LOCAL DEVELOPMENT STACK
+# ============================================================
+# Simplified version for quick local testing
+# Run: docker-compose -f docker-compose.local.yml up -d
+# ============================================================
+
+services:
+  # ============================================================
+  # PostgreSQL Database
+  # ============================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: lms-db
+    environment:
+      POSTGRES_USER: lms_user
+      POSTGRES_PASSWORD: lms_password
+      POSTGRES_DB: lms_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_local:/var/lib/postgresql/data
+      # Auto-initialize schema
+      - ./backend/FRESH-COMPLETE-DATABASE.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lms_user -d lms_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - lms-local
+
+  # ============================================================
+  # MailHog (Local Email - view at http://localhost:8025)
+  # ============================================================
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: lms-mail
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - lms-local
+
+volumes:
+  postgres_local:
+
+networks:
+  lms-local:
+    driver: bridge

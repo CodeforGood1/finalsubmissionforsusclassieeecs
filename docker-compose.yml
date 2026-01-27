@@ -1,10 +1,19 @@
 version: '3.8'
 
+# ============================================================
+# SUSTAINABLE CLASSROOM LMS - ON-PREMISE DOCKER STACK
+# ============================================================
+# Africa Sustainable Classroom Challenge - Finals Edition
+# Complete offline deployment with all services local
+# ============================================================
+
 services:
-  # PostgreSQL Database
+  # ============================================================
+  # PostgreSQL Database (Local)
+  # ============================================================
   postgres:
     image: postgres:15-alpine
-    container_name: sustainable-classroom-db
+    container_name: lms-database
     environment:
       POSTGRES_USER: lms_admin
       POSTGRES_PASSWORD: ${DB_PASSWORD:-SecureLocalDB2026}
@@ -16,61 +25,158 @@ services:
       - ./backend/FRESH-COMPLETE-DATABASE.sql:/docker-entrypoint-initdb.d/01-schema.sql
       - ./backend/add-module-progress-tracking.sql:/docker-entrypoint-initdb.d/02-modules.sql
       - ./backend/add-coding-submissions.sql:/docker-entrypoint-initdb.d/03-coding.sql
+      - ./backend/add-inapp-notifications-table.sql:/docker-entrypoint-initdb.d/04-notifications.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lms_admin"]
+      test: ["CMD-SHELL", "pg_isready -U lms_admin -d sustainable_classroom"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - lms-network
+    restart: unless-stopped
 
-  # Backend Application
-  backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: sustainable-classroom-backend
+  # ============================================================
+  # Redis Cache (For Performance Optimization)
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: lms-cache
     ports:
-      - "5000:5000"
-    environment:
-      NODE_ENV: development
-      PORT: 5000
-      DATABASE_URL: postgresql://lms_admin:${DB_PASSWORD:-SecureLocalDB2026}@postgres:5432/sustainable_classroom
-      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
-      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
-      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
-      JWT_SECRET: ${JWT_SECRET:-change_this_secret}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change_this_password}
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - "6379:6379"
     volumes:
-      - ./backend:/app/backend
-      - /app/backend/node_modules
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - lms-network
     restart: unless-stopped
 
-  # Frontend Development Server (Optional - comment out if using backend to serve frontend)
-  # frontend:
-  #   build:
-  #     context: ./client
-  #     dockerfile: Dockerfile
-  #   container_name: sustainable-classroom-frontend
+  # ============================================================
+  # MailHog (Local Email Server for Development/Testing)
+  # ============================================================
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: lms-mailserver
+    ports:
+      - "1025:1025"   # SMTP port
+      - "8025:8025"   # Web UI to view emails
+    networks:
+      - lms-network
+    restart: unless-stopped
+
+  # ============================================================
+  # Backend Application (Node.js + Express)
+  # ============================================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lms-backend
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      # Database (Local PostgreSQL)
+      DATABASE_URL: postgresql://lms_admin:${DB_PASSWORD:-SecureLocalDB2026}@postgres:5432/sustainable_classroom
+      DB_SSL: "false"
+      # Authentication
+      JWT_SECRET: ${JWT_SECRET:-OnPremiseSecureKey2026AfricaChallenge}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@classroom.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@2026}
+      # Local Email (MailHog)
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      SMTP_SECURE: "false"
+      EMAIL_FROM_NAME: Sustainable Classroom
+      EMAIL_FROM_ADDRESS: noreply@classroom.local
+      # Frontend URL
+      FRONTEND_URL: http://localhost:5000
+      # Storage
+      UPLOAD_DIR: /app/backend/uploads
+      # Redis Cache
+      REDIS_ENABLED: "true"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Persist uploaded files
+      - uploads_data:/app/backend/uploads
+      # Persist logs
+      - logs_data:/app/backend/logs
+      # Persist email queue
+      - ./backend/data:/app/backend/data
+    networks:
+      - lms-network
+    restart: unless-stopped
+
+  # ============================================================
+  # Nginx Reverse Proxy (Load Balancing & SSL)
+  # ============================================================
+  nginx:
+    image: nginx:alpine
+    container_name: lms-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - uploads_data:/var/www/uploads:ro
+    depends_on:
+      - backend
+    networks:
+      - lms-network
+    restart: unless-stopped
+
+  # ============================================================
+  # Jitsi Meet (Self-Hosted Video Conferencing) - Optional
+  # ============================================================
+  # Uncomment to enable self-hosted video conferencing
+  # jitsi-web:
+  #   image: jitsi/web:stable
+  #   container_name: lms-jitsi-web
   #   ports:
-  #     - "5173:5173"
-  #   volumes:
-  #     - ./client:/app/client
-  #     - /app/client/node_modules
+  #     - "8000:80"
+  #     - "8443:443"
   #   environment:
-  #     VITE_API_URL: http://localhost:5000/api
+  #     - PUBLIC_URL=http://meet.classroom.local:8000
+  #     - TZ=Africa/Nairobi
+  #   volumes:
+  #     - jitsi_web:/config
   #   networks:
   #     - lms-network
+  #   restart: unless-stopped
 
+# ============================================================
+# Persistent Volumes
+# ============================================================
 volumes:
   postgres_data:
+    name: lms-postgres-data
+  redis_data:
+    name: lms-redis-data
+  uploads_data:
+    name: lms-uploads
+  logs_data:
+    name: lms-logs
+  # jitsi_web:
+  #   name: lms-jitsi-config
 
+# ============================================================
+# Network Configuration
+# ============================================================
 networks:
   lms-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import TimeTracker from '../components/TimeTracker';
 import NotificationBell from '../components/NotificationBell';
+import LiveSessionsCalendar from '../components/LiveSessionsCalendar';
 import API_BASE_URL from '../config/api';
 
 function Dashboard() {
@@ -84,65 +85,65 @@ function Dashboard() {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Top Navigation */}
-      <nav className="bg-white border-b border-slate-200 px-6 py-4">
+      <nav className="bg-white border-b border-slate-200 px-4 md:px-6 py-4">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
             <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-white font-bold">S</div>
-            <span className="font-bold text-slate-700">Sustainable Classroom</span>
+            <span className="font-bold text-slate-700 text-sm md:text-base">Sustainable Classroom</span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 md:gap-4">
             <NotificationBell />
-            <button onClick={() => navigate('/profile')} className="text-sm text-slate-600 hover:text-emerald-600">
+            <button onClick={() => navigate('/profile')} className="text-xs md:text-sm text-slate-600 hover:text-emerald-600 hidden sm:block">
               {userInfo?.full_name || 'Profile'}
             </button>
             <button onClick={() => { localStorage.removeItem('token'); navigate('/'); }} 
-              className="text-sm text-slate-400 hover:text-red-500">
+              className="text-xs md:text-sm text-slate-400 hover:text-red-500">
               Logout
             </button>
           </div>
         </div>
       </nav>
 
-      <main className="max-w-6xl mx-auto p-6">
+      <main className="max-w-6xl mx-auto p-4 md:p-6">
         {/* Welcome Section */}
-        <header className="mb-8">
-          <h1 className="text-2xl font-bold text-slate-800">
+        <header className="mb-6 md:mb-8">
+          <h1 className="text-xl md:text-2xl font-bold text-slate-800">
             Welcome back{userInfo?.full_name ? `, ${userInfo.full_name.split(' ')[0]}` : ''}
           </h1>
-          <p className="text-slate-500 mt-1">Continue where you left off or start something new.</p>
+          <p className="text-slate-500 mt-1 text-sm md:text-base">Continue where you left off or start something new.</p>
         </header>
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          <div className="bg-white p-6 rounded-2xl border border-slate-200">
-            <p className="text-3xl font-bold text-emerald-600">{stats.modulesCompleted}</p>
-            <p className="text-sm text-slate-500 mt-1">Modules Completed</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6 md:mb-8">
+          <div className="bg-white p-4 md:p-6 rounded-2xl border border-slate-200">
+            <p className="text-2xl md:text-3xl font-bold text-emerald-600">{stats.modulesCompleted}</p>
+            <p className="text-xs md:text-sm text-slate-500 mt-1">Modules Completed</p>
           </div>
-          <div className="bg-white p-6 rounded-2xl border border-slate-200">
-            <p className="text-3xl font-bold text-blue-600">{stats.totalModules}</p>
-            <p className="text-sm text-slate-500 mt-1">Total Modules</p>
+          <div className="bg-white p-4 md:p-6 rounded-2xl border border-slate-200">
+            <p className="text-2xl md:text-3xl font-bold text-blue-600">{stats.totalModules}</p>
+            <p className="text-xs md:text-sm text-slate-500 mt-1">Total Modules</p>
           </div>
-          <div className="bg-white p-6 rounded-2xl border border-slate-200">
-            <p className="text-3xl font-bold text-amber-600">{stats.streak}</p>
-            <p className="text-sm text-slate-500 mt-1">Day Streak</p>
+          <div className="bg-white p-4 md:p-6 rounded-2xl border border-slate-200">
+            <p className="text-2xl md:text-3xl font-bold text-amber-600">{stats.streak}</p>
+            <p className="text-xs md:text-sm text-slate-500 mt-1">Day Streak</p>
           </div>
         </div>
 
         {/* Quick Actions */}
-        <section className="mb-8">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <section className="mb-6 md:mb-8">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-3 md:mb-4">Quick Actions</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             {quickActions.map((action) => {
               const colors = colorMap[action.color];
               return (
                 <button
                   key={action.title}
                   onClick={() => navigate(action.route)}
-                  className={`p-6 rounded-2xl ${colors.bg} ${colors.hover} border ${colors.border} text-left transition-all group`}
+                  className={`p-4 md:p-6 rounded-2xl ${colors.bg} ${colors.hover} border ${colors.border} text-left transition-all group`}
                 >
-                  <div className={`${colors.text} mb-3`}>{action.icon}</div>
-                  <p className="font-bold text-slate-800">{action.title}</p>
-                  <p className="text-xs text-slate-500 mt-1">{action.desc}</p>
+                  <div className={`${colors.text} mb-2 md:mb-3`}>{action.icon}</div>
+                  <p className="font-bold text-slate-800 text-sm md:text-base">{action.title}</p>
+                  <p className="text-xs text-slate-500 mt-1 hidden sm:block">{action.desc}</p>
                 </button>
               );
             })}
@@ -151,22 +152,22 @@ function Dashboard() {
 
         {/* Recent Modules */}
         {recentModules.length > 0 && (
-          <section className="mb-8">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4">Continue Learning</h2>
-            <div className="grid gap-4">
+          <section className="mb-6 md:mb-8">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-3 md:mb-4">Continue Learning</h2>
+            <div className="grid gap-3 md:gap-4">
               {recentModules.map((module, idx) => (
                 <button
                   key={idx}
                   onClick={() => navigate(`/learning/${module.id}`)}
-                  className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-emerald-300 transition-all flex justify-between items-center text-left"
+                  className="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 hover:border-emerald-300 transition-all flex flex-col sm:flex-row justify-between sm:items-center text-left gap-2"
                 >
                   <div>
-                    <p className="font-bold text-slate-800">{module.topic_title}</p>
-                    <p className="text-sm text-slate-500">{module.subject} - {module.section}</p>
+                    <p className="font-bold text-slate-800 text-sm md:text-base">{module.topic_title}</p>
+                    <p className="text-xs md:text-sm text-slate-500">{module.subject} - {module.section}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className="text-sm text-slate-400">{module.progress || 0}% complete</div>
-                    <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="text-xs md:text-sm text-slate-400">{module.progress || 0}% complete</div>
+                    <svg className="w-4 h-4 md:w-5 md:h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </div>
@@ -176,11 +177,17 @@ function Dashboard() {
           </section>
         )}
 
+        {/* Live Sessions Calendar */}
+        <section className="mb-6 md:mb-8">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-3 md:mb-4">Live Classes</h2>
+          <LiveSessionsCalendar userType="student" />
+        </section>
+
         {/* All Modules Link */}
         <section>
           <button
             onClick={() => navigate('/courses')}
-            className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold hover:bg-emerald-700 transition-all"
+            className="w-full bg-emerald-600 text-white py-3 md:py-4 rounded-2xl font-bold hover:bg-emerald-700 transition-all text-sm md:text-base"
           >
             View All Learning Modules
           </button>

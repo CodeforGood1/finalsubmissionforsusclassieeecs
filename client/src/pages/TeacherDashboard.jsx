@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ModuleBuilder from './ModuleBuilder';
 import NotificationBell from '../components/NotificationBell';
+import LiveSessionsCalendar from '../components/LiveSessionsCalendar';
 import API_BASE_URL from '../config/api';
 
 function TeacherDashboard() {
@@ -171,6 +172,13 @@ const fetchTeacherProfile = useCallback(async () => {
       if (sections.length > 0) {
         setSelectedSection(sections[0]);
         setTeacherInfo(prev => ({ ...prev, allocated_sections: sections }));
+      }
+      
+      // Auto-select subject if teacher has only one subject
+      const uniqueSubjects = [...new Set(allocData.map(item => item.subject))];
+      if (uniqueSubjects.length === 1) {
+        setSelectedSubject(uniqueSubjects[0]);
+        console.log("Auto-selected single subject:", uniqueSubjects[0]);
       }
     }
   } catch (err) { 
@@ -458,7 +466,8 @@ const fetchTeacherProfile = useCallback(async () => {
           {[
             { id: 'students', label: 'Class Roster', icon: '' }, 
             { id: 'modules', label: 'Module Builder', icon: '' },
-            { id: 'tests', label: 'MCQ Tests', icon: '' }
+            { id: 'tests', label: 'MCQ Tests', icon: '' },
+            { id: 'live', label: 'Live Sessions', icon: '' }
           ].map(item => (
             <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full text-left p-5 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center gap-4 ${activeTab === item.id ? 'bg-emerald-600' : 'hover:bg-white/5 text-slate-500'}`}>
               {item.label}
@@ -507,6 +516,14 @@ const fetchTeacherProfile = useCallback(async () => {
             authHeaders={authHeaders} 
             allocatedSections={teacherInfo?.allocated_sections || []}
           />
+        ) : activeTab === 'live' ? (
+          <div className="max-w-4xl">
+            <div className="mb-8">
+              <h2 className="text-2xl font-black text-slate-800 mb-2">📅 Scheduled Live Sessions</h2>
+              <p className="text-slate-500">View and manage your upcoming live video sessions with students</p>
+            </div>
+            <LiveSessionsCalendar userType="teacher" />
+          </div>
         ) : activeTab === 'tests' ? (
           <div>
             {selectedTest ? (

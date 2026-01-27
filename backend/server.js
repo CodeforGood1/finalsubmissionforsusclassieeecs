@@ -1,18 +1,89 @@
-require('dotenv').config();
-const express = require('express');
 const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+const express = require('express');
+const fs = require('fs');
 const { Pool } = require('pg');
 const cors = require('cors');
-const cloudinary = require('cloudinary').v2;
-const multer = require('multer');
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const compression = require('compression');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const notificationService = require('./notificationService');
 
+// Local services for on-premise deployment
+const localStorageService = require('./localStorageService');
+const localEmailService = require('./localEmailService');
+
+// Initialize local storage directories
+localStorageService.ensureUploadDirs();
+
+// Initialize local email service
+localEmailService.initializeEmailService();
+
+// Get upload middleware
+const { upload } = localStorageService;
+
 const app = express();
 app.use(express.json());
 app.use(cors());
+
+// ============================================================
+// SECURITY MIDDLEWARE - On-Premise Security Layer
+// ============================================================
+
+// Compression for better performance
+app.use(compression());
+
+// Security headers with Helmet
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      mediaSrc: ["'self'", "blob:"],
+      connectSrc: ["'self'", "http://localhost:*", "ws://localhost:*"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameSrc: ["'self'", "https://meet.jit.si", "https://*.8x8.vc"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // Required for video embedding
+}));
+
+// Rate limiting - disabled in development for easier testing
+const isDev = process.env.NODE_ENV !== 'production';
+
+// Rate limiting - general API protection
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: isDev ? 1000 : 100, // Higher limit in dev
+  message: { error: 'Too many requests, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => isDev, // Skip rate limiting in development
+});
+
+// Stricter rate limiting for authentication endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: isDev ? 100 : 10, // Higher limit in dev
+  message: { error: 'Too many login attempts, please try again after 15 minutes' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => isDev, // Skip rate limiting in development
+});
+
+// Apply general rate limiting to all API routes
+app.use('/api/', generalLimiter);
+
+// Apply stricter rate limiting to auth routes
+app.use('/api/login', authLimiter);
+app.use('/api/register', authLimiter);
+app.use('/api/verify-otp', authLimiter);
+app.use('/api/forgot-password', authLimiter);
 
 // Serve static files from /public in production
 app.use(express.static(path.join(__dirname, 'public')));
@@ -26,11 +97,67 @@ app.get('/api/health', (req, res) => {
 const SALT_ROUNDS = 10;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_new_secure_secret_key';
 
-// --- DATABASE CONNECTION (NEON) ---
+// --- DATABASE CONNECTION (LOCAL POSTGRESQL) ---
+// On-premise: Connect to local PostgreSQL server with optimized pool settings
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  // Pool optimization for on-premise deployment
+  max: 20,                         // Maximum connections in pool
+  idleTimeoutMillis: 30000,        // Close idle connections after 30s
+  connectionTimeoutMillis: 10000,  // Connection timeout
+  // SSL only if explicitly enabled for on-premise deployment
+  ...(process.env.DB_SSL === 'true' ? { ssl: { rejectUnauthorized: false } } : {})
 });
+
+// --- SIMPLE IN-MEMORY CACHE ---
+// Lightweight cache for frequently accessed data (teacher allocations, student sections)
+const cache = {
+  data: new Map(),
+  ttl: 5 * 60 * 1000, // 5 minutes default TTL
+  
+  set(key, value, ttlMs = this.ttl) {
+    this.data.set(key, {
+      value,
+      expiry: Date.now() + ttlMs
+    });
+  },
+  
+  get(key) {
+    const item = this.data.get(key);
+    if (!item) return null;
+    if (Date.now() > item.expiry) {
+      this.data.delete(key);
+      return null;
+    }
+    return item.value;
+  },
+  
+  invalidate(pattern) {
+    for (const key of this.data.keys()) {
+      if (key.includes(pattern)) {
+        this.data.delete(key);
+      }
+    }
+  },
+  
+  clear() {
+    this.data.clear();
+  }
+};
+
+// Clean expired cache entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, item] of cache.data.entries()) {
+    if (now > item.expiry) {
+      cache.data.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
+console.log('[DATABASE] Connecting to PostgreSQL...');
+console.log('[DATABASE] SSL:', process.env.DB_SSL === 'true' ? 'Enabled' : 'Disabled (on-premise mode)');
+console.log('[CACHE] In-memory cache initialized (5 min TTL)');
 
 // Initialize notification service
 notificationService.initializeNotificationService(pool);
@@ -74,35 +201,12 @@ notificationService.initializeNotificationService(pool);
   }
 })();
 
-// --- CLOUDINARY CONFIGURATION ---
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
-});
+// --- LOCAL STORAGE CONFIGURATION (ON-PREMISE) ---
+// Serve uploaded files statically
+app.use('/uploads', express.static(localStorageService.UPLOAD_BASE_DIR));
 
-const storage = new CloudinaryStorage({
-  cloudinary,
-  params: async (req, file) => {
-    // Determine if it's a video or image
-    const isVideo = file.mimetype.startsWith('video/');
-    
-    return {
-      folder: isVideo ? 'classroom_v2/videos' : 'classroom_v2/images',
-      resource_type: isVideo ? 'video' : 'image',
-      allowed_formats: isVideo 
-        ? ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv']
-        : ['jpg', 'png', 'jpeg', 'gif', 'webp']
-    };
-  }
-});
-
-const upload = multer({ 
-  storage: storage,
-  limits: {
-    fileSize: 100 * 1024 * 1024 // 100MB limit
-  }
-});
+console.log('[STORAGE] Local file storage configured');
+console.log('[STORAGE] Upload directory:', localStorageService.UPLOAD_BASE_DIR);
 
 // --- MIDDLEWARE ---
 const authenticateToken = (req, res, next) => {
@@ -125,66 +229,15 @@ const adminOnly = (req, res, next) => {
 
 // --- ROUTES: AUTHENTICATION ---
 
-// Email configuration - uses Mailjet API (200 emails/day free, no domain verification needed)
-const mjApiKeyPublic = process.env.MJ_APIKEY_PUBLIC;
-const mjApiKeyPrivate = process.env.MJ_APIKEY_PRIVATE;
+// Email configuration - uses local SMTP for on-premise deployment
+console.log('=== LOCAL EMAIL CONFIG (ON-PREMISE) ===');
+console.log('[EMAIL] SMTP Host:', process.env.SMTP_HOST || 'localhost');
+console.log('[EMAIL] SMTP Port:', process.env.SMTP_PORT || 1025);
+console.log('[EMAIL] Dev Mode:', process.env.EMAIL_DEV_MODE || 'auto');
 
-console.log('=== EMAIL CONFIG ===');
-console.log('MJ_APIKEY_PUBLIC:', mjApiKeyPublic ? 'SET (' + mjApiKeyPublic.substring(0, 8) + '...)' : 'NOT SET');
-console.log('MJ_APIKEY_PRIVATE:', mjApiKeyPrivate ? 'SET (hidden)' : 'NOT SET');
-
-let mailjet = null;
-if (mjApiKeyPublic && mjApiKeyPrivate) {
-  const Mailjet = require('node-mailjet');
-  mailjet = Mailjet.apiConnect(mjApiKeyPublic, mjApiKeyPrivate);
-  console.log('Mailjet email service ready');
-} else {
-  console.warn('⚠ Mailjet API keys not set - emails will be logged to console only');
-  console.warn('  Get free API keys at https://www.mailjet.com');
-}
-
-// Send email using Mailjet API
+// Send email using local SMTP service
 const sendEmailAsync = async (mailOptions) => {
-  console.log('[EMAIL] Sending to:', mailOptions.to, '| Subject:', mailOptions.subject);
-  
-  if (!mailjet) {
-    console.log('[EMAIL MOCK] No Mailjet API keys - email not sent');
-    console.log('[EMAIL MOCK] OTP would be:', extractOTPFromHTML(mailOptions.html));
-    return;
-  }
-  
-  try {
-    const result = await mailjet
-      .post('send', { version: 'v3.1' })
-      .request({
-        Messages: [
-          {
-            From: {
-              Email: 'susclass.global@gmail.com',
-              Name: 'SusClass'
-            },
-            To: [
-              {
-                Email: mailOptions.to
-              }
-            ],
-            Subject: mailOptions.subject,
-            HTMLPart: mailOptions.html
-          }
-        ]
-      });
-    
-    const status = result.body.Messages[0].Status;
-    if (status === 'success') {
-      console.log('Email sent successfully via Mailjet');
-    } else {
-      console.error('✗ Mailjet status:', status);
-      console.log('📧 EMAIL ISSUE - OTP for testing:', extractOTPFromHTML(mailOptions.html));
-    }
-  } catch (err) {
-    console.error('✗ Mailjet error:', err.message);
-    console.log('📧 EMAIL FAILED - OTP for testing:', extractOTPFromHTML(mailOptions.html));
-  }
+  return localEmailService.sendEmail(mailOptions);
 };
 
 // Helper to extract OTP from email HTML for debugging
@@ -219,7 +272,8 @@ app.post('/api/login', async (req, res) => {
             
             if (isMatch) {
                 const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                const otpExpiry = new Date(Date.now() + 5 * 60000); // 5 mins
+                // Use UTC timestamp for OTP expiry to match database NOW()
+                const otpExpiry = new Date(Date.now() + 5 * 60000).toISOString(); // 5 mins in UTC
 
                 await pool.query(
                     `UPDATE ${table} SET otp_code = $1, otp_expiry = $2 WHERE id = $3`,
@@ -743,12 +797,12 @@ app.post('/api/admin/allocate-sections', authenticateToken, adminOnly, async (re
     const allSections = allSectionsResult.rows;
     console.log("All available sections:", allSections);
     
-    // Map selected section IDs to section strings (class_dept-section)
+    // Map selected section IDs to section strings (class_dept section) - USE SPACE not hyphen
     const selectedSectionStrings = sections.map(sectionId => {
       // Section IDs come as strings from frontend, compare as strings
       const section = allSections.find(s => String(s.id) === String(sectionId));
       if (section) {
-        return `${section.class_dept}-${section.section}`;
+        return `${section.class_dept} ${section.section}`; // Use SPACE for consistency
       }
       return null;
     }).filter(Boolean);
@@ -794,7 +848,7 @@ app.post('/api/admin/allocate-sections', authenticateToken, adminOnly, async (re
     
     // Also create teacher_student_allocations for all students in these sections
     for (const sectionStr of selectedSectionStrings) {
-      const [class_dept, section] = sectionStr.split('-');
+      const [class_dept, section] = sectionStr.split(' '); // Split by SPACE
       
       // Get all students in this section
       const studentsResult = await pool.query(
@@ -868,15 +922,25 @@ app.get('/api/teacher/me', authenticateToken, async (req, res) => {
   }
 });
 
-// 8b. Teacher: Get My Allocated Students
+// 8b. Teacher: Get My Allocated Students (with caching)
 app.get('/api/teacher/my-students', authenticateToken, async (req, res) => {
   try {
     const teacher_id = req.user.id;
+    const cacheKey = `teacher_students_${teacher_id}`;
+    
+    // Check cache first
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
     
     const result = await pool.query(
       'SELECT * FROM v_teacher_students WHERE teacher_id = $1 ORDER BY student_name',
       [teacher_id]
     );
+    
+    // Cache for 2 minutes (allocations don't change often)
+    cache.set(cacheKey, result.rows, 2 * 60 * 1000);
     
     res.json(result.rows);
   } catch (err) {
@@ -911,30 +975,77 @@ app.get('/api/teacher/students/:section', authenticateToken, async (req, res) =>
   }
 });
 
-// --- ROUTES: MEDIA ---
+// --- ROUTES: MEDIA (LOCAL STORAGE) ---
 
-// 7. Media Upload (Images and Videos)
+// 7. Media Upload (Images and Videos) - LOCAL STORAGE
 app.post('/api/upload', authenticateToken, upload.single('file'), (req, res) => {
   try {
-    console.log("Upload request received");
-    console.log("File:", req.file);
+    console.log("[LOCAL UPLOAD] Request received");
     
     if (!req.file) {
-      console.error("No file in request");
+      console.error("[LOCAL UPLOAD] No file in request");
       return res.status(400).json({ error: "No file uploaded" });
     }
     
-    console.log("File uploaded successfully:", req.file.path);
+    // Determine file type for URL path
+    const fileType = req.file.mimetype.startsWith('video/') ? 'videos' : 
+                     req.file.mimetype.startsWith('image/') ? 'images' : 'documents';
+    
+    // Build local URL
+    const fileUrl = `/uploads/${fileType}/${req.file.filename}`;
+    
+    console.log("[LOCAL UPLOAD] File saved:", req.file.filename);
+    console.log("[LOCAL UPLOAD] URL:", fileUrl);
     
     res.json({ 
-      url: req.file.path, 
+      url: fileUrl, 
       public_id: req.file.filename,
+      filename: req.file.filename,
       type: req.file.mimetype,
+      size: req.file.size,
       resource_type: req.file.mimetype.startsWith('video/') ? 'video' : 'image'
     });
   } catch (err) {
-    console.error("Upload error:", err);
+    console.error("[LOCAL UPLOAD] Error:", err);
     res.status(500).json({ error: "Upload failed: " + err.message });
+  }
+});
+
+// Video streaming endpoint with range support for large files
+app.get('/api/videos/stream/:filename', (req, res) => {
+  const { filename } = req.params;
+  localStorageService.streamVideo(req, res, filename);
+});
+
+// Get disk usage statistics (admin only)
+app.get('/api/storage/stats', authenticateToken, adminOnly, async (req, res) => {
+  try {
+    const stats = await localStorageService.getDiskUsage();
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List uploaded files (admin only)
+app.get('/api/storage/files/:type', authenticateToken, adminOnly, async (req, res) => {
+  try {
+    const { type } = req.params;
+    const files = await localStorageService.listFiles(type);
+    res.json(files);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete file (admin only)
+app.delete('/api/storage/files/:type/:filename', authenticateToken, adminOnly, async (req, res) => {
+  try {
+    const { type, filename } = req.params;
+    await localStorageService.deleteFile(filename, type);
+    res.json({ success: true, message: 'File deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -998,7 +1109,7 @@ app.get('/api/student/recent-modules', authenticateToken, async (req, res) => {
     
     // Get modules for student's section with accurate progress
     const modulesResult = await pool.query(`
-      SELECT m.id, m.topic_title, m.subject, m.section, m.created_at, m.step_count,
+      SELECT m.id, m.topic_title, m.section, m.created_at, m.step_count,
         COALESCE(
           (SELECT COUNT(*) * 100.0 / NULLIF(m.step_count, 0) 
            FROM module_completion mc 
@@ -1054,13 +1165,31 @@ app.get('/api/student/stats', authenticateToken, async (req, res) => {
       )
     `, [fullSection, req.user.id]);
     
-    // Calculate streak (consecutive days with activity)
+    // Calculate streak (consecutive days with activity from today backwards)
     const streakResult = await pool.query(`
-      SELECT COUNT(DISTINCT DATE(completed_at)) as streak
-      FROM module_completion
-      WHERE student_id = $1 
-      AND completed_at >= CURRENT_DATE - INTERVAL '30 days'
-      AND is_completed = true
+      WITH activity_dates AS (
+        SELECT DISTINCT DATE(completed_at) as activity_date
+        FROM module_completion
+        WHERE student_id = $1 AND is_completed = true
+        UNION
+        SELECT DISTINCT study_date as activity_date
+        FROM daily_study_time
+        WHERE student_id = $1 AND total_seconds > 0
+      ),
+      streak_calc AS (
+        SELECT activity_date,
+               activity_date - (ROW_NUMBER() OVER (ORDER BY activity_date DESC))::int as streak_group
+        FROM activity_dates
+        WHERE activity_date <= CURRENT_DATE
+      )
+      SELECT COUNT(*) as streak
+      FROM streak_calc
+      WHERE streak_group = (
+        SELECT streak_group FROM streak_calc WHERE activity_date = CURRENT_DATE
+        UNION ALL
+        SELECT streak_group FROM streak_calc WHERE activity_date = CURRENT_DATE - 1
+        LIMIT 1
+      )
     `, [req.user.id]);
     
     res.json({
@@ -1147,6 +1276,9 @@ app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
     } catch (notifErr) {
       console.error('Notification error (non-blocking):', notifErr);
     }
+    
+    // Invalidate cache for this section's modules
+    cache.invalidate(`modules_section_${section.toLowerCase()}`);
     
     res.status(201).json({ success: true, moduleId });
   } catch (err) {
@@ -1272,6 +1404,13 @@ app.get('/api/student/my-modules', authenticateToken, async (req, res) => {
     
     const { class_dept, section } = studentResult.rows[0];
     const fullSection = `${class_dept} ${section}`; // e.g., "ECE A"
+    const cacheKey = `modules_section_${fullSection.toLowerCase()}`;
+    
+    // Check cache first
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
     
     // Fetch modules for this section
     const modulesResult = await pool.query(
@@ -1281,6 +1420,9 @@ app.get('/api/student/my-modules', authenticateToken, async (req, res) => {
        ORDER BY created_at DESC`,
       [fullSection]
     );
+    
+    // Cache for 1 minute
+    cache.set(cacheKey, modulesResult.rows, 60 * 1000);
     
     res.json(modulesResult.rows);
   } catch (err) {
@@ -1316,17 +1458,19 @@ app.get('/api/student/module/:moduleId', authenticateToken, async (req, res) => 
     const steps = result.rows[0].steps;
     
     // Format steps for the frontend
+    // Handle both old format (title/content) and new format (header/data)
     const formattedSteps = steps.map((step, index) => ({
       id: index + 1,
-      step_type: step.type, // 'video', 'text', 'mcq', 'coding', 'jitsi', 'code'
-      step_header: step.header, // The step title
-      content: step.type === 'video' ? step.data : 
-               step.type === 'text' ? step.data : 
-               step.type === 'code' ? step.data :
+      step_type: step.type, // 'video', 'text', 'mcq', 'coding', 'jitsi', 'code', 'quiz'
+      step_header: step.header || step.title, // Support both formats
+      content: step.type === 'video' ? (step.data || step.content) : 
+               step.type === 'text' ? (step.data || step.content) : 
+               step.type === 'code' ? (step.data || step.content) :
                null, // For video URLs and text content
-      mcq_data: step.type === 'mcq' ? step.data :
-                step.type === 'coding' ? step.data :
-                step.type === 'jitsi' ? step.data :
+      mcq_data: step.type === 'mcq' ? (step.data || step.content) :
+                step.type === 'quiz' ? (step.data || step.content) :
+                step.type === 'coding' ? (step.data || step.content) :
+                step.type === 'jitsi' ? (step.data || step.content) :
                 null, // For structured data (MCQ, coding problems, jitsi)
       is_completed: completedSteps.includes(index)
     }));
@@ -2020,14 +2164,17 @@ app.post('/api/student/test/submit', authenticateToken, async (req, res) => {
     
     for (let i = 0; i < questions.length; i++) {
       const question = questions[i];
-      const studentAnswer = answers[i.toString()]; // answers is {"0": "A", "1": "B", ...}
-      const correctAnswer = question.correct;
+      const studentAnswer = answers[i.toString()]; // answers is {"0": 1, "1": 2, ...} (index-based)
+      // Support both 'correct' and 'correctAnswer' field names
+      const correctAnswer = question.correct !== undefined ? question.correct : question.correctAnswer;
       
       console.log(`Q${i}: Student="${studentAnswer}" vs Correct="${correctAnswer}"`);
       
-      // Case-insensitive comparison
-      if (studentAnswer && correctAnswer && 
-          studentAnswer.toUpperCase().trim() === correctAnswer.toUpperCase().trim()) {
+      // Compare as numbers or strings (case-insensitive for strings)
+      const studentVal = typeof studentAnswer === 'number' ? studentAnswer : String(studentAnswer || '').toUpperCase().trim();
+      const correctVal = typeof correctAnswer === 'number' ? correctAnswer : String(correctAnswer || '').toUpperCase().trim();
+      
+      if (studentVal === correctVal) {
         correct_count++;
         console.log(`  ✓ MATCH`);
       } else {
@@ -2546,6 +2693,163 @@ app.post('/api/admin/send-deadline-reminders', authenticateToken, async (req, re
     console.error('Send Deadline Reminders Error:', err);
     res.status(500).json({ error: 'Failed to send deadline reminders' });
   }
+});
+
+// =============================================================================
+// LIVE SESSIONS (JITSI) CALENDAR API
+// =============================================================================
+
+// Get scheduled live sessions for student
+app.get('/api/student/live-sessions', authenticateToken, async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    
+    // Get student's section
+    const studentResult = await pool.query(
+      'SELECT class_dept, section FROM students WHERE id = $1',
+      [studentId]
+    );
+    
+    if (studentResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+    
+    const { class_dept, section } = studentResult.rows[0];
+    const fullSection = `${class_dept} ${section}`;
+    
+    // Get modules with jitsi steps
+    const result = await pool.query(`
+      SELECT m.id as module_id, m.topic_title, m.teacher_name, m.section, m.subject, m.steps
+      FROM modules m
+      WHERE LOWER(m.section) = LOWER($1)
+      ORDER BY m.created_at DESC
+    `, [fullSection]);
+    
+    // Extract jitsi sessions from modules
+    const sessions = [];
+    for (const module of result.rows) {
+      if (module.steps && Array.isArray(module.steps)) {
+        module.steps.forEach((step, index) => {
+          if (step.type === 'jitsi' && step.data) {
+            const sessionData = typeof step.data === 'string' ? JSON.parse(step.data) : step.data;
+            sessions.push({
+              id: `${module.module_id}-${index}`,
+              module_id: module.module_id,
+              topic: module.topic_title,
+              step_title: step.header,
+              teacher_name: module.teacher_name,
+              section: module.section,
+              subject: module.subject,
+              room_name: sessionData.roomName,
+              scheduled_time: sessionData.scheduledTime,
+              duration: sessionData.duration || 60,
+              meeting_url: sessionData.meetingUrl || `https://8x8.vc/${sessionData.roomName}`
+            });
+          }
+        });
+      }
+    }
+    
+    // Sort by scheduled time
+    sessions.sort((a, b) => new Date(a.scheduled_time) - new Date(b.scheduled_time));
+    
+    res.json(sessions);
+  } catch (err) {
+    console.error('Live Sessions Error:', err);
+    res.status(500).json({ error: 'Failed to fetch live sessions' });
+  }
+});
+
+// Get scheduled live sessions for teacher
+app.get('/api/teacher/live-sessions', authenticateToken, async (req, res) => {
+  try {
+    const teacherId = req.user.id;
+    
+    // Get modules created by this teacher with jitsi steps
+    const result = await pool.query(`
+      SELECT m.id as module_id, m.topic_title, m.teacher_name, m.section, m.subject, m.steps
+      FROM modules m
+      WHERE m.teacher_id = $1
+      ORDER BY m.created_at DESC
+    `, [teacherId]);
+    
+    // Extract jitsi sessions from modules
+    const sessions = [];
+    for (const module of result.rows) {
+      if (module.steps && Array.isArray(module.steps)) {
+        module.steps.forEach((step, index) => {
+          if (step.type === 'jitsi' && step.data) {
+            const sessionData = typeof step.data === 'string' ? JSON.parse(step.data) : step.data;
+            sessions.push({
+              id: `${module.module_id}-${index}`,
+              module_id: module.module_id,
+              topic: module.topic_title,
+              step_title: step.header,
+              section: module.section,
+              subject: module.subject,
+              room_name: sessionData.roomName,
+              scheduled_time: sessionData.scheduledTime,
+              duration: sessionData.duration || 60,
+              meeting_url: sessionData.meetingUrl || `https://8x8.vc/${sessionData.roomName}`
+            });
+          }
+        });
+      }
+    }
+    
+    // Sort by scheduled time
+    sessions.sort((a, b) => new Date(a.scheduled_time) - new Date(b.scheduled_time));
+    
+    res.json(sessions);
+  } catch (err) {
+    console.error('Teacher Live Sessions Error:', err);
+    res.status(500).json({ error: 'Failed to fetch live sessions' });
+  }
+});
+
+// =============================================================================
+// GLOBAL ERROR HANDLER - Must be last middleware
+// =============================================================================
+app.use((err, req, res, next) => {
+  console.error('Global Error Handler:', {
+    message: err.message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    path: req.path,
+    method: req.method,
+    timestamp: new Date().toISOString()
+  });
+  
+  // Handle specific error types
+  if (err.name === 'JsonWebTokenError') {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+  if (err.name === 'TokenExpiredError') {
+    return res.status(401).json({ error: 'Token expired' });
+  }
+  if (err.code === '23505') { // PostgreSQL unique violation
+    return res.status(409).json({ error: 'Duplicate entry' });
+  }
+  if (err.code === '23503') { // PostgreSQL foreign key violation
+    return res.status(400).json({ error: 'Referenced record not found' });
+  }
+  
+  // Generic error response
+  res.status(err.status || 500).json({
+    error: process.env.NODE_ENV === 'production' 
+      ? 'Internal server error' 
+      : err.message
+  });
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  process.exit(1);
 });
 
 // SPA fallback - serve index.html for any non-API routes

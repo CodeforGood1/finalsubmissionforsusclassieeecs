@@ -40,8 +40,8 @@ RUN apk add --no-cache \
 # Copy backend dependencies
 COPY backend/package*.json ./
 
-# Install backend dependencies
-RUN npm ci --only=production
+# Install backend dependencies (with bcrypt build dependencies)
+RUN npm ci --only=production --build-from-source
 
 # Copy backend source files
 COPY backend/server.js .

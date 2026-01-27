@@ -1,33 +1,83 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import API_BASE_URL from '../config/api';
 
 function VideoLearning() {
   const navigate = useNavigate();
+  const videoRef = useRef(null);
+  const [localVideos, setLocalVideos] = useState([]);
+  const [loading, setLoading] = useState(true);
   
-  const videos = [
+  // Default sample videos - these will be replaced with local videos from the server
+  const defaultVideos = [
     {
+      id: 'sample-1',
       title: 'JavaScript Basics',
       description: 'An introduction to the building blocks of the web. We cover syntax, variables, and how code flows.',
-      url: 'https://www.youtube.com/embed/W6NZfCO5SIk',
-      resources: [{ name: 'MDN JavaScript Guide', link: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide' }]
+      url: '/uploads/videos/sample-javascript-basics.mp4',
+      isLocal: true,
+      resources: [{ name: 'JavaScript Guide', link: '/courses' }]
     },
     {
+      id: 'sample-2',
       title: 'Async JS & Promises',
       description: 'Mastering the art of timing. Learn how JavaScript handles multiple tasks without slowing down.',
-      url: 'https://www.youtube.com/embed/PoRJizFvM7s',
-      resources: [{ name: 'Guide to Promises', link: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Using_promises' }]
+      url: '/uploads/videos/sample-async-promises.mp4',
+      isLocal: true,
+      resources: [{ name: 'Async Programming Guide', link: '/courses' }]
     },
     {
+      id: 'sample-3',
       title: 'DOM Manipulation',
       description: 'Learn how to reach into your HTML and change things on the fly using JavaScript logic.',
-      url: 'https://www.youtube.com/embed/0ik6X4DJKCc',
-      resources: [{ name: 'DOM API Reference', link: 'https://developer.mozilla.org/en-US/docs/Web/API/Document_Object_Model' }]
+      url: '/uploads/videos/sample-dom-manipulation.mp4',
+      isLocal: true,
+      resources: [{ name: 'DOM Reference', link: '/courses' }]
     }
   ];
 
+  // Fetch videos from local server
+  useEffect(() => {
+    const fetchVideos = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${API_BASE_URL}/api/modules/videos`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.videos && data.videos.length > 0) {
+            setLocalVideos(data.videos.map(v => ({
+              ...v,
+              isLocal: true,
+              url: v.url.startsWith('http') ? v.url : `${API_BASE_URL}${v.url}`
+            })));
+          } else {
+            setLocalVideos(defaultVideos);
+          }
+        } else {
+          setLocalVideos(defaultVideos);
+        }
+      } catch (err) {
+        console.log('Using default videos (offline mode)');
+        setLocalVideos(defaultVideos);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchVideos();
+  }, []);
+
+  const videos = localVideos.length > 0 ? localVideos : defaultVideos;
   const [currentIndex, setCurrentIndex] = useState(0);
-  const current = videos[currentIndex];
-  const progressPercent = ((currentIndex + 1) / videos.length) * 100;
+  const current = videos[currentIndex] || videos[0];
+  const progressPercent = videos.length > 0 ? ((currentIndex + 1) / videos.length) * 100 : 0;
+
+  // Handle video source - support both local and external videos
+  const isExternalVideo = current?.url?.includes('youtube.com') || current?.url?.includes('vimeo.com');
+  const videoUrl = current?.url || '';
 
   return (
     <div className="min-h-screen bg-[#fdfdfd] font-sans text-slate-800 p-8 lg:p-12">
@@ -64,21 +114,55 @@ function VideoLearning() {
           {/* MAIN VIDEO AREA (3 Columns) */}
           <div className="xl:col-span-3 space-y-8">
             <div className="aspect-video bg-slate-900 rounded-3xl overflow-hidden shadow-2xl shadow-slate-200 border border-slate-200">
-              <iframe
-                className="w-full h-full"
-                src={current.url}
-                title={current.title}
-                frameBorder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              ></iframe>
+              {loading ? (
+                <div className="w-full h-full flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
+                </div>
+              ) : isExternalVideo ? (
+                /* External video (YouTube/Vimeo) - use iframe */
+                <iframe
+                  className="w-full h-full"
+                  src={videoUrl}
+                  title={current?.title}
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                ></iframe>
+              ) : (
+                /* Local video - use HTML5 video player */
+                <video
+                  ref={videoRef}
+                  className="w-full h-full"
+                  src={videoUrl}
+                  controls
+                  controlsList="nodownload"
+                  preload="metadata"
+                  onError={(e) => {
+                    console.log('Video load error, trying fallback');
+                    // Show placeholder for missing videos
+                    e.target.poster = '/placeholder-video.png';
+                  }}
+                >
+                  <source src={videoUrl} type="video/mp4" />
+                  <source src={videoUrl.replace('.mp4', '.webm')} type="video/webm" />
+                  Your browser does not support the video tag.
+                </video>
+              )}
             </div>
 
             <div className="px-2">
-              <h1 className="text-3xl font-bold text-slate-900 mb-4 tracking-tight">{current.title}</h1>
+              <h1 className="text-3xl font-bold text-slate-900 mb-4 tracking-tight">{current?.title}</h1>
               <p className="text-slate-500 leading-relaxed text-lg max-w-3xl">
-                {current.description}
+                {current?.description}
               </p>
+              {current?.isLocal && (
+                <span className="inline-flex items-center gap-1 mt-3 text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  Offline Available
+                </span>
+              )}
             </div>
           </div>
 

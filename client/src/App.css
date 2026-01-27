@@ -1,10 +1,9 @@
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  width: 100%;
+  min-height: 100vh;
 }
 
+/* Logo styles - only used when logo is present */
 .logo {
   height: 6em;
   padding: 1.5em;
@@ -40,3 +39,44 @@
 .read-the-docs {
   color: #888;
 }
+
+/* Mobile-friendly global styles */
+html, body {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+/* Responsive container */
+.container {
+  width: 100%;
+  max-width: 100%;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 640px) {
+  .container {
+    max-width: 640px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+@media (min-width: 768px) {
+  .container {
+    max-width: 768px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .container {
+    max-width: 1024px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .container {
+    max-width: 1280px;
+  }
+}
+

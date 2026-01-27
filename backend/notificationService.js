@@ -364,13 +364,16 @@ const sendEmail = async (eventCode, recipient, data, metadata = {}) => {
       return { success: false, reason: 'test_disabled_in_prod' };
     }
     // Check if user has email notifications enabled for this event
+    // Default to ENABLED if no preference exists (opt-out model)
     const prefResult = await dbPool.query(
       `SELECT email_enabled FROM notification_preferences 
        WHERE user_id = $1 AND user_type = $2 AND event_code = $3`,
       [recipient.id, recipient.type, eventCode]
     );
 
-    if (prefResult.rows.length === 0 || !prefResult.rows[0].email_enabled) {
+    // If preference exists and is explicitly disabled, skip
+    // If no preference exists (new user), send the email (opt-out model)
+    if (prefResult.rows.length > 0 && prefResult.rows[0].email_enabled === false) {
       console.log(`Email notification disabled for user ${recipient.id} (${eventCode})`);
       return { success: false, reason: 'disabled_by_user' };
     }
@@ -474,8 +477,9 @@ const sendBatchEmails = async (eventCode, recipients, dataFactory, metadata = {}
  * @returns {Promise<Array>} - Array of students
  */
 const getStudentsInSection = async (section, eventCode = null) => {
+  // Section format can be "SS1 A" or need to match "class_dept || ' ' || section"
   let query = `
-    SELECT s.id, s.name, s.email, s.reg_no, s.section,
+    SELECT s.id, s.name, s.email, s.reg_no, s.section, s.class_dept,
            ${eventCode ? 'np.email_enabled' : 'true as email_enabled'}
     FROM students s
   `;
@@ -486,11 +490,11 @@ const getStudentsInSection = async (section, eventCode = null) => {
         ON s.id = np.user_id 
         AND np.user_type = 'student' 
         AND np.event_code = $2
-      WHERE LOWER(s.section) = LOWER($1)
+      WHERE LOWER(s.class_dept || ' ' || s.section) = LOWER($1)
         AND (np.email_enabled IS NULL OR np.email_enabled = true)
     `;
   } else {
-    query += ` WHERE LOWER(s.section) = LOWER($1)`;
+    query += ` WHERE LOWER(s.class_dept || ' ' || s.section) = LOWER($1)`;
   }
 
   const params = eventCode ? [section, eventCode] : [section];

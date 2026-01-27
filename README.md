@@ -1,128 +1,381 @@
 # Sustainable Classroom – E-Learning Platform
 
-An interactive e-learning web application designed to support students with features like video/text-based learning, coding workbench, progress tracking, and more — all managed via a scalable microservice architecture.
+A comprehensive Learning Management System (LMS) designed for African schools with features for video/text learning, coding practice, MCQ tests, live sessions, progress tracking, and offline-first capabilities.
 
 ---
 
-##  Features
+## ✨ Features
 
--  Secure user authentication (Login & Register)
--  Video &  Text-based learning modules
--  Integrated coding workbench (Frontend simulation)
--  Student progress tracking
--  Knowledge testing through assessments
--  User profile management
--  React + Tailwind UI
--  Node.js + Express backend
--  MongoDB database
--  Microservices ready (future scaling)
--  Hosted with Vite dev server
+### For Students
+- 📚 **Module-based Learning** - Video tutorials, text content, and PDF resources
+- 💻 **Coding Practice** - Built-in code editor with test case validation
+- 📝 **MCQ Tests** - Timed assessments with automatic grading
+- 🎥 **Live Sessions** - Jitsi Meet integration for virtual classes
+- ⏱️ **Time Tracking** - Automatic study time tracking and streaks
+- 🔔 **Notifications** - In-app and email notifications for assignments
+- 📊 **Progress Dashboard** - Track module completion and test scores
+
+### For Teachers
+- 📦 **Module Management** - Create structured learning modules with multiple steps
+- 👥 **Student Management** - View allocated students by class and section
+- 📋 **Test Creation** - CSV-based MCQ test uploads with instant grading
+- 🎬 **Live Classes** - Schedule and conduct Jitsi video sessions
+- 📈 **Analytics** - Monitor student progress and test performance
+
+### For Admins
+- 🏫 **Bulk User Import** - CSV-based user creation
+- 🎓 **Subject & Section Management** - Organize classes and allocations
+- 👤 **User Management** - Admin, teacher, and student account control
 
 ---
 
 ## 🛠️ Tech Stack
 
-| Layer       | Tools                                      |
-|-------------|--------------------------------------------|
-| Frontend    | React, Vite, Tailwind CSS                  |
-| Backend     | Node.js, Express.js                        |
-| Database    | MongoDB, Mongoose                          |
-| Auth        | JSON Web Token (JWT), bcrypt (optional)    |
-| Versioning  | Git + GitHub                               |
-| Styling     | TailwindCSS                                |
+| Component | Technology |
+|-----------|-----------|
+| **Frontend** | React 18, Vite, TailwindCSS |
+| **Backend** | Node.js, Express.js |
+| **Database** | PostgreSQL 15 |
+| **Cache** | Redis (optional) |
+| **Auth** | JWT + bcrypt |
+| **Email** | Gmail SMTP / MailHog (dev) |
+| **Video** | Jitsi Meet |
+| **Deployment** | Docker, Docker Compose |
 
 ---
 
-##  Folder Structure
+## 🚀 Quick Start
 
-elearning-auth-project/
-├── client/                  # React frontend (Vite)
-│   ├── public/
+### Prerequisites
+- Docker & Docker Compose
+- Git
+
+### 1. Clone Repository
+```bash
+git clone https://github.com/susclassglobal-oss/susclasssrefine.git
+cd susclasssrefine
+```
+
+### 2. Configure Environment
+Create `.env` file in root:
+```env
+# Database
+DB_PASSWORD=YourSecurePassword
+
+# JWT Secret
+JWT_SECRET=YourSecretKey2026
+
+# Admin Credentials
+ADMIN_EMAIL=admin@school.local
+ADMIN_PASSWORD=Admin@2026
+
+# Gmail (for production email)
+GMAIL_USER=your-email@gmail.com
+GMAIL_APP_PASSWORD=your-app-password
+```
+
+### 3. Start with Docker Compose
+```bash
+# Development with MailHog
+docker-compose up -d
+
+# Production with Gmail
+docker-compose -f docker-compose.yml up -d
+```
+
+### 4. Access Application
+- **Frontend & Backend**: http://localhost:5000
+- **MailHog UI** (dev): http://localhost:8025
+- **PostgreSQL**: localhost:5432
+- **Redis**: localhost:6379
+
+### 5. Default Credentials
+- **Admin**: admin@school.local / Admin@2026
+- **Teacher**: susclass.global+sarah.teacher@gmail.com / password123
+- **Student**: susclass.global+amara@gmail.com / student123
+
+---
+
+## 📁 Project Structure
+
+```
+susclasssrefine/
+├── backend/                      # Node.js Express API
+│   ├── server.js                 # Main server file
+│   ├── notificationService.js    # Email & notifications
+│   ├── package.json
+│   └── *.sql                     # Database migrations
+│
+├── client/                       # React frontend
 │   ├── src/
-│   │   ├── assets/          # Static assets like images
-│   │   ├── components/      # Reusable UI components
-│   │   └── pages/           # Page components (Login, Dashboard, Courses, etc.)
-│   ├── tailwind.config.js   # Tailwind CSS config
-│   └── vite.config.js       # Vite config
+│   │   ├── components/          # Reusable UI components
+│   │   ├── pages/               # Page components
+│   │   └── App.jsx              # Main app component
+│   ├── package.json
+│   └── vite.config.js
 │
-├── server/                  # Node.js + Express backend
-│   ├── models/              # MongoDB schemas
-│   ├── routes/              # API routes (auth, user)
-│   ├── controllers/         # Business logic (auth handlers, etc.)
-│   └── server.js            # Main Express entry point
-│
-└── README.md                # Project documentation
-
-
+├── nginx/                        # Nginx config (optional)
+├── docker-compose.yml            # Production compose
+├── Dockerfile                    # Multi-stage build
+└── README.md                     # This file
+```
 
 ---
 
-##  Getting Started
+## 🐳 Docker Deployment
 
-###  Prerequisites
+### Build Custom Image
+```bash
+docker build -t susclass-lms:latest .
+```
 
-- Node.js v18+
-- MongoDB local or Atlas instance
+### Run Container
+```bash
+docker run -d \
+  --name lms-app \
+  -p 5000:5000 \
+  -e DATABASE_URL=postgresql://user:pass@host:5432/db \
+  -e JWT_SECRET=your-secret \
+  susclass-lms:latest
+```
 
-###  Setup
+### Docker Compose Services
+- **postgres**: PostgreSQL 15 database with auto-initialization
+- **redis**: Redis cache for performance optimization
+- **mailhog**: Local SMTP server for development
+- **backend**: Node.js app serving both API and frontend
 
-# ⚙️ Getting Started
+---
 
-# 🔧 Prerequisites:
-# - Node.js v18+ must be installed
-# - MongoDB running locally or an Atlas URI ready
+## 💻 Local Development
 
+### Without Docker
 
+#### Backend
+```bash
+cd backend
+npm install
+cp .env.example .env
+# Edit .env with your database credentials
+node server.js
+```
 
-# 1. Set up the Client
-npm create vite@latest client -- --template react
+#### Frontend
+```bash
 cd client
 npm install
-# Optional: install Tailwind CSS
-npm install -D tailwindcss postcss autoprefixer
-npx tailwindcss init -p
+cp .env.example .env
+# Set VITE_API_URL=http://localhost:5000/api
+npm run dev -- --host
+```
 
-# Configure Tailwind in tailwind.config.js and index.css accordingly
-# Now start client
-npm run dev
+Access:
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:5000/api
 
-# 2. Set up the Server
-cd ..
-mkdir server
-cd server
-npm init -y
-npm install express mongoose dotenv cors
+---
 
-# Create server.js and add your Express server logic
-# Example:
-echo "require('dotenv').config();
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const app = express();
+## 📚 Key Features Guide
 
-app.use(cors());
-app.use(express.json());
+### Creating Modules
+1. Login as teacher
+2. Navigate to "Create Module"
+3. Add title, subject, description
+4. Add steps: Video URL, Text/PDF, Coding Problem, MCQ Test, Jitsi Live
+5. Publish to students
 
-mongoose.connect(process.env.MONGO_URI).then(() => {
-  console.log('MongoDB connected');
-});
+### MCQ Test Creation
+Upload CSV with format:
+```csv
+question,option_a,option_b,option_c,option_d,correct_answer,difficulty
+What is 2+2?,3,4,5,6,B,easy
+```
 
-app.listen(5000, () => console.log('Server running on port 5000'));" > server.js
+### Live Sessions
+1. Add "Jitsi Live" step to module
+2. Set meeting link and schedule
+3. Students see in "Live Classes" calendar
+4. Join directly from platform
 
-# Create .env file
-echo "MONGO_URI=mongodb://localhost:27017/sustainable_classroom" > .env
+### Time Tracking
+- Automatic session tracking while logged in
+- Persists across page navigation
+- Daily study time statistics
+- Consecutive day streaks
 
-# Start the backend server
-node server.js
+---
 
+## 🔧 Configuration
 
-API Endpoints
+### Environment Variables
 
-Auth
-bash
-Copy
-Edit
-POST /api/auth/register
-POST /api/auth/login
-More coming soon…
+**Backend (.env in root or backend/):**
+```env
+NODE_ENV=production
+PORT=5000
+
+# Database
+DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+DB_SSL=false
+
+# Auth
+JWT_SECRET=your-jwt-secret-key
+ADMIN_EMAIL=admin@school.local
+ADMIN_PASSWORD=Admin@2026
+
+# Email (Gmail)
+GMAIL_USER=your-email@gmail.com
+GMAIL_APP_PASSWORD=your-16-char-app-password
+
+# Email (SMTP alternative)
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=user
+SMTP_PASSWORD=pass
+EMAIL_FROM_NAME=School LMS
+EMAIL_FROM_ADDRESS=noreply@school.local
+
+# Frontend URL (for email links)
+FRONTEND_URL=http://localhost:5000
+```
+
+**Frontend (.env in client/):**
+```env
+# API URL (empty for same-origin in production)
+VITE_API_URL=
+
+# For development, point to backend
+VITE_API_URL=http://localhost:5000/api
+```
+
+---
+
+## 🗄️ Database Setup
+
+The database initializes automatically with Docker Compose. For manual setup:
+
+```bash
+cd backend
+psql -U your_user -d your_database -f FRESH-COMPLETE-DATABASE.sql
+psql -U your_user -d your_database -f add-module-progress-tracking.sql
+psql -U your_user -d your_database -f add-coding-submissions.sql
+psql -U your_user -d your_database -f add-inapp-notifications-table.sql
+```
+
+---
+
+## 📧 Email Configuration
+
+### Gmail Setup (Production)
+1. Enable 2FA on your Google account
+2. Generate App Password: https://myaccount.google.com/apppasswords
+3. Use in GMAIL_APP_PASSWORD environment variable
+
+### MailHog (Development)
+- Automatically configured in docker-compose
+- View all emails at http://localhost:8025
+- No actual emails sent
+
+---
+
+## 🔐 Security Notes
+
+- Change default admin password immediately
+- Use strong JWT_SECRET (32+ random characters)
+- Enable DB_SSL=true for production databases
+- Keep .env files out of version control
+- Use HTTPS in production (Nginx/reverse proxy)
+
+---
+
+## 📊 Performance Optimization
+
+### Caching (Built-in)
+- In-memory cache for frequently accessed data
+- 1-5 minute TTL depending on data type
+- Automatic cache invalidation on updates
+
+### Database Connection Pool
+- Max 20 connections
+- 30s idle timeout
+- Optimized query performance
+
+### Redis (Optional)
+- Uncomment redis config in docker-compose.yml
+- Set REDIS_URL in environment variables
+- Faster caching for high-traffic scenarios
+
+---
+
+## 🧪 Testing
+
+### API Health Check
+```bash
+curl http://localhost:5000/api/health
+```
+
+### Test Login
+```bash
+curl -X POST http://localhost:5000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@school.local","password":"Admin@2026","role":"admin"}'
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### Docker Issues
+```bash
+# View logs
+docker-compose logs backend
+docker-compose logs postgres
+
+# Restart services
+docker-compose restart
+
+# Full rebuild
+docker-compose down
+docker-compose up --build
+```
+
+### Database Connection Failed
+- Verify DATABASE_URL format
+- Check PostgreSQL is running: `docker-compose ps`
+- Test connection: `docker exec -it lms-database psql -U lms_admin -d sustainable_classroom`
+
+### Email Not Sending
+- Check GMAIL_USER and GMAIL_APP_PASSWORD
+- For MailHog: verify http://localhost:8025
+- Check backend logs: `docker-compose logs backend | grep EMAIL`
+
+---
+
+## 📝 License
+
+This project is developed for the Africa Sustainable Classroom Challenge.
+
+---
+
+## 👥 Contributing
+
+1. Fork repository
+2. Create feature branch: `git checkout -b feature/new-feature`
+3. Commit changes: `git commit -m 'Add new feature'`
+4. Push branch: `git push origin feature/new-feature`
+5. Open Pull Request
+
+---
+
+## 🆘 Support
+
+For issues, questions, or contributions:
+- GitHub Issues: https://github.com/susclassglobal-oss/susclasssrefine/issues
+- Email: susclass.global@gmail.com
+
+---
+
+## 🙏 Acknowledgments
+
+Built for the Africa Sustainable Classroom Challenge – empowering education through technology.
