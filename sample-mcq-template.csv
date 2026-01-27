@@ -1,0 +1,21 @@
+question,option_a,option_b,option_c,option_d,correct_answer
+Which logic gate is known as a universal gate?,AND,OR,XOR,NAND,D
+In a CE amplifier the phase difference is,0°,90°,180°,270°,C
+Which modulation technique is most resistant to noise?,AM,FM,PAM,ASK,B
+What is the binary equivalent of decimal 10?,1010,1001,1100,1111,A
+Which protocol is used for email transmission?,HTTP,FTP,SMTP,TCP,C
+What does RAM stand for?,Read Access Memory,Random Access Memory,Rapid Access Memory,Real Access Memory,B
+Which programming language is known for web development?,Python,Java,JavaScript,C++,C
+What is the speed of light in vacuum?,3x10^8 m/s,2x10^8 m/s,4x10^8 m/s,5x10^8 m/s,A
+Which device converts AC to DC?,Transformer,Rectifier,Inverter,Amplifier,B
+What is the unit of electric current?,Volt,Ampere,Ohm,Watt,B
+Which layer of OSI model handles routing?,Physical,Data Link,Network,Transport,C
+What is the time complexity of binary search?,O(n),O(log n),O(n^2),O(1),B
+Which gate gives output 1 when inputs are different?,AND,OR,XOR,NAND,C
+What is the base of hexadecimal number system?,2,8,10,16,D
+Which memory is volatile?,ROM,RAM,EPROM,Flash,B
+What is the full form of CPU?,Central Processing Unit,Central Program Unit,Computer Processing Unit,Central Processor Unit,A
+Which protocol is connectionless?,TCP,UDP,FTP,HTTP,B
+What is the range of signed 8-bit integer?,-128 to 127,-256 to 255,0 to 255,-127 to 128,A
+Which sorting algorithm has best average case?,Bubble Sort,Quick Sort,Selection Sort,Insertion Sort,B
+What is the purpose of a compiler?,Execute code,Translate code,Debug code,Test code,B

@@ -1,0 +1,55 @@
+# Render.com Blueprint for Sustainable Classroom LMS
+# This file configures automatic deployment on every push
+#
+# DEPLOYMENT: Uses Docker to build frontend + backend together
+
+services:
+  # Full-Stack Web Service (Docker)
+  - type: web
+    name: sustainable-classroom-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: DATABASE_URL
+        sync: false  # Set manually in Render dashboard
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_APP_PASSWORD
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: VITE_API_URL
+        value: ""  # Empty = same-origin API calls
+
+# Database (optional - can use external Neon PostgreSQL instead)
+# databases:
+#   - name: sustainable-classroom-db
+#     plan: free
+#     databaseName: sustainable_classroom
+#     user: lms_user

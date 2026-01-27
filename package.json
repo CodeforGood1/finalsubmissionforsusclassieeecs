@@ -1,0 +1,14 @@
+{
+  "name": "sustainable-classroom-lms",
+  "version": "1.0.0",
+  "description": "Full-stack LMS with React frontend and Node.js backend",
+  "scripts": {
+    "build": "cd client && npm ci && VITE_API_URL='' npm run build && mkdir -p ../backend/public && cp -r dist/* ../backend/public/",
+    "build:win": "cd client && npm ci && set VITE_API_URL= && npm run build && if not exist ..\\backend\\public mkdir ..\\backend\\public && xcopy dist\\* ..\\backend\\public\\ /E /Y",
+    "start": "cd backend && node server.js",
+    "install:all": "cd client && npm ci && cd ../backend && npm ci"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

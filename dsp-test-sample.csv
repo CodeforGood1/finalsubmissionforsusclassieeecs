@@ -1,0 +1,16 @@
+question,option_a,option_b,option_c,option_d,correct_answer
+What is the Nyquist sampling rate for a signal with maximum frequency of 10 kHz?,5 kHz,10 kHz,20 kHz,40 kHz,C
+Which transform is used to convert time-domain signals to frequency-domain?,Laplace Transform,Fourier Transform,Z-Transform,Wavelet Transform,B
+What does DFT stand for?,Digital Fourier Transform,Discrete Fourier Transform,Direct Fourier Transform,Dual Fourier Transform,B
+The Z-transform is used for analyzing which type of signals?,Continuous-time signals,Discrete-time signals,Analog signals,Random signals,B
+What is the main advantage of FFT over DFT?,Less memory usage,Faster computation,Better accuracy,Simpler algorithm,B
+In digital filters what does FIR stand for?,Fast Impulse Response,Finite Impulse Response,Fixed Impulse Response,Frequency Impulse Response,B
+What is aliasing in DSP?,Signal amplification,Signal distortion due to under-sampling,Signal filtering,Signal modulation,B
+The unit of frequency in digital signal processing is?,Hertz,Radians per second,Samples per second,Both A and C,D
+What is the order of a digital filter?,Number of delay elements,Number of multipliers,Number of adders,Number of coefficients,A
+Which window function has the narrowest main lobe?,Rectangular,Hamming,Hanning,Blackman,A
+What is quantization in ADC?,Converting analog to digital,Rounding off amplitude values,Sampling the signal,Filtering the signal,B
+The convolution of two sequences in time domain is equivalent to what in frequency domain?,Addition,Subtraction,Multiplication,Division,C
+What is the primary application of DSP in telecommunications?,Data storage,Signal compression,Power management,Hardware design,B
+Which of the following is a non-recursive filter?,IIR filter,FIR filter,Butterworth filter,Chebyshev filter,B
+What does the term 'pole' refer to in digital filters?,Roots of numerator,Roots of denominator,Maximum frequency,Minimum frequency,B

@@ -1,0 +1,15 @@
+-- ============================================================
+-- QUICK SETUP GUIDE FOR NOTIFICATION SYSTEM
+-- ============================================================
+-- 
+-- Run this in your database client:
+-- 1. Open pgAdmin, DBeaver, or similar
+-- 2. Connect to your PostgreSQL database using the credentials in your .env file
+-- 3. Open backend/notification-system.sql
+-- 4. Execute the entire script
+--
+-- OR simply copy the entire contents of backend/notification-system.sql
+-- and paste into your database client's SQL editor, then execute.
+--
+-- ============================================================
+
