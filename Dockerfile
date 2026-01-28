@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for Sustainable Classroom LMS
 
 # Stage 1: Build Frontend
-FROM node:18-alpine AS frontend-builder
+FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app/client
 
@@ -16,20 +16,19 @@ ENV VITE_API_URL=""
 RUN npm run build
 
 # Stage 2: Build Backend + Runtime
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app/backend
 
+# Only need postgresql-client and curl for runtime
 RUN apk add --no-cache \
     postgresql-client \
-    curl \
-    python3 \
-    make \
-    g++
+    curl
 
 COPY backend/package*.json ./
 
-RUN npm ci --only=production --build-from-source
+# bcryptjs is pure JavaScript, no native compilation needed
+RUN npm ci --omit=dev
 
 # Copy all backend source files
 COPY backend/*.js ./

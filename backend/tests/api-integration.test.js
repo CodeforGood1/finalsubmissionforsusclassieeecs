@@ -3,7 +3,7 @@
 
 const request = require('supertest');
 const Database = require('better-sqlite3');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 // Mock setup

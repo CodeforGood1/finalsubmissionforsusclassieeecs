@@ -1,9 +1,7 @@
-version: '3.8'
-
+# Sustainable Classroom LMS - Production Stack
 # Production deployment using pre-built images from GitHub Container Registry
 # No local Docker build required - just docker-compose up
 # Images: ghcr.io/susclassglobal-oss/susclasssrefine:latest
-# ============================================================
 
 services:
   # ============================================================
@@ -102,7 +100,7 @@ services:
 
   # ============================================================
   jitsi-web:
-    image: jitsi/web:stable-9457
+    image: jitsi/web:stable-9823
     container_name: lms-jitsi-web
     ports:
       - "8443:443"
@@ -129,7 +127,7 @@ services:
     restart: unless-stopped
 
   jitsi-prosody:
-    image: jitsi/prosody:stable-9457
+    image: jitsi/prosody:stable-9823
     container_name: lms-jitsi-prosody
     expose:
       - "5222"
@@ -159,7 +157,7 @@ services:
     restart: unless-stopped
 
   jitsi-jicofo:
-    image: jitsi/jicofo:stable-9457
+    image: jitsi/jicofo:stable-9823
     container_name: lms-jitsi-jicofo
     environment:
       - JICOFO_AUTH_USER=focus
@@ -179,7 +177,7 @@ services:
     restart: unless-stopped
 
   jitsi-jvb:
-    image: jitsi/jvb:stable-9457
+    image: jitsi/jvb:stable-9823
     container_name: lms-jitsi-jvb
     ports:
       - "10000:10000/udp"

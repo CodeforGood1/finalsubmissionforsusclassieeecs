@@ -1,8 +1,6 @@
-version: '3.8'
-
+# Sustainable Classroom LMS - Local Development Stack
 # Africa Sustainable Classroom Challenge - Finals Edition
 # Complete offline deployment with all services local
-# ============================================================
 
 services:
   # ============================================================
@@ -131,7 +129,7 @@ services:
   # Full local Jitsi stack for offline video conferencing
   
   jitsi-web:
-    image: jitsi/web:stable-9457
+    image: jitsi/web:stable-9823
     container_name: lms-jitsi-web
     ports:
       - "8443:443"
@@ -162,7 +160,7 @@ services:
     restart: unless-stopped
 
   jitsi-prosody:
-    image: jitsi/prosody:stable-9457
+    image: jitsi/prosody:stable-9823
     container_name: lms-jitsi-prosody
     expose:
       - "5222"
@@ -201,7 +199,7 @@ services:
     restart: unless-stopped
 
   jitsi-jicofo:
-    image: jitsi/jicofo:stable-9457
+    image: jitsi/jicofo:stable-9823
     container_name: lms-jitsi-jicofo
     environment:
       - AUTH_TYPE=internal
@@ -226,7 +224,7 @@ services:
     restart: unless-stopped
 
   jitsi-jvb:
-    image: jitsi/jvb:stable-9457
+    image: jitsi/jvb:stable-9823
     container_name: lms-jitsi-jvb
     ports:
       - "10000:10000/udp"
