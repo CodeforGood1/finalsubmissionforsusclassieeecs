@@ -1958,11 +1958,11 @@ app.get('/api/teacher/module/:moduleId', authenticateToken, async (req, res) => 
   }
 });
 
-// 11c. Teacher: Update/Edit Module
+// 11c. Teacher: Update/Edit Module (supports multiple sections)
 app.put('/api/teacher/module/:moduleId', authenticateToken, async (req, res) => {
   try {
     const moduleId = req.params.moduleId;
-    const { topic, subject, steps, section } = req.body;
+    const { topic, subject, steps, section, sections } = req.body;
     const teacherId = req.user.id;
     
     // Verify teacher owns this module
@@ -1975,39 +1975,42 @@ app.put('/api/teacher/module/:moduleId', authenticateToken, async (req, res) => 
       return res.status(403).json({ error: "Not authorized to edit this module" });
     }
     
-    // Update module - include section if provided
-    let query, params;
-    if (section !== undefined) {
-      query = `
-        UPDATE modules 
-        SET topic_title = $1, subject = $2, steps = $3, step_count = $4, section = $5
-        WHERE id = $6
-        RETURNING id
-      `;
-      params = [topic, subject, JSON.stringify(steps), steps.length, section, moduleId];
-    } else {
-      query = `
-        UPDATE modules 
-        SET topic_title = $1, subject = $2, steps = $3, step_count = $4
-        WHERE id = $5
-        RETURNING id
-      `;
-      params = [topic, subject, JSON.stringify(steps), steps.length, moduleId];
+    // Handle sections - support both single section and multiple sections array
+    let sectionsArray = [];
+    if (sections && Array.isArray(sections)) {
+      sectionsArray = sections;
+    } else if (section) {
+      sectionsArray = [section];
     }
     
+    // Update module with sections support
+    const query = `
+      UPDATE modules 
+      SET topic_title = $1, 
+          subject = $2, 
+          steps = $3, 
+          step_count = $4, 
+          section = $5,
+          sections = $6
+      WHERE id = $7
+      RETURNING id
+    `;
+    const primarySection = sectionsArray.length > 0 ? sectionsArray[0] : (section || '');
+    const params = [topic, subject, JSON.stringify(steps), steps.length, primarySection, JSON.stringify(sectionsArray), moduleId];
+    
     await pool.query(query, params);
-    res.json({ success: true, message: "Module updated successfully" });
+    res.json({ success: true, message: "Module updated successfully", sections: sectionsArray });
   } catch (err) {
     console.error("Module Update Error:", err);
     res.status(500).json({ error: "Failed to update module: " + err.message });
   }
 });
 
-// 11c2. Teacher: Update Module Section Only
+// 11c2. Teacher: Update Module Sections (supports multiple sections)
 app.put('/api/teacher/module/:moduleId/section', authenticateToken, async (req, res) => {
   try {
     const moduleId = req.params.moduleId;
-    const { section } = req.body;
+    const { section, sections } = req.body;
     const teacherId = req.user.id;
     
     // Verify teacher owns this module
@@ -2020,12 +2023,27 @@ app.put('/api/teacher/module/:moduleId/section', authenticateToken, async (req, 
       return res.status(403).json({ error: "Not authorized to edit this module" });
     }
     
-    await pool.query('UPDATE modules SET section = $1 WHERE id = $2', [section, moduleId]);
+    // Handle sections - support both single section and multiple sections array
+    let sectionsArray = [];
+    if (sections && Array.isArray(sections)) {
+      sectionsArray = sections;
+    } else if (section) {
+      sectionsArray = [section];
+    }
     
-    // Invalidate cache
-    cache.invalidate(`modules_section_${section.toLowerCase()}`);
+    const primarySection = sectionsArray.length > 0 ? sectionsArray[0] : '';
     
-    res.json({ success: true, message: `Module section updated to: ${section}` });
+    await pool.query(
+      'UPDATE modules SET section = $1, sections = $2 WHERE id = $3', 
+      [primarySection, JSON.stringify(sectionsArray), moduleId]
+    );
+    
+    // Invalidate cache for all affected sections
+    sectionsArray.forEach(s => {
+      cache.invalidate(`modules_section_${s.toLowerCase()}`);
+    });
+    
+    res.json({ success: true, message: `Module sections updated to: ${sectionsArray.join(', ')}`, sections: sectionsArray });
   } catch (err) {
     console.error("Module Section Update Error:", err);
     res.status(500).json({ error: "Failed to update module section" });
@@ -2057,7 +2075,7 @@ app.delete('/api/teacher/module/:moduleId', authenticateToken, async (req, res) 
   }
 });
 
-// 12. Student: Fetch My Modules (Based on Student's Section)
+// 12. Student: Fetch My Modules (Based on Student's Section - supports multi-section modules)
 app.get('/api/student/my-modules', authenticateToken, async (req, res) => {
   try {
     const studentId = req.user.id;
@@ -2085,12 +2103,16 @@ app.get('/api/student/my-modules', authenticateToken, async (req, res) => {
       return res.json(cached);
     }
     
-    // Fetch modules for this section - normalize both sides for comparison
+    // Fetch modules for this section - check both old 'section' column AND new 'sections' JSONB array
     // Handle "CSE A", "CSE-A", "cse a", etc.
     const modulesResult = await pool.query(
-      `SELECT id, topic_title, section, subject, teacher_name, step_count, created_at 
+      `SELECT id, topic_title, section, sections, subject, teacher_name, step_count, created_at 
        FROM modules 
        WHERE UPPER(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = $1
+          OR EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(COALESCE(sections, '[]'::jsonb)) AS s 
+            WHERE UPPER(REGEXP_REPLACE(REGEXP_REPLACE(s, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = $1
+          )
        ORDER BY created_at DESC`,
       [fullSection]
     );
@@ -2714,6 +2736,132 @@ app.get('/api/teacher/test/:testId/submissions', authenticateToken, async (req, 
   }
 });
 
+// 16b. Teacher: Update MCQ Test (supports multiple sections)
+app.put('/api/teacher/test/:testId', authenticateToken, async (req, res) => {
+  try {
+    const testId = req.params.testId;
+    const { title, description, questions, section, sections, start_date, deadline } = req.body;
+    const teacherId = req.user.id;
+    
+    // Verify teacher owns this test
+    const checkOwner = await pool.query(
+      'SELECT id FROM mcq_tests WHERE id = $1 AND teacher_id = $2',
+      [testId, teacherId]
+    );
+    
+    if (checkOwner.rows.length === 0) {
+      return res.status(403).json({ error: "Not authorized to edit this test" });
+    }
+    
+    // Handle sections - support both single section and multiple sections array
+    let sectionsArray = [];
+    if (sections && Array.isArray(sections)) {
+      sectionsArray = sections;
+    } else if (section) {
+      sectionsArray = [section];
+    }
+    
+    const primarySection = sectionsArray.length > 0 ? sectionsArray[0] : '';
+    
+    // Update test
+    const query = `
+      UPDATE mcq_tests 
+      SET title = $1, 
+          description = $2, 
+          questions = $3, 
+          total_questions = $4, 
+          section = $5,
+          sections = $6,
+          start_date = $7,
+          deadline = $8
+      WHERE id = $9
+      RETURNING id
+    `;
+    
+    const params = [
+      title, 
+      description, 
+      JSON.stringify(questions), 
+      questions.length, 
+      primarySection, 
+      JSON.stringify(sectionsArray),
+      start_date,
+      deadline,
+      testId
+    ];
+    
+    await pool.query(query, params);
+    res.json({ success: true, message: "Test updated successfully", sections: sectionsArray });
+  } catch (err) {
+    console.error("Test Update Error:", err);
+    res.status(500).json({ error: "Failed to update test: " + err.message });
+  }
+});
+
+// 16c. Teacher: Update Test Sections Only (supports multiple sections)
+app.put('/api/teacher/test/:testId/section', authenticateToken, async (req, res) => {
+  try {
+    const testId = req.params.testId;
+    const { section, sections } = req.body;
+    const teacherId = req.user.id;
+    
+    // Verify teacher owns this test
+    const checkOwner = await pool.query(
+      'SELECT id FROM mcq_tests WHERE id = $1 AND teacher_id = $2',
+      [testId, teacherId]
+    );
+    
+    if (checkOwner.rows.length === 0) {
+      return res.status(403).json({ error: "Not authorized to edit this test" });
+    }
+    
+    // Handle sections - support both single section and multiple sections array
+    let sectionsArray = [];
+    if (sections && Array.isArray(sections)) {
+      sectionsArray = sections;
+    } else if (section) {
+      sectionsArray = [section];
+    }
+    
+    const primarySection = sectionsArray.length > 0 ? sectionsArray[0] : '';
+    
+    await pool.query(
+      'UPDATE mcq_tests SET section = $1, sections = $2 WHERE id = $3', 
+      [primarySection, JSON.stringify(sectionsArray), testId]
+    );
+    
+    res.json({ success: true, message: `Test sections updated to: ${sectionsArray.join(', ')}`, sections: sectionsArray });
+  } catch (err) {
+    console.error("Test Section Update Error:", err);
+    res.status(500).json({ error: "Failed to update test section" });
+  }
+});
+
+// 16d. Teacher: Delete MCQ Test
+app.delete('/api/teacher/test/:testId', authenticateToken, async (req, res) => {
+  try {
+    const testId = req.params.testId;
+    const teacherId = req.user.id;
+    
+    // Verify teacher owns this test
+    const checkOwner = await pool.query(
+      'SELECT id FROM mcq_tests WHERE id = $1 AND teacher_id = $2',
+      [testId, teacherId]
+    );
+    
+    if (checkOwner.rows.length === 0) {
+      return res.status(403).json({ error: "Not authorized to delete this test" });
+    }
+    
+    // Delete test (cascades to submissions)
+    await pool.query('DELETE FROM mcq_tests WHERE id = $1', [testId]);
+    res.json({ success: true, message: "Test deleted successfully" });
+  } catch (err) {
+    console.error("Test Delete Error:", err);
+    res.status(500).json({ error: "Failed to delete test: " + err.message });
+  }
+});
+
 // 17. Teacher: Get Student's Detailed Progress
 app.get('/api/teacher/student/:studentId/progress', authenticateToken, async (req, res) => {
   try {
@@ -2745,7 +2893,7 @@ app.get('/api/teacher/student/:studentId/progress', authenticateToken, async (re
   }
 });
 
-// 18. Student: Get My Tests (Pending & Completed) - Case-insensitive section matching
+// 18. Student: Get My Tests (Pending & Completed) - Case-insensitive section matching, supports multi-section
 app.get('/api/student/tests', authenticateToken, async (req, res) => {
   try {
     const student_id = req.user.id;
@@ -2766,7 +2914,7 @@ app.get('/api/student/tests', authenticateToken, async (req, res) => {
     
     console.log('[Student Tests] Looking for tests in section:', full_section);
     
-    // Get all tests with submission status - normalize both sides for comparison
+    // Get all tests with submission status - check both 'section' column AND 'sections' JSONB array
     const result = await pool.query(
       `SELECT 
         t.id,
@@ -2776,6 +2924,7 @@ app.get('/api/student/tests', authenticateToken, async (req, res) => {
         t.deadline,
         t.teacher_name,
         t.section,
+        t.sections,
         sub.id as submission_id,
         sub.score,
         sub.percentage,
@@ -2792,7 +2941,13 @@ app.get('/api/student/tests', authenticateToken, async (req, res) => {
        FROM mcq_tests t
        LEFT JOIN test_submissions sub ON t.id = sub.test_id AND sub.student_id = $1
        WHERE t.is_active = true 
-         AND UPPER(REGEXP_REPLACE(REGEXP_REPLACE(t.section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = $2
+         AND (
+           UPPER(REGEXP_REPLACE(REGEXP_REPLACE(t.section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = $2
+           OR EXISTS (
+             SELECT 1 FROM jsonb_array_elements_text(COALESCE(t.sections, '[]'::jsonb)) AS s 
+             WHERE UPPER(REGEXP_REPLACE(REGEXP_REPLACE(s, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = $2
+           )
+         )
        ORDER BY t.deadline ASC`,
       [student_id, full_section]
     );
