@@ -39,6 +39,7 @@ DROP FUNCTION IF EXISTS create_index_if_not_exists(TEXT, TEXT, TEXT) CASCADE;
 
 -- Drop tables (in correct order due to foreign keys)
 DROP TABLE IF EXISTS in_app_notifications CASCADE;
+DROP TABLE IF EXISTS teacher_student_allocations CASCADE;
 DROP TABLE IF EXISTS test_submissions CASCADE;
 DROP TABLE IF EXISTS mcq_tests CASCADE;
 DROP TABLE IF EXISTS modules CASCADE;
@@ -785,7 +786,7 @@ BEGIN
 END $$;
 
 -- Table 6: TEACHER_STUDENT_ALLOCATIONS (Many-to-Many relationship)
-CREATE TABLE teacher_student_allocations (
+CREATE TABLE IF NOT EXISTS teacher_student_allocations (
     id SERIAL PRIMARY KEY,
     teacher_id INTEGER NOT NULL,
     student_id INTEGER NOT NULL,
