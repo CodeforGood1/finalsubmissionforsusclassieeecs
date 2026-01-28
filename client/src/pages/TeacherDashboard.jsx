@@ -133,6 +133,14 @@ const fetchTeacherProfile = useCallback(async () => {
     console.log("Teacher profile loaded:", data);
     setTeacherInfo(data);
     
+    // Store the allocated_sections from database (this is the source of truth)
+    const allocatedSectionsFromDB = data.allocated_sections || [];
+    
+    // Set initial selected section if teacher has allocations
+    if (allocatedSectionsFromDB.length > 0) {
+      setSelectedSection(allocatedSectionsFromDB[0]);
+    }
+    
     // Fetch teacher's allocated students from new system
     const allocRes = await fetch(`${API_BASE_URL}/api/teacher/my-students`, {
       headers: authHeaders()
@@ -169,19 +177,16 @@ const fetchTeacherProfile = useCallback(async () => {
       console.log("Grouped allocations:", allocationsArray);
       setAllAllocations(allocationsArray);
       
-      // Extract unique sections for backward compatibility
-      const sections = [...new Set(allocData.map(item => `${item.class_dept} ${item.section}`))];
-      if (sections.length > 0) {
-        setSelectedSection(sections[0]);
-        setTeacherInfo(prev => ({ ...prev, allocated_sections: sections }));
-      }
-      
-      // Auto-select subject if teacher has only one subject
+      // Don't overwrite allocated_sections - keep the one from database
+      // Just auto-select subject if teacher has only one
       const uniqueSubjects = [...new Set(allocData.map(item => item.subject))];
       if (uniqueSubjects.length === 1) {
         setSelectedSubject(uniqueSubjects[0]);
         console.log("Auto-selected single subject:", uniqueSubjects[0]);
       }
+    } else {
+      // No student data, but teacher may still have allocated_sections from DB
+      console.log("No student allocations found, using sections from DB:", allocatedSectionsFromDB);
     }
   } catch (err) { 
     console.error("Failed to connect to server:", err);
