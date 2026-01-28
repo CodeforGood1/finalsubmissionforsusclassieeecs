@@ -106,7 +106,7 @@ const Chat = ({ onClose }) => {
 
   const fetchRooms = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/chat/rooms`, {
+      const response = await fetch(`${API_BASE_URL}/api/chat/rooms`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await response.json();
@@ -120,7 +120,7 @@ const Chat = ({ onClose }) => {
 
   const fetchMessages = async (roomId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/chat/rooms/${roomId}/messages`, {
+      const response = await fetch(`${API_BASE_URL}/api/chat/rooms/${roomId}/messages`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await response.json();
@@ -137,7 +137,7 @@ const Chat = ({ onClose }) => {
 
   const fetchAvailableUsers = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/chat/available-users`, {
+      const response = await fetch(`${API_BASE_URL}/api/chat/available-users`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await response.json();
@@ -149,7 +149,7 @@ const Chat = ({ onClose }) => {
 
   const startNewChat = async (targetUser) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/chat/room`, {
+      const response = await fetch(`${API_BASE_URL}/api/chat/room`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

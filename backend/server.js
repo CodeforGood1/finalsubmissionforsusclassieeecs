@@ -1894,19 +1894,21 @@ app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
   }
 });
 
-// 11. Teacher: Fetch Modules for a Section (supports both single section and sections array)
+// 11. Teacher: Fetch Modules for a Section (only shows teacher's own modules)
 app.get('/api/teacher/modules/:section', authenticateToken, async (req, res) => {
   try {
     const section = req.params.section;
+    const teacherId = req.user.id;
     
     // Match against either the legacy 'section' column OR the 'sections' JSONB array
+    // ONLY return modules created by THIS teacher
     const result = await pool.query(
       `SELECT id, topic_title, section, sections, subject, teacher_name, step_count, created_at 
        FROM modules 
-       WHERE LOWER(section) = LOWER($1) 
-         OR sections @> $2::jsonb
+       WHERE teacher_id = $3 
+         AND (LOWER(section) = LOWER($1) OR sections @> $2::jsonb)
        ORDER BY created_at DESC`,
-      [section, JSON.stringify([section])]
+      [section, JSON.stringify([section]), teacherId]
     );
     
     res.json(result.rows);
@@ -2491,6 +2493,85 @@ app.get('/api/teacher/module/:moduleId/statistics', authenticateToken, async (re
   } catch (err) {
     console.error("Module Statistics Error:", err);
     res.status(500).json({ error: "Failed to load module statistics" });
+  }
+});
+
+// 13e. Teacher: Get Coding Submissions Dashboard
+app.get('/api/teacher/coding-submissions', authenticateToken, async (req, res) => {
+  try {
+    const teacherId = req.user.id;
+    
+    // Get all coding submissions for modules created by this teacher
+    const result = await pool.query(
+      `SELECT 
+        ss.id as submission_id,
+        ss.student_id,
+        s.name as student_name,
+        s.email as student_email,
+        s.class_dept || ' ' || s.section as section,
+        m.id as module_id,
+        m.topic_title,
+        m.subject,
+        ss.language,
+        ss.test_cases_passed,
+        ss.total_test_cases,
+        ss.score,
+        ss.submitted_at
+       FROM student_submissions ss
+       JOIN students s ON ss.student_id = s.id
+       JOIN modules m ON ss.module_id = m.id
+       WHERE m.teacher_id = $1
+       ORDER BY ss.submitted_at DESC`,
+      [teacherId]
+    );
+    
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Teacher Coding Submissions Error:", err);
+    res.status(500).json({ error: "Failed to load coding submissions" });
+  }
+});
+
+// 13f. Teacher: Get Coding Submissions for a Module
+app.get('/api/teacher/module/:moduleId/coding-submissions', authenticateToken, async (req, res) => {
+  try {
+    const teacherId = req.user.id;
+    const moduleId = req.params.moduleId;
+    
+    // Verify teacher owns this module
+    const checkOwner = await pool.query(
+      'SELECT id FROM modules WHERE id = $1 AND teacher_id = $2',
+      [moduleId, teacherId]
+    );
+    
+    if (checkOwner.rows.length === 0) {
+      return res.status(403).json({ error: "Not authorized to view this module's submissions" });
+    }
+    
+    const result = await pool.query(
+      `SELECT 
+        ss.id as submission_id,
+        ss.student_id,
+        s.name as student_name,
+        s.email as student_email,
+        s.class_dept || ' ' || s.section as section,
+        ss.language,
+        ss.submitted_code,
+        ss.test_cases_passed,
+        ss.total_test_cases,
+        ss.score,
+        ss.submitted_at
+       FROM student_submissions ss
+       JOIN students s ON ss.student_id = s.id
+       WHERE ss.module_id = $1
+       ORDER BY ss.submitted_at DESC`,
+      [moduleId]
+    );
+    
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Module Coding Submissions Error:", err);
+    res.status(500).json({ error: "Failed to load module submissions" });
   }
 });
 
@@ -3205,67 +3286,6 @@ app.get('/api/student/progress', authenticateToken, async (req, res) => {
 });
 
 // --- ROUTES: CODING WORKBENCH ---
-
-// 22. Student: Submit Code Solution
-app.post('/api/student/submit-code', authenticateToken, async (req, res) => {
-  try {
-    const { moduleId, code, language, testCases } = req.body;
-    const studentId = req.user.id;
-    const studentEmail = req.user.email;
-
-    if (!testCases || testCases.length === 0) {
-      return res.status(400).json({ error: "No test cases provided." });
-    }
-
-    let passedCount = 0;
-
-    // --- EVALUATION LOOP ---
-    for (const tc of testCases) {
-      const response = await fetch("https://emkc.org/api/v2/piston/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          language: language,
-          version: "*",
-          files: [{ content: code }],
-          stdin: tc.input,
-        }),
-      });
-
-      const result = await response.json();
-      const actualOutput = (result.run.stdout || "").trim();
-
-      // Compare output with expected result
-      if (actualOutput === tc.expected.trim()) {
-        passedCount++;
-      }
-    }
-
-    // --- CALCULATION ---
-    const totalCases = testCases.length;
-    const finalScore = ((passedCount / totalCases) * 100).toFixed(2);
-
-    // --- DATABASE STORAGE ---
-    const query = `
-      INSERT INTO student_submissions (student_id, student_email, module_id, submitted_code, language, test_cases_passed, total_test_cases, score) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
-      RETURNING score, test_cases_passed, total_test_cases;
-    `;
-    const values = [studentId, studentEmail, moduleId, code, language, passedCount, totalCases, finalScore];
-    const dbResult = await pool.query(query, values);
-
-    // --- RESPONSE FOR POPUP ---
-    res.json({ 
-      success: true, 
-      score: dbResult.rows[0].score, 
-      passed: dbResult.rows[0].test_cases_passed, 
-      total: dbResult.rows[0].total_test_cases 
-    });
-  } catch (err) {
-    console.error("SERVER ERROR:", err.message);
-    res.status(500).json({ error: "Internal Server Error: " + err.message });
-  }
-});
 
 // ============================================================
 // NOTIFICATION SYSTEM ENDPOINTS
