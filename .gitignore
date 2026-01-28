@@ -42,6 +42,10 @@ client/uploads/
 logs/
 *.log
 
+# Temporary files
+temp/
+tmp/
+
 # Test scripts and internal docs
 test-api.ps1
 setup-notifications.ps1

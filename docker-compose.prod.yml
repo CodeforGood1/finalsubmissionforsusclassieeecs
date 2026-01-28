@@ -1,7 +1,8 @@
 version: '3.8'
 
-# Uses pre-built images from GitHub Container Registry
+# Production deployment using pre-built images from GitHub Container Registry
 # No local Docker build required - just docker-compose up
+# Images: ghcr.io/susclassglobal-oss/susclasssrefine:latest
 # ============================================================
 
 services:
