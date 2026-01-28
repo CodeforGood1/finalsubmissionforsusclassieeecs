@@ -255,10 +255,25 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
     }
   };
 
+  // Safety check to prevent blank screen
+  if (!allocatedSections) {
+    return (
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-slate-50 border-2 border-slate-200 rounded-3xl p-12 text-center">
+          <div className="animate-pulse space-y-4">
+            <div className="h-4 bg-slate-200 rounded w-3/4 mx-auto"></div>
+            <div className="h-4 bg-slate-200 rounded w-1/2 mx-auto"></div>
+          </div>
+          <p className="text-slate-400 mt-4">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl mx-auto space-y-10">
       {/* Check if teacher has allocated sections */}
-      {!allocatedSections || allocatedSections.length === 0 ? (
+      {allocatedSections.length === 0 ? (
         <div className="bg-amber-50 border-2 border-amber-200 rounded-3xl p-12 text-center">
           <svg className="w-16 h-16 text-amber-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />

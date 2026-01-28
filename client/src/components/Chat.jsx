@@ -19,6 +19,15 @@ const Chat = ({ onClose }) => {
   const token = localStorage.getItem('token');
   const userRole = localStorage.getItem('user_role');
 
+  // Handle escape key to close chat
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
   // Initialize socket connection
   useEffect(() => {
     const socketUrl = API_BASE_URL.replace('/api', '').replace('/api/', '') || 'http://localhost:5000';
@@ -218,18 +227,29 @@ const Chat = ({ onClose }) => {
         
         {/* Sidebar - Room List */}
         <div className="w-80 border-r border-slate-200 flex flex-col">
-          {/* Header */}
-          <div className="p-4 border-b border-slate-200 flex justify-between items-center">
-            <h2 className="font-bold text-lg">Messages</h2>
-            <button
-              onClick={() => { setShowNewChat(true); fetchAvailableUsers(); }}
-              className="p-2 hover:bg-slate-100 rounded-lg text-emerald-600"
-              title="New Chat"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
+          {/* Header with Close Button */}
+          <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-gradient-to-r from-emerald-500 to-emerald-600">
+            <h2 className="font-bold text-lg text-white">Messages</h2>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setShowNewChat(true); fetchAvailableUsers(); }}
+                className="p-2 hover:bg-white/20 rounded-lg text-white"
+                title="New Chat"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-white/20 rounded-lg text-white"
+                title="Close (ESC)"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           {/* Room List */}
