@@ -1,28 +1,13 @@
-// ============================================================
-// EMAIL NOTIFICATION SERVICE
-// ============================================================
-// Purpose: Send email notifications using Mailjet
-// Features:
-//   - Template-based email generation
-//   - Batch email sending
-//   - Retry logic for failed emails
-//   - Email tracking and logging
-// ============================================================
+// Email Notification Service - Mailjet integration
 
 const { Pool } = require('pg');
 
-// Database connection (reuse from main server or pass as parameter)
 let dbPool;
 
 const initializeNotificationService = (pool) => {
   dbPool = pool;
 };
 
-// ============================================================
-// MAILJET CONFIGURATION
-// ============================================================
-
-// Create Mailjet client
 const createMailjetClient = () => {
   const mjApiKeyPublic = process.env.MJ_APIKEY_PUBLIC;
   const mjApiKeyPrivate = process.env.MJ_APIKEY_PRIVATE;

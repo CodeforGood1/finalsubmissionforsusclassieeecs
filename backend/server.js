@@ -30,11 +30,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ============================================================
-// SECURITY MIDDLEWARE - On-Premise Security Layer
-// ============================================================
-
-// Compression for better performance
+// Security Middleware
 app.use(compression());
 
 // Security headers with Helmet

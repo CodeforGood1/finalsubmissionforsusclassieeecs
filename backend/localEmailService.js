@@ -1,14 +1,4 @@
-// ============================================================
-// LOCAL EMAIL SERVICE
-// ============================================================
-// Purpose: Handle email notifications locally for on-premise deployment
-// Replaces: Mailjet cloud email service
-// Features:
-//   - Local SMTP support (Postfix, MailHog, etc.)
-//   - Email queue with retry logic
-//   - Fallback to in-app notifications
-//   - Development mode with console logging
-// ============================================================
+// Local Email Service - On-premise SMTP handling
 
 const nodemailer = require('nodemailer');
 const fs = require('fs');

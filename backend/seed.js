@@ -1,14 +1,4 @@
-/**
- * ============================================================
- * SUSTAINABLE CLASSROOM - DATABASE SEED SCRIPT
- * ============================================================
- * Run: node seed.js
- * This script will:
- * 1. Connect to PostgreSQL
- * 2. Create tables if they don't exist
- * 3. Seed sample data with properly hashed passwords
- * ============================================================
- */
+// Database Seed Script - Creates sample data for testing
 
 require('dotenv').config();
 const { Pool } = require('pg');
@@ -18,15 +8,10 @@ const path = require('path');
 
 const SALT_ROUNDS = 10;
 
-// Database connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://lms_user:lms_password@localhost:5432/lms_db',
   ...(process.env.DB_SSL === 'true' ? { ssl: { rejectUnauthorized: false } } : {})
 });
-
-// ============================================================
-// SEED DATA
-// ============================================================
 
 const teachers = [
   { name: 'Dr. Sarah Okonkwo', email: 'susclass.global+sarah.teacher@gmail.com', password: 'password123', staff_id: 'TCH001', dept: 'Science', sections: ['SS1 A', 'SS1 B', 'SS2 A'] },

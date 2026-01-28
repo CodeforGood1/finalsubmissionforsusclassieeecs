@@ -1,30 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-// ============================================================
-// JITSI MEET COMPONENT - ON-PREMISE EDITION
-// ============================================================
-// Supports both self-hosted Jitsi and public Jitsi servers
-// For offline deployment, use self-hosted Jitsi Meet
-// ============================================================
-
-// Configuration - can be set via environment or defaults
+// Jitsi Meet Component - Supports self-hosted and public servers
 const JITSI_CONFIG = {
-  // Self-hosted Jitsi server (for on-premise deployment)
-  // Set VITE_JITSI_SERVER_URL in .env for self-hosted
   serverUrl: import.meta.env.VITE_JITSI_SERVER_URL || null,
-  
-  // Fallback to public Jitsi (requires internet)
   publicServer: 'meet.jit.si',
   
-  // Whether to use self-hosted (auto-detect based on serverUrl)
   get isSelfHosted() {
     return !!this.serverUrl;
   },
   
-  // Get the domain to use
   get domain() {
     if (this.serverUrl) {
-      // Extract domain from URL
       try {
         const url = new URL(this.serverUrl);
         return url.host;
@@ -35,7 +21,6 @@ const JITSI_CONFIG = {
     return this.publicServer;
   },
   
-  // Get the API script URL
   get apiScriptUrl() {
     if (this.serverUrl) {
       return `${this.serverUrl}/external_api.js`;

@@ -1,14 +1,4 @@
-// ============================================================
-// LOCAL FILE STORAGE SERVICE
-// ============================================================
-// Purpose: Handle file uploads locally for on-premise deployment
-// Replaces: Cloudinary cloud storage
-// Features:
-//   - Local disk storage for images and videos
-//   - Video streaming with range support (for large files)
-//   - File validation and security
-//   - Organized directory structure
-// ============================================================
+// Local File Storage Service - On-premise file handling
 
 const multer = require('multer');
 const path = require('path');

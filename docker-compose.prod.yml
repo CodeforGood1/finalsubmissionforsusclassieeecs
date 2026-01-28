@@ -1,15 +1,10 @@
 version: '3.8'
 
-# ============================================================
-# SUSTAINABLE CLASSROOM LMS - PRODUCTION DEPLOYMENT
-# ============================================================
 # Uses pre-built images from GitHub Container Registry
 # No local Docker build required - just docker-compose up
 # ============================================================
 
 services:
-  # ============================================================
-  # PostgreSQL Database
   # ============================================================
   postgres:
     image: postgres:15-alpine
@@ -37,8 +32,6 @@ services:
     restart: unless-stopped
 
   # ============================================================
-  # Redis Cache
-  # ============================================================
   redis:
     image: redis:7-alpine
     container_name: lms-cache
@@ -57,8 +50,6 @@ services:
     restart: unless-stopped
 
   # ============================================================
-  # MailHog (Email Server)
-  # ============================================================
   mailhog:
     image: mailhog/mailhog:latest
     container_name: lms-mailserver
@@ -69,8 +60,6 @@ services:
       - lms-network
     restart: unless-stopped
 
-  # ============================================================
-  # Backend Application (Pre-built from GHCR)
   # ============================================================
   backend:
     image: ghcr.io/${GITHUB_REPOSITORY:-susclass/sustainable-classroom}:${IMAGE_TAG:-latest}
@@ -110,8 +99,6 @@ services:
       - lms-network
     restart: unless-stopped
 
-  # ============================================================
-  # Jitsi Meet (Video Conferencing)
   # ============================================================
   jitsi-web:
     image: jitsi/web:stable-9457
@@ -215,9 +202,6 @@ services:
       - lms-network
     restart: unless-stopped
 
-# ============================================================
-# Persistent Volumes
-# ============================================================
 volumes:
   postgres_data:
     name: lms-postgres-data
@@ -238,9 +222,6 @@ volumes:
   jitsi_jvb_config:
     name: lms-jitsi-jvb-config
 
-# ============================================================
-# Network Configuration
-# ============================================================
 networks:
   lms-network:
     driver: bridge
