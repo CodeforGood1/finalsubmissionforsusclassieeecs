@@ -283,7 +283,13 @@ app.post('/api/admin/login', (req, res) => {
 // 2. Universal Login (Student/Teacher)
 app.post('/api/login', async (req, res) => {
     const { email, password, role } = req.body;
-    const activeRole = role.toLowerCase();
+    
+    if (!email || !password) {
+        return res.status(400).json({ error: "Email and password are required" });
+    }
+    
+    // Default to 'student' if no role specified
+    const activeRole = (role || 'student').toLowerCase();
     const table = activeRole === 'student' ? 'students' : 'teachers';
 
     try {
@@ -1604,40 +1610,58 @@ app.get('/api/student/stats', authenticateToken, async (req, res) => {
 // 10. Teacher: Upload/Publish New Module
 app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
   try {
-    const { section, subject, topic, steps } = req.body;
+    const { section, sections, subject, topic, steps } = req.body;
     const teacherId = req.user.id;
 
     if (!subject) {
       return res.status(400).json({ error: "Subject is required" });
     }
 
+    // Support both single section and multiple sections
+    // If sections array is provided, use it. Otherwise use single section
+    const targetSections = sections && Array.isArray(sections) && sections.length > 0 
+      ? sections 
+      : (section ? [section] : []);
+    
+    if (targetSections.length === 0) {
+      return res.status(400).json({ error: "At least one section is required" });
+    }
+
     // Get teacher name for display
     const teacherResult = await pool.query('SELECT name FROM teachers WHERE id = $1', [teacherId]);
     const teacherName = teacherResult.rows[0]?.name || 'Unknown';
 
-    // Insert module with steps as JSONB
+    // Insert module with steps as JSONB - store first section in 'section' for backwards compatibility
+    // and all sections in 'sections' JSONB array
     const query = `
-      INSERT INTO modules (section, subject, topic_title, teacher_id, teacher_name, step_count, steps) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7) 
+      INSERT INTO modules (section, sections, subject, topic_title, teacher_id, teacher_name, step_count, steps) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
       RETURNING id
     `;
-    const values = [section, subject, topic, teacherId, teacherName, steps.length, JSON.stringify(steps)];
+    const values = [targetSections[0], JSON.stringify(targetSections), subject, topic, teacherId, teacherName, steps.length, JSON.stringify(steps)];
     
     const result = await pool.query(query, values);
     const moduleId = result.rows[0].id;
     
-    // NOTIFICATION: Send to all students in section
+    // NOTIFICATION: Send to all students in ALL target sections
     try {
-      const students = await notificationService.getStudentsInSection(section, 'MODULE_PUBLISHED');
+      let allStudents = [];
+      for (const sec of targetSections) {
+        const sectionStudents = await notificationService.getStudentsInSection(sec, 'MODULE_PUBLISHED');
+        allStudents = [...allStudents, ...sectionStudents];
+      }
       
-      if (students.length > 0) {
+      // Deduplicate students by id
+      const uniqueStudents = [...new Map(allStudents.map(s => [s.id, s])).values()];
+      
+      if (uniqueStudents.length > 0) {
         // Send email notifications
         await notificationService.sendBatchEmails(
           'MODULE_PUBLISHED',
-          students,
+          uniqueStudents,
           (student) => ({
             student_name: student.name,
-            section: section,
+            section: targetSections.join(', '),
             topic_title: topic,
             subject: subject,
             teacher_name: teacherName,
@@ -1647,7 +1671,7 @@ app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
         );
         
         // Create in-app notifications for each student
-        for (const student of students) {
+        for (const student of uniqueStudents) {
           await pool.query(`
             INSERT INTO in_app_notifications 
             (recipient_type, recipient_id, type, title, message, metadata, created_at)
@@ -1655,45 +1679,49 @@ app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
           `, [
             student.id,
             'New Module Available',
-            `${teacherName} published "${topic}" for ${section}. Start learning now!`,
+            `${teacherName} published "${topic}". Start learning now!`,
             JSON.stringify({
               module_id: moduleId,
               module_title: topic,
               teacher_name: teacherName,
-              section: section,
+              sections: targetSections,
               subject: subject,
               step_count: steps.length
             })
           ]);
         }
         
-        console.log(`Sent MODULE_PUBLISHED notifications to ${students.length} students`);
+        console.log(`Sent MODULE_PUBLISHED notifications to ${uniqueStudents.length} students across ${targetSections.length} sections`);
       }
     } catch (notifErr) {
       console.error('Notification error (non-blocking):', notifErr);
     }
     
-    // Invalidate cache for this section's modules
-    cache.invalidate(`modules_section_${section.toLowerCase()}`);
+    // Invalidate cache for all target sections
+    for (const sec of targetSections) {
+      cache.invalidate(`modules_section_${sec.toLowerCase()}`);
+    }
     
-    res.status(201).json({ success: true, moduleId });
+    res.status(201).json({ success: true, moduleId, sections: targetSections });
   } catch (err) {
     console.error("Module Upload Error:", err);
     res.status(500).json({ error: "Failed to publish module: " + err.message });
   }
 });
 
-// 11. Teacher: Fetch Modules for a Section
+// 11. Teacher: Fetch Modules for a Section (supports both single section and sections array)
 app.get('/api/teacher/modules/:section', authenticateToken, async (req, res) => {
   try {
     const section = req.params.section;
     
+    // Match against either the legacy 'section' column OR the 'sections' JSONB array
     const result = await pool.query(
-      `SELECT id, topic_title, section, teacher_name, step_count, created_at 
+      `SELECT id, topic_title, section, sections, subject, teacher_name, step_count, created_at 
        FROM modules 
        WHERE LOWER(section) = LOWER($1) 
+         OR sections @> $2::jsonb
        ORDER BY created_at DESC`,
-      [section]
+      [section, JSON.stringify([section])]
     );
     
     res.json(result.rows);
@@ -1860,8 +1888,11 @@ app.get('/api/student/my-modules', authenticateToken, async (req, res) => {
     }
     
     const { class_dept, section } = studentResult.rows[0];
-    const fullSection = `${class_dept} ${section}`; // e.g., "ECE A"
+    // Normalize section: uppercase, replace hyphens/underscores with space, single spaces, trim
+    const fullSection = `${class_dept} ${section}`.toUpperCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
     const cacheKey = `modules_section_${fullSection.toLowerCase()}`;
+    
+    console.log('[Student Modules] Looking for modules in section:', fullSection);
     
     // Check cache first
     const cached = cache.get(cacheKey);
@@ -1869,14 +1900,17 @@ app.get('/api/student/my-modules', authenticateToken, async (req, res) => {
       return res.json(cached);
     }
     
-    // Fetch modules for this section
+    // Fetch modules for this section - normalize both sides for comparison
+    // Handle "CSE A", "CSE-A", "cse a", etc.
     const modulesResult = await pool.query(
-      `SELECT id, topic_title, teacher_name, step_count, created_at 
+      `SELECT id, topic_title, section, subject, teacher_name, step_count, created_at 
        FROM modules 
-       WHERE LOWER(section) = LOWER($1) 
+       WHERE UPPER(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = $1
        ORDER BY created_at DESC`,
       [fullSection]
     );
+    
+    console.log('[Student Modules] Found modules:', modulesResult.rows.length);
     
     // Cache for 1 minute
     cache.set(cacheKey, modulesResult.rows, 60 * 1000);
@@ -2344,41 +2378,58 @@ app.get('/api/teacher/student/:studentId/module-progress', authenticateToken, as
 
 // --- ROUTES: MCQ TEST SYSTEM ---
 
-// 14. Teacher: Create MCQ Test
+// 14. Teacher: Create MCQ Test (supports multiple sections)
 app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
   try {
-    const { section, title, description, questions, start_date, deadline } = req.body;
+    const { section, sections, title, description, questions, start_date, deadline } = req.body;
     const teacher_id = req.user.id;
+    
+    // Support both single section and multiple sections
+    const targetSections = sections && Array.isArray(sections) && sections.length > 0 
+      ? sections 
+      : (section ? [section] : []);
+    
+    if (targetSections.length === 0) {
+      return res.status(400).json({ error: "At least one section is required" });
+    }
     
     // Get teacher name
     const teacherResult = await pool.query('SELECT name FROM teachers WHERE id = $1', [teacher_id]);
     const teacher_name = teacherResult.rows[0]?.name || 'Unknown';
     
+    // Insert test with sections JSONB array
     const query = `
-      INSERT INTO mcq_tests (teacher_id, teacher_name, section, title, description, questions, total_questions, start_date, deadline)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO mcq_tests (teacher_id, teacher_name, section, sections, title, description, questions, total_questions, start_date, deadline)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
     `;
     
     const result = await pool.query(query, [
-      teacher_id, teacher_name, section, title, description,
+      teacher_id, teacher_name, targetSections[0], JSON.stringify(targetSections), title, description,
       JSON.stringify(questions), questions.length, start_date, deadline
     ]);
     
     const test = result.rows[0];
     
-    // NOTIFICATION: Send to all students in section
+    // NOTIFICATION: Send to all students in ALL target sections
     try {
-      const students = await notificationService.getStudentsInSection(section, 'TEST_ASSIGNED');
+      let allStudents = [];
+      for (const sec of targetSections) {
+        const sectionStudents = await notificationService.getStudentsInSection(sec, 'TEST_ASSIGNED');
+        allStudents = [...allStudents, ...sectionStudents];
+      }
       
-      if (students.length > 0) {
+      // Deduplicate students by id
+      const uniqueStudents = [...new Map(allStudents.map(s => [s.id, s])).values()];
+      
+      if (uniqueStudents.length > 0) {
         // Send email notifications
         await notificationService.sendBatchEmails(
           'TEST_ASSIGNED',
-          students,
+          uniqueStudents,
           (student) => ({
             student_name: student.name,
-            section: section,
+            section: targetSections.join(', '),
             test_title: title,
             description: description,
             total_questions: questions.length,
@@ -2389,7 +2440,7 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
         );
         
         // Create in-app notifications for each student
-        for (const student of students) {
+        for (const student of uniqueStudents) {
           await pool.query(`
             INSERT INTO in_app_notifications 
             (recipient_type, recipient_id, type, title, message, metadata, created_at)
@@ -2402,7 +2453,7 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
               test_id: test.id,
               test_title: title,
               teacher_name: teacher_name,
-              section: section,
+              sections: targetSections,
               start_date: start_date,
               deadline: deadline,
               total_questions: questions.length
@@ -2410,32 +2461,47 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
           ]);
         }
         
-        console.log(`[OK] Sent TEST_ASSIGNED notifications to ${students.length} students`);
+        console.log(`[OK] Sent TEST_ASSIGNED notifications to ${uniqueStudents.length} students across ${targetSections.length} sections`);
       }
     } catch (notifErr) {
       console.error('Notification error (non-blocking):', notifErr);
     }
     
-    res.status(201).json({ success: true, test });
+    res.status(201).json({ success: true, test, sections: targetSections });
   } catch (err) {
     console.error("Test Creation Error:", err);
     res.status(500).json({ error: "Failed to create test: " + err.message });
   }
 });
 
-// 15. Teacher: Get All Tests for Section
+// 15. Teacher: Get All Tests for Section (supports sections array)
 app.get('/api/teacher/tests/:section', authenticateToken, async (req, res) => {
   try {
     const section = req.params.section;
     
-    const result = await pool.query(
-      `SELECT * FROM v_test_statistics 
-       WHERE LOWER(section) = LOWER($1) 
-       ORDER BY deadline DESC`,
-      [section]
-    );
-    
-    res.json(result.rows);
+    // Try to use v_test_statistics first, fallback to direct query if view doesn't have sections column
+    try {
+      const result = await pool.query(
+        `SELECT * FROM v_test_statistics 
+         WHERE LOWER(section) = LOWER($1) 
+         ORDER BY deadline DESC`,
+        [section]
+      );
+      res.json(result.rows);
+    } catch (viewErr) {
+      // Fallback: query directly from mcq_tests table
+      const result = await pool.query(
+        `SELECT t.*, 
+          COALESCE((SELECT COUNT(*) FROM test_submissions WHERE test_id = t.id), 0) as total_submissions,
+          COALESCE((SELECT ROUND(AVG(percentage)::numeric, 2) FROM test_submissions WHERE test_id = t.id), 0) as average_score,
+          COALESCE((SELECT COUNT(*) FROM test_submissions WHERE test_id = t.id AND percentage >= 50), 0) as passed_count
+         FROM mcq_tests t
+         WHERE LOWER(t.section) = LOWER($1) OR t.sections @> $2::jsonb
+         ORDER BY t.deadline DESC`,
+        [section, JSON.stringify([section])]
+      );
+      res.json(result.rows);
+    }
   } catch (err) {
     console.error("Fetch Tests Error:", err);
     res.status(500).json({ error: "Failed to load tests" });
@@ -2494,7 +2560,7 @@ app.get('/api/teacher/student/:studentId/progress', authenticateToken, async (re
   }
 });
 
-// 18. Student: Get My Tests (Pending & Completed)
+// 18. Student: Get My Tests (Pending & Completed) - Case-insensitive section matching
 app.get('/api/student/tests', authenticateToken, async (req, res) => {
   try {
     const student_id = req.user.id;
@@ -2510,9 +2576,12 @@ app.get('/api/student/tests', authenticateToken, async (req, res) => {
     }
     
     const { class_dept, section } = studentResult.rows[0];
-    const full_section = `${class_dept} ${section}`;
+    // Normalize section: uppercase, replace hyphens/underscores with space, single spaces, trim
+    const full_section = `${class_dept} ${section}`.toUpperCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
     
-    // Get all tests with submission status
+    console.log('[Student Tests] Looking for tests in section:', full_section);
+    
+    // Get all tests with submission status - normalize both sides for comparison
     const result = await pool.query(
       `SELECT 
         t.id,
@@ -2521,6 +2590,7 @@ app.get('/api/student/tests', authenticateToken, async (req, res) => {
         t.total_questions,
         t.deadline,
         t.teacher_name,
+        t.section,
         sub.id as submission_id,
         sub.score,
         sub.percentage,
@@ -2536,11 +2606,13 @@ app.get('/api/student/tests', authenticateToken, async (req, res) => {
         END as is_overdue
        FROM mcq_tests t
        LEFT JOIN test_submissions sub ON t.id = sub.test_id AND sub.student_id = $1
-       WHERE LOWER(t.section) = LOWER($2) AND t.is_active = true
+       WHERE t.is_active = true 
+         AND UPPER(REGEXP_REPLACE(REGEXP_REPLACE(t.section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = $2
        ORDER BY t.deadline ASC`,
       [student_id, full_section]
     );
     
+    console.log('[Student Tests] Found tests:', result.rows.length);
     res.json(result.rows);
   } catch (err) {
     console.error("Student Tests Error:", err);
@@ -3518,9 +3590,11 @@ app.get('/api/chat/available-users', authenticateToken, async (req, res) => {
     const userRole = req.user.role;
 
     if (userRole === 'student') {
-      // Students can see their allocated teachers AND teachers who created modules for their section
+      // Students can see teachers who:
+      // 1. Created modules/tests for their section
+      // 2. Are directly allocated to them via teacher_student_allocations
       const studentData = await pool.query(
-        `SELECT class_dept, section FROM students WHERE id = $1`, [userId]
+        `SELECT id, class_dept, section FROM students WHERE id = $1`, [userId]
       );
       
       if (studentData.rows.length === 0) {
@@ -3528,39 +3602,53 @@ app.get('/api/chat/available-users', authenticateToken, async (req, res) => {
       }
 
       const { class_dept, section } = studentData.rows[0];
-      // Normalize section format: UPPER case, trimmed, single space
-      const fullSection = `${class_dept} ${section}`.toUpperCase().replace(/\s+/g, ' ').trim();
-      console.log('[Chat] Student looking for teachers in section:', fullSection);
+      // Normalize section format for matching (handles "CSE A", "CSE-A", "cse a", etc.)
+      const normalizedSection = `${class_dept} ${section}`.toUpperCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+      console.log('[Chat] Student looking for teachers, normalized section:', normalizedSection);
 
-      // Get teachers from allocations AND from modules created for this section
-      // Use UPPER/TRIM for case-insensitive, whitespace-normalized comparison
+      // Find teachers from modules for this section OR directly allocated
       const teachers = await pool.query(`
         SELECT DISTINCT t.id, t.name, t.email, 
-          COALESCE(ta.subject, m.subject, 'Teacher') as subject
+          COALESCE(m.subject, tsa.subject, 'Teacher') as subject
         FROM teachers t
-        LEFT JOIN teacher_allocations ta ON t.id = ta.teacher_id 
-          AND UPPER(TRIM(REGEXP_REPLACE(ta.section, '\\s+', ' ', 'g'))) = $1
         LEFT JOIN modules m ON t.id = m.teacher_id 
-          AND UPPER(TRIM(REGEXP_REPLACE(m.section, '\\s+', ' ', 'g'))) = $1
-        WHERE ta.teacher_id IS NOT NULL OR m.teacher_id IS NOT NULL
-      `, [fullSection]);
+          AND UPPER(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = $1
+        LEFT JOIN mcq_tests mt ON t.id = mt.teacher_id 
+          AND UPPER(REGEXP_REPLACE(REGEXP_REPLACE(mt.section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = $1
+        LEFT JOIN teacher_student_allocations tsa ON t.id = tsa.teacher_id AND tsa.student_id = $2
+        WHERE m.teacher_id IS NOT NULL OR mt.teacher_id IS NOT NULL OR tsa.teacher_id IS NOT NULL
+      `, [normalizedSection, userId]);
 
-      console.log('[Chat] Found teachers:', teachers.rows.length);
+      console.log('[Chat] Found teachers for student:', teachers.rows.length);
       res.json(teachers.rows.map(t => ({ ...t, role: 'teacher' })));
+      
     } else if (userRole === 'teacher') {
-      // Teachers can see students from allocated sections AND sections where they've created modules
+      // Teachers can see students from:
+      // 1. Sections where they've created modules/tests
+      // 2. Directly allocated students via teacher_student_allocations
+      // 3. Sections from their allocated_sections JSONB column
       
-      // Get sections from allocations - normalize to UPPER case
-      const allocations = await pool.query(
-        `SELECT UPPER(TRIM(REGEXP_REPLACE(section, '\\s+', ' ', 'g'))) as section FROM teacher_allocations WHERE teacher_id = $1`, [userId]
-      );
-      
-      // Get sections from modules this teacher created - normalize to UPPER case
+      // Get sections from modules this teacher created
       const moduleSections = await pool.query(
-        `SELECT DISTINCT UPPER(TRIM(REGEXP_REPLACE(section, '\\s+', ' ', 'g'))) as section FROM modules WHERE teacher_id = $1`, [userId]
+        `SELECT DISTINCT UPPER(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) as section 
+         FROM modules WHERE teacher_id = $1`, [userId]
       );
 
-      // Also check allocated_sections JSONB column on teachers table
+      // Get sections from tests this teacher created
+      const testSections = await pool.query(
+        `SELECT DISTINCT UPPER(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) as section 
+         FROM mcq_tests WHERE teacher_id = $1`, [userId]
+      );
+
+      // Get directly allocated students
+      const directlyAllocated = await pool.query(
+        `SELECT s.id, s.name, s.email, s.class_dept, s.section
+         FROM students s
+         INNER JOIN teacher_student_allocations tsa ON s.id = tsa.student_id
+         WHERE tsa.teacher_id = $1`, [userId]
+      );
+
+      // Get allocated_sections JSONB column on teachers table
       const teacherData = await pool.query(
         `SELECT allocated_sections FROM teachers WHERE id = $1`, [userId]
       );
@@ -3572,41 +3660,58 @@ app.get('/api/chat/available-users', authenticateToken, async (req, res) => {
           try { sections = JSON.parse(sections); } catch(e) { sections = []; }
         }
         if (Array.isArray(sections)) {
-          allocatedSectionsFromColumn = sections.map(s => s.toUpperCase().replace(/\s+/g, ' ').trim());
+          allocatedSectionsFromColumn = sections.map(s => 
+            s.toUpperCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim()
+          );
         }
       }
 
       // Combine all section sources
       const allSections = new Set([
-        ...allocations.rows.map(a => a.section),
-        ...moduleSections.rows.map(m => m.section),
+        ...moduleSections.rows.map(m => m.section).filter(Boolean),
+        ...testSections.rows.map(t => t.section).filter(Boolean),
         ...allocatedSectionsFromColumn
       ]);
       
       const sections = Array.from(allSections);
-      console.log('[Chat] Teacher looking for students in sections:', sections);
+      console.log('[Chat] Teacher sections from modules/tests:', sections);
+      console.log('[Chat] Teacher directly allocated students:', directlyAllocated.rows.length);
       
-      if (sections.length === 0) {
+      // Get students matching sections
+      let sectionStudents = [];
+      if (sections.length > 0) {
+        const result = await pool.query(`
+          SELECT id, name, email, class_dept, section
+          FROM students
+          WHERE UPPER(REGEXP_REPLACE(REGEXP_REPLACE(class_dept || ' ' || section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = ANY($1::text[])
+          ORDER BY class_dept, section, name
+        `, [sections]);
+        sectionStudents = result.rows;
+      }
+
+      // Combine direct allocations and section-based students, removing duplicates
+      const studentMap = new Map();
+      [...directlyAllocated.rows, ...sectionStudents].forEach(s => {
+        if (!studentMap.has(s.id)) {
+          studentMap.set(s.id, s);
+        }
+      });
+
+      const allStudents = Array.from(studentMap.values());
+      console.log('[Chat] Total students for teacher:', allStudents.length);
+      
+      if (allStudents.length === 0) {
         // If no allocations and no modules, show all students (for new teachers)
-        const allStudents = await pool.query(`
+        const fallbackStudents = await pool.query(`
           SELECT id, name, email, class_dept, section
           FROM students
           ORDER BY class_dept, section, name
           LIMIT 100
         `);
-        return res.json(allStudents.rows.map(s => ({ ...s, role: 'student' })));
+        return res.json(fallbackStudents.rows.map(s => ({ ...s, role: 'student' })));
       }
 
-      // Find students matching normalized sections
-      const students = await pool.query(`
-        SELECT id, name, email, class_dept, section
-        FROM students
-        WHERE UPPER(TRIM(REGEXP_REPLACE(class_dept || ' ' || section, '\\s+', ' ', 'g'))) = ANY($1::text[])
-        ORDER BY class_dept, section, name
-      `, [sections]);
-
-      console.log('[Chat] Found students:', students.rows.length);
-      res.json(students.rows.map(s => ({ ...s, role: 'student' })));
+      res.json(allStudents.map(s => ({ ...s, role: 'student' })));
     } else {
       res.json([]);
     }
