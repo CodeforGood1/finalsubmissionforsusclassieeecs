@@ -70,6 +70,8 @@ CREATE TABLE teachers (
     dept TEXT,
     media JSONB DEFAULT '{}'::jsonb,
     allocated_sections JSONB DEFAULT '[]'::jsonb,
+    otp_code TEXT,
+    otp_expiry TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     CONSTRAINT chk_email_format CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
@@ -86,6 +88,8 @@ CREATE TABLE students (
     class_dept TEXT,
     section TEXT,
     media JSONB DEFAULT '{}'::jsonb,
+    otp_code TEXT,
+    otp_expiry TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     CONSTRAINT chk_email_format CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
@@ -97,6 +101,7 @@ CREATE TABLE modules (
     id SERIAL PRIMARY KEY,
     section TEXT NOT NULL,
     topic_title TEXT NOT NULL,
+    subject VARCHAR(255),
     teacher_id INTEGER NOT NULL,
     teacher_name TEXT NOT NULL,
     step_count INTEGER DEFAULT 0,
@@ -332,7 +337,7 @@ SELECT
         WHEN ta.deadline < CURRENT_TIMESTAMP AND sub.id IS NULL 
         THEN ta.test_id 
     END), 0) as tests_overdue,
-    COALESCE(ROUND(st.avg_percentage, 2), 0.00) as average_score,
+    COALESCE(ROUND(st.avg_percentage::numeric, 2), 0.00) as average_score,
     st.min_score,
     st.max_score,
     COALESCE(st.passed_count, 0) as tests_passed,
@@ -340,7 +345,7 @@ SELECT
     st.last_submission as last_submission_date,
     CASE 
         WHEN COALESCE(COUNT(DISTINCT ta.test_id), 0) = 0 THEN 0
-        ELSE ROUND((COALESCE(st.completed_count, 0)::DECIMAL / COUNT(DISTINCT ta.test_id)) * 100, 2)
+        ELSE ROUND(((COALESCE(st.completed_count, 0)::DECIMAL / COUNT(DISTINCT ta.test_id)) * 100)::numeric, 2)
     END as completion_percentage
 FROM student_sections ss
 LEFT JOIN test_assignments ta ON ss.id = ta.student_id
@@ -391,18 +396,18 @@ SELECT
         ELSE 'active'
     END as status,
     COALESCE(sa.total_subs, 0) as total_submissions,
-    COALESCE(ROUND(sa.avg_pct, 2), 0.00) as average_score,
-    COALESCE(ROUND(sa.median_pct, 2), 0.00) as median_score,
-    COALESCE(ROUND(sa.min_pct, 2), 0.00) as min_score,
-    COALESCE(ROUND(sa.max_pct, 2), 0.00) as max_score,
-    COALESCE(ROUND(sa.stddev_pct, 2), 0.00) as score_stddev,
+    COALESCE(ROUND(sa.avg_pct::numeric, 2), 0.00) as average_score,
+    COALESCE(ROUND(sa.median_pct::numeric, 2), 0.00) as median_score,
+    COALESCE(ROUND(sa.min_pct::numeric, 2), 0.00) as min_score,
+    COALESCE(ROUND(sa.max_pct::numeric, 2), 0.00) as max_score,
+    COALESCE(ROUND(sa.stddev_pct::numeric, 2), 0.00) as score_stddev,
     COALESCE(sa.excellent_count, 0) as excellent_count,
     COALESCE(sa.good_count, 0) as good_count,
     COALESCE(sa.average_count, 0) as average_count,
     COALESCE(sa.poor_count, 0) as poor_count,
     COALESCE(sa.excellent_count + sa.good_count, 0) as passed_count,
     COALESCE(sa.average_count + sa.poor_count, 0) as failed_count,
-    COALESCE(ROUND(sa.avg_time_taken / 60.0, 2), 0.00) as avg_time_minutes,
+    COALESCE(ROUND((sa.avg_time_taken / 60.0)::numeric, 2), 0.00) as avg_time_minutes,
     EXTRACT(EPOCH FROM (t.deadline - CURRENT_TIMESTAMP)) / 3600 as hours_remaining
 FROM mcq_tests t
 LEFT JOIN submission_analytics sa ON t.id = sa.test_id
@@ -478,7 +483,7 @@ BEGIN
             WHEN sub.id IS NOT NULL THEN true
             ELSE false
         END,
-        ROUND(EXTRACT(EPOCH FROM (t.deadline - CURRENT_TIMESTAMP)) / 86400.0, 1),
+        ROUND((EXTRACT(EPOCH FROM (t.deadline - CURRENT_TIMESTAMP)) / 86400.0)::numeric, 1),
         CASE 
             WHEN sub.percentage IS NULL THEN 'Not Attempted'
             WHEN sub.percentage >= 90 THEN 'Excellent'
@@ -551,17 +556,17 @@ BEGIN
         es.total::INTEGER,
         COALESCE(ss.subs, 0)::INTEGER,
         CASE WHEN es.total > 0 
-            THEN ROUND((COALESCE(ss.subs, 0)::DECIMAL / es.total) * 100, 2)
+            THEN ROUND(((COALESCE(ss.subs, 0)::DECIMAL / es.total) * 100)::numeric, 2)
             ELSE 0.00 
         END,
-        COALESCE(ROUND(ss.avg_pct, 2), 0.00),
-        COALESCE(ROUND(ss.med_pct, 2), 0.00),
-        COALESCE(ROUND(ss.max_pct, 2), 0.00),
-        COALESCE(ROUND(ss.min_pct, 2), 0.00),
+        COALESCE(ROUND(ss.avg_pct::numeric, 2), 0.00),
+        COALESCE(ROUND(ss.med_pct::numeric, 2), 0.00),
+        COALESCE(ROUND(ss.max_pct::numeric, 2), 0.00),
+        COALESCE(ROUND(ss.min_pct::numeric, 2), 0.00),
         COALESCE(ss.passed, 0)::INTEGER,
         COALESCE(ss.failed, 0)::INTEGER,
         CASE WHEN COALESCE(ss.subs, 0) > 0
-            THEN ROUND((COALESCE(ss.passed, 0)::DECIMAL / ss.subs) * 100, 2)
+            THEN ROUND(((COALESCE(ss.passed, 0)::DECIMAL / ss.subs) * 100)::numeric, 2)
             ELSE 0.00
         END,
         COALESCE(ss.excellent, 0)::INTEGER,

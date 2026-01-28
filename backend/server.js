@@ -504,6 +504,21 @@ app.post('/api/admin/reset-password', authenticateToken, adminOnly, async (req, 
 // 3. Register Teacher
 app.post('/api/admin/register-teacher', authenticateToken, adminOnly, async (req, res) => {
   const { name, email, password, staff_id, dept, media } = req.body;
+  
+  // Validate required fields
+  if (!name || typeof name !== 'string' || name.trim().length < 2) {
+    return res.status(400).json({ error: "Name must be at least 2 characters long" });
+  }
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email and password are required" });
+  }
+  
+  // Validate email format
+  const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ error: "Invalid email format" });
+  }
+  
   try {
     const hashed = await bcrypt.hash(password, SALT_ROUNDS);
     // Note: We pass objects directly; pg driver handles JSON conversion for JSONB columns
@@ -559,9 +574,13 @@ app.post('/api/admin/register-student', authenticateToken, adminOnly, async (req
   
   try {
     // Validate required fields
-    if (!name || !email || !password) {
+    if (!name || typeof name !== 'string' || name.trim().length < 2) {
+      console.log("[ERROR] Name must be at least 2 characters long");
+      return res.status(400).json({ error: "Name must be at least 2 characters long" });
+    }
+    if (!email || !password) {
       console.log("[ERROR] Missing required fields");
-      return res.status(400).json({ error: "Name, email, and password are required" });
+      return res.status(400).json({ error: "Email and password are required" });
     }
     
     // Validate email format

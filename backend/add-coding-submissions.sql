@@ -43,7 +43,7 @@ SELECT
   s.section,
   COUNT(DISTINCT sub.module_id) AS modules_attempted,
   COUNT(sub.id) AS total_submissions,
-  ROUND(AVG(sub.score), 2) AS average_score,
+  ROUND(AVG(sub.score)::numeric, 2) AS average_score,
   MAX(sub.score) AS highest_score,
   MIN(sub.score) AS lowest_score,
   COUNT(CASE WHEN sub.score >= 80 THEN 1 END) AS excellent_submissions,
@@ -66,10 +66,10 @@ SELECT
   m.teacher_name,
   COUNT(DISTINCT sub.student_id) AS students_attempted,
   COUNT(sub.id) AS total_submissions,
-  ROUND(AVG(sub.score), 2) AS average_score,
+  ROUND(AVG(sub.score)::numeric, 2) AS average_score,
   MAX(sub.score) AS highest_score,
   MIN(sub.score) AS lowest_score,
-  ROUND(AVG(sub.test_cases_passed::DECIMAL / NULLIF(sub.total_test_cases, 0) * 100), 2) AS avg_pass_rate,
+  ROUND((AVG(sub.test_cases_passed::DECIMAL / NULLIF(sub.total_test_cases, 0) * 100))::numeric, 2) AS avg_pass_rate,
   COUNT(CASE WHEN sub.score = 100 THEN 1 END) AS perfect_scores,
   MAX(sub.submitted_at) AS last_submission_date
 FROM modules m
@@ -125,7 +125,7 @@ SELECT
   m.section,
   COUNT(DISTINCT sub.student_id) AS students_submitted,
   COUNT(sub.id) AS total_submissions,
-  ROUND(AVG(sub.score), 2) AS class_average,
+  ROUND(AVG(sub.score)::numeric, 2) AS class_average,
   MAX(sub.score) AS top_score,
   COUNT(CASE WHEN sub.score >= 80 THEN 1 END) AS high_performers,
   COUNT(CASE WHEN sub.score < 60 THEN 1 END) AS struggling_students,
@@ -143,9 +143,9 @@ SELECT
   language,
   COUNT(*) AS total_submissions,
   COUNT(DISTINCT student_id) AS unique_students,
-  ROUND(AVG(score), 2) AS average_score,
+  ROUND(AVG(score)::numeric, 2) AS average_score,
   COUNT(CASE WHEN score >= 80 THEN 1 END) AS high_score_count,
-  ROUND(AVG(test_cases_passed::DECIMAL / NULLIF(total_test_cases, 0) * 100), 2) AS avg_pass_rate
+  ROUND((AVG(test_cases_passed::DECIMAL / NULLIF(total_test_cases, 0) * 100))::numeric, 2) AS avg_pass_rate
 FROM student_submissions
 GROUP BY language
 ORDER BY total_submissions DESC;
@@ -328,7 +328,7 @@ BEGIN
     s.reg_no,
     CONCAT(s.class_dept, ' ', s.section) AS section,
     COUNT(sub.id) AS total_submissions,
-    ROUND(AVG(sub.score), 2) AS average_score,
+    ROUND(AVG(sub.score)::numeric, 2) AS average_score,
     COUNT(CASE WHEN sub.score = 100 THEN 1 END) AS perfect_scores,
     COUNT(DISTINCT sub.module_id) AS modules_completed
   FROM students s

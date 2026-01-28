@@ -73,4 +73,4 @@ BEGIN
     END IF;
 END $$;
 
-RAISE NOTICE 'In-app notifications table created successfully!';
+DO $$ BEGIN RAISE NOTICE 'In-app notifications table created successfully!'; END $$;

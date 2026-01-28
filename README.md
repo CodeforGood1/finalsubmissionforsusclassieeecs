@@ -72,32 +72,19 @@ cd susclasssrefine
 
 #### Step 2: Configure Environment
 
-Create `.env` file in the project root:
+**Option A: Use default configuration (recommended for first-time setup)**
 
-```env
-# Database Configuration (Local PostgreSQL)
-DATABASE_URL=postgresql://lms_admin:secure_password_here@postgres:5432/sustainable_classroom
-POSTGRES_USER=lms_admin
-POSTGRES_PASSWORD=secure_password_here
-POSTGRES_DB=sustainable_classroom
+```bash
+# Copy example configuration
+cp .env.example .env
+```
 
-# JWT Security (Generate Random Secret)
-# Run: openssl rand -base64 32
-JWT_SECRET=replace_with_random_32_character_string
+The default configuration uses **MailHog** (local email server - no internet required).
+All emails are captured at: http://localhost:8025
 
-# Admin Account Setup
-ADMIN_EMAIL=admin@classroom.local
-ADMIN_PASSWORD=Admin@2026
+**Option B: Configure Gmail (optional - for real email delivery)**
 
-# Email Service (Local MailHog - No Internet Required)
-# For local development, MailHog catches all emails at http://localhost:8025
-MAILHOG_SMTP_PORT=1025
-MAILHOG_UI_PORT=8025
-
-# Optional: Gmail for Real Email Delivery
-# Leave blank to use local MailHog
-GMAIL_USER=
-GMAIL_APP_PASSWORD=
+See [EMAIL-SETUP.md](EMAIL-SETUP.md) for detailed Gmail configuration instructions.
 
 # Redis Cache (Local)
 REDIS_HOST=redis
@@ -112,105 +99,96 @@ NODE_ENV=production
 PORT=5000
 ```
 
-#### Step 3: Generate JWT Secret
+#### Step 3: Deploy Services
 
-Linux/Mac:
-```bash
-openssl rand -base64 32
-```
-
-Windows PowerShell:
 ```powershell
--join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | % {[char]$_})
-```
+# Start all services
+docker-compose up -d
 
-Copy the generated string to `JWT_SECRET` in `.env` file.
+# Wait for services to be healthy (30-60 seconds)
+Start-Sleep -Seconds 30
 
-#### Step 4: Deploy Services
-
-Option A - Using Pre-Built Images (Recommended):
-```bash
-# Linux/Mac
-./deploy.sh prod
-
-# Windows
-deploy.bat prod
-```
-
-Option B - Build Locally:
-```bash
-# Linux/Mac
-./deploy.sh
-
-# Windows
-deploy.bat
-```
-
-The deployment script automatically:
-1. Validates prerequisites (Docker, Git)
-2. Creates environment configuration
-3. Pulls or builds Docker images
-4. Starts all services (database, cache, email, app, video)
-5. Initializes database schema
-6. Seeds default users
-7. Runs health checks
-8. Displays access URLs
-
-#### Step 5: Verify Deployment
-
-Check all services are running:
-```bash
+# Verify all services are running
 docker-compose ps
 ```
 
 Expected services:
-- lms-backend (Backend API)
-- lms-frontend (React frontend)
+- lms-backend (Backend API + Frontend)
 - lms-database (PostgreSQL)
-- lms-redis (Redis cache)
-- lms-mailhog (Local email server)
-- jitsi-meet (Video conferencing)
+- lms-cache (Redis)
+- lms-mailserver (MailHog)
+- lms-jitsi-* (Video conferencing)
+- lms-proxy (Nginx)
 
-### Access Points
+#### Step 4: Access Application
 
-After successful deployment, access these URLs:
+Open your browser and navigate to:
 
-| Service | URL | Description |
-|---------|-----|-------------|
-| Application | http://localhost:5000 | Main LMS interface |
-| Jitsi Meet | http://localhost:8443 | Self-hosted video conferencing |
-| Email Viewer | http://localhost:8025 | Local email inbox (MailHog) |
-| Database | localhost:5432 | PostgreSQL (internal access) |
-| Redis | localhost:6379 | Cache server (internal access) |
+**Main Application**: http://localhost:5000
 
-All services run on your local machine. No external connections required.
+**Additional Services**:
+- **MailHog (View Emails)**: http://localhost:8025
+- **Jitsi Meet (Video)**: https://localhost:8443
 
 ### Default Credentials
 
-Login credentials seeded during deployment:
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | admin@classroom.local | Admin@2026 |
 
-| Role | Email | Password | Permissions |
-|------|-------|----------|-------------|
-| Admin | admin@classroom.local | Admin@2026 | Full system access |
-| Teacher | teacher@classroom.local | password123 | Create modules, manage students |
-| Student | student@classroom.local | student123 | View modules, submit work |
+⚠️ **Change these credentials after first login in production!**
 
-IMPORTANT: Change default passwords after first login in production deployments.
+---
+
+## Email Configuration
+
+### Default: MailHog (No Internet Required)
+
+By default, the system uses **MailHog** - a local email server that captures all emails.
+
+**View all emails**: http://localhost:8025
+
+This includes:
+- Login OTP codes
+- Module completion notifications
+- Student-teacher communications
+- System alerts
+
+### Optional: Gmail (Real Email Delivery)
+
+To send emails to real email addresses, see: [EMAIL-SETUP.md](EMAIL-SETUP.md)
+
+---
+
+## Production Deployment
+
+For deploying to production environments with 1000+ concurrent users on a LAN network:
+
+📋 See: [PRODUCTION-DEPLOYMENT.md](PRODUCTION-DEPLOYMENT.md)
+
+Includes:
+- E:\ drive installation (not C:\)
+- Kubernetes deployment manifests
+- Kong API Gateway configuration
+- Varnish caching layer
+- JFrog/Harbor container registry
+- Prometheus + Grafana monitoring
+- Automated backup scripts
+- Security best practices
 
 ---
 
 ## Local Infrastructure Details
 
 ### Database (PostgreSQL 15)
-- Runs in Docker container: `lms-database`
-- Port: 5432 (internal network)
-- Volume: `postgres_data` (persistent storage)
+- Container: `lms-database`
+- Port: 5432
+- Volume: `postgres_data` (persistent)
 - User: `lms_admin`
 - Database: `sustainable_classroom`
-- Automatic schema initialization on first run
 
 ### Cache (Redis 7)
-- Runs in Docker container: `lms-redis`
+- Container: `lms-cache`
 - Port: 6379 (internal network)
 - Used for: Session management, API caching
 - Cache TTL: 5 minutes default
