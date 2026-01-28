@@ -93,7 +93,7 @@ LEFT JOIN mcq_tests t ON LOWER(CONCAT(s.class_dept, ' ', s.section)) = LOWER(t.s
 LEFT JOIN test_submissions sub ON t.id = sub.test_id AND s.id = sub.student_id
 GROUP BY s.id, s.name, s.reg_no, s.class_dept, s.section;
 
-RAISE NOTICE '✓ Created view: v_student_test_progress';
+RAISE NOTICE '[OK] Created view: v_student_test_progress';
 
 -- View for teacher to see test statistics
 CREATE OR REPLACE VIEW v_test_statistics AS
@@ -113,7 +113,7 @@ FROM mcq_tests t
 LEFT JOIN test_submissions sub ON t.id = sub.test_id
 GROUP BY t.id, t.title, t.section, t.teacher_name, t.total_questions, t.deadline, t.created_at;
 
-RAISE NOTICE '✓ Created view: v_test_statistics';
+RAISE NOTICE '[OK] Created view: v_test_statistics';
 
 -- STEP 5: Create trigger to auto-calculate score and status
 -- ============================================================
@@ -162,7 +162,7 @@ CREATE TRIGGER trigger_calculate_test_score
     FOR EACH ROW
     EXECUTE FUNCTION calculate_test_score();
 
-RAISE NOTICE '✓ Created trigger: trigger_calculate_test_score';
+RAISE NOTICE '[OK] Created trigger: trigger_calculate_test_score';
 
 -- STEP 6: Helper function to get student's detailed progress
 -- ============================================================
@@ -210,7 +210,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-RAISE NOTICE '✓ Created function: get_student_detailed_progress';
+RAISE NOTICE '[OK] Created function: get_student_detailed_progress';
 
 -- STEP 7: Verification
 -- ============================================================
@@ -227,19 +227,19 @@ BEGIN
     
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'mcq_tests') THEN
         SELECT COUNT(*) INTO test_count FROM mcq_tests;
-        RAISE NOTICE '✓ MCQ_TESTS table exists (% records)', test_count;
+        RAISE NOTICE '[OK] MCQ_TESTS table exists (% records)', test_count;
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'test_submissions') THEN
         SELECT COUNT(*) INTO submission_count FROM test_submissions;
-        RAISE NOTICE '✓ TEST_SUBMISSIONS table exists (% records)', submission_count;
+        RAISE NOTICE '[OK] TEST_SUBMISSIONS table exists (% records)', submission_count;
     END IF;
     
     RAISE NOTICE '';
-    RAISE NOTICE '✓ All indexes created';
-    RAISE NOTICE '✓ All views created';
-    RAISE NOTICE '✓ Auto-scoring trigger created';
-    RAISE NOTICE '✓ Helper functions created';
+    RAISE NOTICE '[OK] All indexes created';
+    RAISE NOTICE '[OK] All views created';
+    RAISE NOTICE '[OK] Auto-scoring trigger created';
+    RAISE NOTICE '[OK] Helper functions created';
     RAISE NOTICE '';
     RAISE NOTICE '╔════════════════════════════════════════════════════════╗';
     RAISE NOTICE '║              SETUP COMPLETED SUCCESSFULLY              ║';

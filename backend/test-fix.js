@@ -92,7 +92,7 @@ const pool = new Pool({
       console.log(`Module ${module.id} "${module.topic_title}":`);
       console.log(`  Expected indices: [${expectedIndices.join(', ')}]`);
       console.log(`  Completed indices: [${completedIndices.join(', ')}]`);
-      console.log(`  Status: ${isComplete ? '✓ COMPLETE' : '✗ INCOMPLETE'}`);
+      console.log(`  Status: ${isComplete ? '[COMPLETE]' : '[INCOMPLETE]'}`);
     }
     
   } catch (err) {

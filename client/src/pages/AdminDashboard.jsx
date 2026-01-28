@@ -173,10 +173,10 @@ function AdminDashboard() {
         }
       } else {
         const errData = await response.json();
-        alert(`❌ Error: ${errData.error || 'Registration failed'}`);
+        alert(`Error: ${errData.error || 'Registration failed'}`);
       }
     } catch (err) { 
-      alert(`❌ Error saving data: ${err.message || 'Please check all fields and try again'}`);
+      alert(`Error saving data: ${err.message || 'Please check all fields and try again'}`);
       console.error("Registration Error:", err);
     } finally { 
       setLoading(false); 

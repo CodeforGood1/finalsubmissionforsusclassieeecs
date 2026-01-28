@@ -24,7 +24,7 @@ FROM teachers t
 INNER JOIN teacher_student_allocations a ON t.id = a.teacher_id
 INNER JOIN students s ON a.student_id = s.id;
 
-SELECT '✓ Created v_teacher_students view' as status;
+SELECT '[OK] Created v_teacher_students view' as status;
 
 -- 2. CREATE v_student_teachers VIEW
 -- ============================================================
@@ -46,7 +46,7 @@ FROM students s
 INNER JOIN teacher_student_allocations a ON s.id = a.student_id
 INNER JOIN teachers t ON a.teacher_id = t.id;
 
-SELECT '✓ Created v_student_teachers view' as status;
+SELECT '[OK] Created v_student_teachers view' as status;
 
 -- 3. CREATE v_test_statistics VIEW
 -- ============================================================
@@ -75,7 +75,7 @@ GROUP BY t.id, t.teacher_id, t.teacher_name, t.section, t.title,
          t.description, t.total_questions, t.start_date, t.deadline, 
          t.is_active, t.created_at;
 
-SELECT '✓ Created v_test_statistics view' as status;
+SELECT '[OK] Created v_test_statistics view' as status;
 
 -- 4. CREATE v_student_test_progress VIEW
 -- ============================================================
@@ -101,7 +101,7 @@ LEFT JOIN mcq_tests t ON LOWER(t.section) = LOWER(s.class_dept || ' ' || s.secti
 LEFT JOIN test_submissions sub ON t.id = sub.test_id AND sub.student_id = s.id
 GROUP BY s.id, s.name, s.reg_no, s.class_dept, s.section;
 
-SELECT '✓ Created v_student_test_progress view' as status;
+SELECT '[OK] Created v_student_test_progress view' as status;
 
 -- 5. CREATE get_student_detailed_progress FUNCTION
 -- ============================================================
@@ -141,7 +141,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-SELECT '✓ Created get_student_detailed_progress function' as status;
+SELECT '[OK] Created get_student_detailed_progress function' as status;
 
 -- 6. VERIFICATION
 -- ============================================================

@@ -11,7 +11,7 @@ const { Pool } = require('pg');
 
   const client = await pool.connect();
   try {
-    console.log('🔍 Connecting to database...');
+    console.log('[INFO] Connecting to database...');
     await client.query('BEGIN');
 
     // 1) Check tables exist by selecting zero rows.
@@ -24,7 +24,7 @@ const { Pool } = require('pg');
     for (const tbl of tables) {
       await client.query(`SELECT 1 FROM ${tbl} LIMIT 1`);
     }
-    console.log('✅ Core notification tables are present');
+    console.log('[OK] Core notification tables are present');
 
     // 2) Verify seed count for notification_events (expected 19).
     const { rows: seedRows } = await client.query(
@@ -34,7 +34,7 @@ const { Pool } = require('pg');
     if (seedCount < 19) {
       throw new Error(`Seed events missing: expected 19, found ${seedCount}`);
     }
-    console.log(`✅ notification_events has ${seedCount} entries (>=19 expected)`);
+    console.log(`[OK] notification_events has ${seedCount} entries (>=19 expected)`);
 
     // 3) Validate views are selectable.
     const views = [
@@ -45,7 +45,7 @@ const { Pool } = require('pg');
     for (const view of views) {
       await client.query(`SELECT * FROM ${view} LIMIT 1`);
     }
-    console.log('✅ Notification views respond to SELECT');
+    console.log('[OK] Notification views respond to SELECT');
 
     // 4) Insert a temporary preference row to ensure writes work (rolled back).
     await client.query(
@@ -53,14 +53,14 @@ const { Pool } = require('pg');
        VALUES ($1, $2, $3, $4, $5)`,
       [999999, 'student', 'MODULE_PUBLISHED', true, false]
     );
-    console.log('✅ Insert into notification_preferences succeeded (will be rolled back)');
+    console.log('[OK] Insert into notification_preferences succeeded (will be rolled back)');
 
     // Roll back so we leave no trace.
     await client.query('ROLLBACK');
-    console.log('🧹 Transaction rolled back; no persistent changes made');
+    console.log('[INFO] Transaction rolled back; no persistent changes made');
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch (_) {}
-    console.error('❌ Notification DB check failed:', err.message);
+    console.error('[ERROR] Notification DB check failed:', err.message);
     process.exitCode = 1;
   } finally {
     client.release();

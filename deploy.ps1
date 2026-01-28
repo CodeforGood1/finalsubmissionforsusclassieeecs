@@ -1,87 +1,145 @@
 # ============================================================
 # SUSTAINABLE CLASSROOM - ONE-COMMAND DEPLOYMENT SCRIPT
 # ============================================================
-# Africa Sustainable Classroom Challenge - Finals Edition
-# Automated deployment for On-Premise Student Learning System
-# Windows PowerShell Version
+# Usage: .\deploy.ps1 [dev|prod]
+#   dev  - Builds images locally (default)
+#   prod - Uses pre-built images from GitHub Container Registry
 # ============================================================
+
+param(
+    [string]$Mode = "dev"
+)
 
 $ErrorActionPreference = "Stop"
 
 Write-Host ""
-Write-Host "🎓 ======================================" -ForegroundColor Cyan
+Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "   SUSTAINABLE CLASSROOM DEPLOYMENT" -ForegroundColor Cyan
-Write-Host "   Africa Challenge - On-Premise Setup" -ForegroundColor Cyan
-Write-Host "======================================" -ForegroundColor Cyan
+Write-Host "   Mode: $Mode" -ForegroundColor Cyan
+Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Function to print colored messages
-function Print-Success { Write-Host "✓ $args" -ForegroundColor Green }
-function Print-Error { Write-Host "✗ $args" -ForegroundColor Red }
-function Print-Info { Write-Host "ℹ $args" -ForegroundColor Blue }
-function Print-Warning { Write-Host "⚠ $args" -ForegroundColor Yellow }
+function Print-Success { Write-Host "[SUCCESS] $args" -ForegroundColor Green }
+function Print-Error { Write-Host "[ERROR] $args" -ForegroundColor Red }
+function Print-Info { Write-Host "[INFO] $args" -ForegroundColor Blue }
+function Print-Warning { Write-Host "[WARNING] $args" -ForegroundColor Yellow }
 
 # Check prerequisites
-Write-Host "📋 Checking prerequisites..." -ForegroundColor White
+Write-Host "[INFO] Checking prerequisites..." -ForegroundColor White
 
 # Check Docker
 try {
     $null = docker --version
     Print-Success "Docker installed"
 } catch {
-    Print-Error "Docker not found! Please install Docker Desktop."
+    Print-Error "Docker not found. Please install Docker Desktop."
     Write-Host "Visit: https://www.docker.com/products/docker-desktop" -ForegroundColor Yellow
     exit 1
 }
 
 # Check Docker Compose
+$composeCmd = "docker-compose"
 try {
-    $null = docker-compose --version
+    $null = docker compose version 2>$null
+    $composeCmd = "docker compose"
     Print-Success "Docker Compose installed"
 } catch {
-    Print-Error "Docker Compose not found! Please install Docker Compose."
-    exit 1
+    try {
+        $null = docker-compose --version
+        Print-Success "Docker Compose installed"
+    } catch {
+        Print-Error "Docker Compose not found. Please install Docker Compose."
+        exit 1
+    }
 }
 
 # Check if .env exists
 if (-not (Test-Path ".env")) {
-    Print-Warning ".env file not found. Creating from template..."
-    if (Test-Path ".env.example") {
-        Copy-Item ".env.example" ".env"
-        Print-Info "Created .env from template. Please edit with your values."
-        Print-Info "Minimum required: DB_PASSWORD, JWT_SECRET, ADMIN_PASSWORD"
-        Write-Host ""
-        Read-Host "Press Enter after editing .env file (or Ctrl+C to exit)"
-    } else {
-        Print-Error ".env.example not found!"
-        exit 1
-    }
+    Print-Warning ".env file not found. Creating default..."
+    @"
+# Database
+DB_PASSWORD=SecureLocalDB2026
+
+# Authentication
+JWT_SECRET=OnPremiseSecureKey2026AfricaChallenge
+ADMIN_EMAIL=admin@classroom.local
+ADMIN_PASSWORD=Admin@2026
+
+# Email Configuration
+SMTP_HOST=mailhog
+SMTP_PORT=1025
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASS=
+EMAIL_FROM_ADDRESS=noreply@classroom.local
+
+# Jitsi Configuration
+JITSI_PUBLIC_URL=https://localhost:8443
+DOCKER_HOST_ADDRESS=127.0.0.1
+JICOFO_AUTH_PASSWORD=jicofopassword
+JVB_AUTH_PASSWORD=jvbpassword
+
+# Production Settings
+GITHUB_REPOSITORY=susclass/sustainable-classroom
+IMAGE_TAG=latest
+"@ | Out-File -FilePath ".env" -Encoding utf8
+    Print-Info "Created default .env file."
 } else {
     Print-Success ".env file exists"
 }
 
 Write-Host ""
-Write-Host "🐳 Starting Docker deployment..." -ForegroundColor Cyan
+Write-Host "[INFO] Starting Docker deployment..." -ForegroundColor Cyan
 Write-Host ""
 
 # Stop any existing containers
 Print-Info "Stopping existing containers..."
-docker-compose down 2>$null
+if ($composeCmd -eq "docker compose") {
+    docker compose down 2>$null
+} else {
+    docker-compose down 2>$null
+}
 
-# Pull latest images
-Print-Info "Pulling Docker images..."
-docker-compose pull
-
-# Build the application
-Print-Info "Building application..."
-docker-compose build
+# Set compose file based on mode
+if ($Mode -eq "prod") {
+    $composeFile = "docker-compose.prod.yml"
+    Print-Info "Production mode - using pre-built images from GHCR..."
+    
+    # Pull pre-built images
+    Print-Info "Pulling Docker images..."
+    if ($composeCmd -eq "docker compose") {
+        docker compose -f $composeFile pull
+    } else {
+        docker-compose -f $composeFile pull
+    }
+} else {
+    $composeFile = "docker-compose.yml"
+    Print-Info "Development mode - building locally..."
+    
+    # Pull base images
+    Print-Info "Pulling Docker images..."
+    if ($composeCmd -eq "docker compose") {
+        docker compose -f $composeFile pull 2>$null
+        Print-Info "Building application..."
+        docker compose -f $composeFile build
+    } else {
+        docker-compose -f $composeFile pull 2>$null
+        Print-Info "Building application..."
+        docker-compose -f $composeFile build
+    }
+}
 
 # Start services
 Print-Info "Starting services..."
-docker-compose up -d
+if ($composeCmd -eq "docker compose") {
+    docker compose -f $composeFile up -d
+} else {
+    docker-compose -f $composeFile up -d
+}
 
 Write-Host ""
-Write-Host "⏳ Waiting for services to be healthy..." -ForegroundColor Yellow
+Write-Host "[INFO] Waiting for services to be healthy..." -ForegroundColor Yellow
 Write-Host ""
 
 # Wait for database
@@ -101,8 +159,12 @@ if ($counter -eq $maxWait) {
     Write-Host ""
     Print-Error "Database failed to start within $maxWait seconds"
     Write-Host ""
-    Write-Host "📋 Checking logs..." -ForegroundColor Yellow
-    docker-compose logs postgres --tail 20
+    Write-Host "[INFO] Checking logs..." -ForegroundColor Yellow
+    if ($composeCmd -eq "docker compose") {
+        docker compose -f $composeFile logs postgres --tail 20
+    } else {
+        docker-compose -f $composeFile logs postgres --tail 20
+    }
     exit 1
 }
 
@@ -139,8 +201,12 @@ if ($counter -eq 60) {
     Write-Host ""
     Print-Error "Backend failed to start"
     Write-Host ""
-    Write-Host "📋 Checking backend logs..." -ForegroundColor Yellow
-    docker-compose logs backend --tail 30
+    Write-Host "[INFO] Checking backend logs..." -ForegroundColor Yellow
+    if ($composeCmd -eq "docker compose") {
+        docker compose -f $composeFile logs backend --tail 30
+    } else {
+        docker-compose -f $composeFile logs backend --tail 30
+    }
     exit 1
 }
 
@@ -148,74 +214,37 @@ Write-Host ""
 Print-Success "Backend API is ready"
 
 Write-Host ""
-Write-Host "🎉 ======================================" -ForegroundColor Green
-Write-Host "   DEPLOYMENT SUCCESSFUL!" -ForegroundColor Green
-Write-Host "======================================" -ForegroundColor Green
+Write-Host "============================================================" -ForegroundColor Green
+Write-Host "   DEPLOYMENT SUCCESSFUL" -ForegroundColor Green
+Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
-Print-Success "All services are running!"
+Print-Success "All services are running"
 Write-Host ""
-Write-Host "📍 Access Points:" -ForegroundColor Cyan
-Write-Host "   • Application: http://localhost:5000"
-Write-Host "   • MailHog (Email): http://localhost:8025"
-Write-Host "   • Database: localhost:5432"
+Write-Host "Access Points:" -ForegroundColor Cyan
+Write-Host "   Application:     http://localhost:5000"
+Write-Host "   Email UI:        http://localhost:8025"
+Write-Host "   Jitsi Meet:      https://localhost:8443"
+Write-Host "   Database:        localhost:5432"
 Write-Host ""
-Write-Host "🔑 Default Credentials:" -ForegroundColor Cyan
-Write-Host "   • Admin: admin@classroom.local / Admin@2026"
-Write-Host "   • Teacher: susclass.global+sarah.teacher@gmail.com / password123"
-Write-Host "   • Student: susclass.global+amara@gmail.com / student123"
+Write-Host "Default Credentials:" -ForegroundColor Cyan
+Write-Host "   Admin:   admin@classroom.local / Admin@2026"
 Write-Host ""
-Write-Host "📚 Quick Commands:" -ForegroundColor Cyan
-Write-Host "   • View logs: docker-compose logs -f"
-Write-Host "   • Stop: docker-compose down"
-Write-Host "   • Restart: docker-compose restart"
-Write-Host "   • Status: docker-compose ps"
-Write-Host ""
-Print-Warning "⚠️  SECURITY REMINDER:"
-Write-Host "   Change default passwords immediately!"
-Write-Host "   Edit JWT_SECRET in .env for production!"
-Write-Host ""
-Write-Host "📖 For more info, see README.md and DEPLOYMENT.md"
-Write-Host ""
-
-# Optional: Run verification tests
-$runTests = Read-Host "Run automated verification tests? (y/n)"
-if ($runTests -eq "y" -or $runTests -eq "Y") {
-    Write-Host ""
-    Write-Host "🧪 Running verification tests..." -ForegroundColor Cyan
-    
-    # Test health endpoint
-    try {
-        $response = Invoke-RestMethod -Uri "http://localhost:5000/api/health"
-        if ($response.status -eq "ok") {
-            Print-Success "Health check passed"
-        }
-    } catch {
-        Print-Error "Health check failed"
-    }
-    
-    # Test admin login
-    try {
-        $body = @{
-            email = "admin@classroom.local"
-            password = "Admin@2026"
-        } | ConvertTo-Json
-        
-        $response = Invoke-RestMethod -Uri "http://localhost:5000/api/admin/login" `
-            -Method POST `
-            -ContentType "application/json" `
-            -Body $body
-        
-        if ($response.token) {
-            Print-Success "Admin login works"
-        }
-    } catch {
-        Print-Error "Admin login failed"
-    }
-    
-    Write-Host ""
-    Print-Success "Basic verification complete!"
+Write-Host "Commands:" -ForegroundColor Cyan
+if ($composeCmd -eq "docker compose") {
+    Write-Host "   View logs:   docker compose -f $composeFile logs -f"
+    Write-Host "   Stop:        docker compose -f $composeFile down"
+    Write-Host "   Restart:     docker compose -f $composeFile restart"
+    Write-Host "   Status:      docker compose -f $composeFile ps"
+} else {
+    Write-Host "   View logs:   docker-compose -f $composeFile logs -f"
+    Write-Host "   Stop:        docker-compose -f $composeFile down"
+    Write-Host "   Restart:     docker-compose -f $composeFile restart"
+    Write-Host "   Status:      docker-compose -f $composeFile ps"
 }
-
 Write-Host ""
-Write-Host "✅ Setup complete! Happy teaching and learning! 🎓" -ForegroundColor Green
+Print-Warning "SECURITY: Change default passwords for production use."
+Write-Host ""
+Write-Host "See README.md and DEPLOYMENT.md for more information."
+Write-Host ""
+Write-Host "[COMPLETE] Deployment finished successfully." -ForegroundColor Green
 Write-Host ""

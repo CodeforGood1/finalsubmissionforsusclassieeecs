@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import ModuleBuilder from './ModuleBuilder';
 import NotificationBell from '../components/NotificationBell';
 import LiveSessionsCalendar from '../components/LiveSessionsCalendar';
+import Chat from '../components/Chat';
 import API_BASE_URL from '../config/api';
 
 function TeacherDashboard() {
@@ -13,6 +14,7 @@ function TeacherDashboard() {
   const [selectedSection, setSelectedSection] = useState("");
   const [loading, setLoading] = useState(true);
   const [allAllocations, setAllAllocations] = useState([]); // Store all teacher's class allocations
+  const [showChat, setShowChat] = useState(false);
   
   // Class Roster filtering states
   const [filterMode, setFilterMode] = useState('department'); // 'department' or 'subject'
@@ -497,6 +499,15 @@ const fetchTeacherProfile = useCallback(async () => {
             </div>
           </div>
           <div className="flex items-center gap-6">
+            <button 
+              onClick={() => setShowChat(true)} 
+              className="relative p-2 text-slate-500 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition-colors"
+              title="Messages"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </button>
             <NotificationBell />
             <div className="flex gap-3 bg-white p-3 rounded-full shadow-xl">
               {teacherInfo?.allocated_sections && Array.isArray(teacherInfo.allocated_sections) && teacherInfo.allocated_sections.length > 0 ? (
@@ -519,7 +530,7 @@ const fetchTeacherProfile = useCallback(async () => {
         ) : activeTab === 'live' ? (
           <div className="max-w-4xl">
             <div className="mb-8">
-              <h2 className="text-2xl font-black text-slate-800 mb-2">📅 Scheduled Live Sessions</h2>
+              <h2 className="text-2xl font-black text-slate-800 mb-2">Scheduled Live Sessions</h2>
               <p className="text-slate-500">View and manage your upcoming live video sessions with students</p>
             </div>
             <LiveSessionsCalendar userType="teacher" />
@@ -550,7 +561,7 @@ const fetchTeacherProfile = useCallback(async () => {
 
                 {testSubmissions.length === 0 ? (
                   <div className="text-center py-24 bg-white rounded-[3rem] border-2 border-dashed border-slate-200">
-                    <div className="text-6xl mb-4">📝</div>
+                    <div className="text-6xl mb-4 text-slate-300">T</div>
                     <p className="text-slate-400 font-medium mb-2">No submissions yet</p>
                     <p className="text-xs text-slate-500">Students haven't taken this test</p>
                   </div>
@@ -720,7 +731,7 @@ const fetchTeacherProfile = useCallback(async () => {
                             onClick={() => handleViewTestSubmissions(test)}
                             className="w-full mt-6 bg-emerald-600 text-white py-3 rounded-xl font-black uppercase text-xs hover:bg-emerald-700 transition-all"
                           >
-                            👥 View Student Submissions
+                            View Student Submissions
                           </button>
                         </div>
                       ))}
@@ -865,7 +876,7 @@ const fetchTeacherProfile = useCallback(async () => {
                             </div>
                           </div>
                           <div className="flex items-center gap-3 ml-4">
-                            <span className="text-xs text-white font-black bg-emerald-600 px-3 py-1 rounded-lg">✓ {q.correct}</span>
+                            <span className="text-xs text-white font-black bg-emerald-600 px-3 py-1 rounded-lg">Ans: {q.correct}</span>
                             <button
                               onClick={() => {
                                 if (confirm('Remove this question?')) {
@@ -1179,7 +1190,7 @@ const fetchTeacherProfile = useCallback(async () => {
                   )}
                   
                   {/* Test Progress Section */}
-                  <h3 className="font-black mb-4 flex items-center gap-2">📝 Test Performance</h3>
+                  <h3 className="font-black mb-4 flex items-center gap-2">Test Performance</h3>
                   <div className="grid grid-cols-4 gap-4 mb-8">
                     <div className="bg-emerald-50 p-6 rounded-2xl text-center">
                       <p className="text-3xl font-black text-emerald-600">{studentProgress.student?.tests_completed || 0}</p>
@@ -1236,6 +1247,9 @@ const fetchTeacherProfile = useCallback(async () => {
           </div>
         )}
       </main>
+      
+      {/* Chat Component */}
+      {showChat && <Chat onClose={() => setShowChat(false)} />}
     </div>
   );
 }

@@ -319,7 +319,7 @@ afterAll(() => {
   if (db) db.close();
 });
 
-describe('🔐 Authentication & OTP', () => {
+describe('Authentication & OTP', () => {
   let testStudent, testTeacher;
   
   beforeAll(async () => {
@@ -405,7 +405,7 @@ describe('🔐 Authentication & OTP', () => {
   });
 });
 
-describe('👥 User Registration & Notifications', () => {
+describe('User Registration & Notifications', () => {
   let adminToken;
   
   beforeAll(() => {
@@ -473,7 +473,7 @@ describe('👥 User Registration & Notifications', () => {
   });
 });
 
-describe('📚 Module Management', () => {
+describe('Module Management', () => {
   let teacherToken, studentToken, moduleId;
   
   beforeAll(() => {
@@ -530,7 +530,7 @@ describe('📚 Module Management', () => {
   });
 });
 
-describe('📝 Test Management & Submissions', () => {
+describe('Test Management & Submissions', () => {
   let teacherToken, studentToken, testId;
   
   beforeAll(() => {
@@ -615,7 +615,7 @@ describe('📝 Test Management & Submissions', () => {
   });
 });
 
-describe('💻 Code Submission', () => {
+describe('Code Submission', () => {
   let studentToken;
   
   beforeAll(() => {
@@ -661,7 +661,7 @@ describe('💻 Code Submission', () => {
   });
 });
 
-describe('🔔 Notification API Endpoints', () => {
+describe('Notification API Endpoints', () => {
   let studentToken, teacherToken;
   
   beforeAll(() => {
@@ -724,7 +724,7 @@ describe('🔔 Notification API Endpoints', () => {
   });
 });
 
-describe('🔒 Authorization Guards', () => {
+describe('Authorization Guards', () => {
   let studentToken;
   
   beforeAll(() => {
@@ -757,4 +757,4 @@ describe('🔒 Authorization Guards', () => {
   });
 });
 
-console.log('\n✅ Test suite complete - merge validation successful!\n');
+console.log('\n[OK] Test suite complete - merge validation successful!\n');

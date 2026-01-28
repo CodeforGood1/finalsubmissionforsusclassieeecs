@@ -47,7 +47,7 @@ DROP TABLE IF EXISTS teachers CASCADE;
 
 DO $$ 
 BEGIN
-    RAISE NOTICE '✓ Cleanup completed';
+    RAISE NOTICE '[OK] Cleanup completed';
     RAISE NOTICE '';
 END $$;
 
@@ -110,7 +110,7 @@ CREATE TABLE modules (
 
 DO $$ 
 BEGIN
-    RAISE NOTICE '✓ Core tables created (teachers, students, modules)';
+    RAISE NOTICE '[OK] Core tables created (teachers, students, modules)';
 END $$;
 
 -- ============================================================
@@ -172,7 +172,7 @@ CREATE TABLE test_submissions (
 
 DO $$ 
 BEGIN
-    RAISE NOTICE '✓ MCQ test tables created (mcq_tests, test_submissions)';
+    RAISE NOTICE '[OK] MCQ test tables created (mcq_tests, test_submissions)';
 END $$;
 
 -- ============================================================
@@ -218,7 +218,7 @@ CREATE INDEX idx_submissions_composite ON test_submissions(test_id, student_id, 
 
 DO $$ 
 BEGIN
-    RAISE NOTICE '✓ All indexes created (25+ indexes for optimal performance)';
+    RAISE NOTICE '[OK] All indexes created (25+ indexes for optimal performance)';
 END $$;
 
 -- ============================================================
@@ -276,7 +276,7 @@ LEFT JOIN teachers t ON m.teacher_id = t.id;
 
 DO $$ 
 BEGIN
-    RAISE NOTICE '✓ Basic views created';
+    RAISE NOTICE '[OK] Basic views created';
 END $$;
 
 -- ============================================================
@@ -351,7 +351,7 @@ GROUP BY ss.id, ss.name, ss.reg_no, ss.class_dept, ss.section,
 
 DO $$ 
 BEGIN
-    RAISE NOTICE '✓ Student progress view created';
+    RAISE NOTICE '[OK] Student progress view created';
 END $$;
 
 -- View 5: Test statistics (for teacher dashboard test list)
@@ -409,7 +409,7 @@ ORDER BY t.created_at DESC;
 
 DO $$ 
 BEGIN
-    RAISE NOTICE '✓ Test statistics view created';
+    RAISE NOTICE '[OK] Test statistics view created';
 END $$;
 
 -- ============================================================
@@ -498,7 +498,7 @@ $$;
 
 DO $$ 
 BEGIN
-    RAISE NOTICE '✓ Function get_student_detailed_progress created';
+    RAISE NOTICE '[OK] Function get_student_detailed_progress created';
 END $$;
 
 -- Function 2: Get test performance summary
@@ -573,7 +573,7 @@ $$;
 
 DO $$ 
 BEGIN
-    RAISE NOTICE '✓ Function get_test_performance_summary created';
+    RAISE NOTICE '[OK] Function get_test_performance_summary created';
 END $$;
 
 -- ============================================================
@@ -602,7 +602,7 @@ CREATE TRIGGER trg_test_timestamp
 
 DO $$ 
 BEGIN
-    RAISE NOTICE '✓ Triggers created';
+    RAISE NOTICE '[OK] Triggers created';
 END $$;
 
 -- ============================================================
@@ -661,7 +661,7 @@ $$;
 
 DO $$ 
 BEGIN
-    RAISE NOTICE '✓ Materialized view created';
+    RAISE NOTICE '[OK] Materialized view created';
 END $$;
 
 -- ============================================================
@@ -677,7 +677,7 @@ BEGIN
     -- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO your_app_user;
     -- GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO your_app_user;
     
-    RAISE NOTICE '✓ Permissions configured (using default public access)';
+    RAISE NOTICE '[OK] Permissions configured (using default public access)';
 END $$;
 
 -- ============================================================
@@ -726,25 +726,25 @@ BEGIN
     RAISE NOTICE '';
     RAISE NOTICE '╔══════════════════════════════════════════════════════════════╗';
     RAISE NOTICE '║                                                              ║';
-    RAISE NOTICE '║     ✓ DATABASE SETUP COMPLETED SUCCESSFULLY                  ║';
+    RAISE NOTICE '║     [OK] DATABASE SETUP COMPLETED SUCCESSFULLY                  ║';
     RAISE NOTICE '║                                                              ║';
     RAISE NOTICE '╚══════════════════════════════════════════════════════════════╝';
     RAISE NOTICE '';
-    RAISE NOTICE '📊 DATABASE STATISTICS:';
+    RAISE NOTICE '[INFO] DATABASE STATISTICS:';
     RAISE NOTICE '  ├─ Teachers: %', teacher_count;
     RAISE NOTICE '  ├─ Students: %', student_count;
     RAISE NOTICE '  ├─ Modules: %', module_count;
     RAISE NOTICE '  ├─ MCQ Tests: %', test_count;
     RAISE NOTICE '  └─ Test Submissions: %', submission_count;
     RAISE NOTICE '';
-    RAISE NOTICE '🗄️  DATABASE OBJECTS:';
+    RAISE NOTICE '[INFO]  DATABASE OBJECTS:';
     RAISE NOTICE '  ├─ Tables: % (teachers, students, modules, mcq_tests, test_submissions)', table_count;
     RAISE NOTICE '  ├─ Views: % (regular + materialized)', view_count;
     RAISE NOTICE '  ├─ Functions: %', function_count;
     RAISE NOTICE '  ├─ Triggers: 1 (auto-timestamp)';
     RAISE NOTICE '  └─ Indexes: % (optimized for performance)', index_count;
     RAISE NOTICE '';
-    RAISE NOTICE '✅ FEATURES ENABLED:';
+    RAISE NOTICE '[OK] FEATURES ENABLED:';
     RAISE NOTICE '  ├─ Teacher & Student authentication';
     RAISE NOTICE '  ├─ Module management system';
     RAISE NOTICE '  ├─ MCQ test creation & management';
@@ -754,7 +754,7 @@ BEGIN
     RAISE NOTICE '  ├─ Performance categorization';
     RAISE NOTICE '  └─ Advanced statistics & reporting';
     RAISE NOTICE '';
-    RAISE NOTICE '🚀 NEXT STEPS:';
+    RAISE NOTICE '[INFO] NEXT STEPS:';
     RAISE NOTICE '  1. Restart your backend server';
     RAISE NOTICE '  2. Create admin/teacher accounts';
     RAISE NOTICE '  3. Add students to sections';
@@ -762,7 +762,7 @@ BEGIN
     RAISE NOTICE '  5. Students take tests';
     RAISE NOTICE '  6. View results & analytics';
     RAISE NOTICE '';
-    RAISE NOTICE '💡 USEFUL QUERIES:';
+    RAISE NOTICE '[TIP] USEFUL QUERIES:';
     RAISE NOTICE '  • SELECT * FROM v_test_statistics;';
     RAISE NOTICE '  • SELECT * FROM v_student_test_progress;';
     RAISE NOTICE '  • SELECT * FROM get_student_detailed_progress(1);';
@@ -841,8 +841,8 @@ INNER JOIN teachers t ON a.teacher_id = t.id;
 
 DO $$ 
 BEGIN
-    RAISE NOTICE '✓ Teacher-student allocation system created';
-    RAISE NOTICE '✓ Many-to-many relationship enabled';
+    RAISE NOTICE '[OK] Teacher-student allocation system created';
+    RAISE NOTICE '[OK] Many-to-many relationship enabled';
 END $$;
 
 -- ============================================================
@@ -878,6 +878,6 @@ CREATE INDEX idx_inapp_created ON in_app_notifications(created_at DESC);
 
 DO $$ 
 BEGIN
-    RAISE NOTICE '✓ In-app notifications table created';
-    RAISE NOTICE '✓ Notification indexes created for performance';
+    RAISE NOTICE '[OK] In-app notifications table created';
+    RAISE NOTICE '[OK] Notification indexes created for performance';
 END $$;

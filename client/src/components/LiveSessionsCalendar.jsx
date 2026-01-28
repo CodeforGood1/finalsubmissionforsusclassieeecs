@@ -122,7 +122,7 @@ function LiveSessionsCalendar({ userType = 'student' }) {
       <div className="px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
         <div className="flex justify-between items-center">
           <div>
-            <h3 className="font-bold text-lg">📅 Live Sessions</h3>
+            <h3 className="font-bold text-lg">Live Sessions</h3>
             <p className="text-indigo-200 text-sm">{sessions.length} scheduled session{sessions.length !== 1 ? 's' : ''}</p>
           </div>
           <div className="flex gap-2">
@@ -164,7 +164,7 @@ function LiveSessionsCalendar({ userType = 'student' }) {
           {/* Upcoming Sessions Alert */}
           {getUpcomingSessions().length > 0 && (
             <div className="p-4 bg-amber-50 border-b border-amber-100">
-              <p className="text-xs font-bold text-amber-700 uppercase mb-2">📢 Coming Up This Week</p>
+              <p className="text-xs font-bold text-amber-700 uppercase mb-2">Coming Up This Week</p>
               <div className="space-y-2">
                 {getUpcomingSessions().slice(0, 3).map(session => (
                   <div key={session.id} className="flex items-center justify-between p-3 bg-white rounded-xl border border-amber-200">
@@ -177,7 +177,7 @@ function LiveSessionsCalendar({ userType = 'student' }) {
                         onClick={() => joinSession(session)}
                         className="px-4 py-2 bg-red-600 text-white rounded-lg text-xs font-bold animate-pulse hover:bg-red-700"
                       >
-                        🔴 JOIN NOW
+                        JOIN NOW
                       </button>
                     ) : isSessionUpcoming(session) ? (
                       <button
@@ -210,16 +210,16 @@ function LiveSessionsCalendar({ userType = 'student' }) {
                     <div className="flex items-center gap-2 mb-1">
                       {isSessionLive(session) && (
                         <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[10px] font-bold uppercase animate-pulse">
-                          🔴 Live
+                          LIVE
                         </span>
                       )}
                       <h4 className="font-bold text-slate-800">{session.step_title || session.topic}</h4>
                     </div>
                     <p className="text-xs text-slate-500 mb-2">{session.topic} • {session.section}</p>
                     <div className="flex items-center gap-4 text-xs text-slate-400">
-                      <span>📅 {formatDate(session.scheduled_time)}</span>
-                      <span>⏰ {formatTime(session.scheduled_time)}</span>
-                      <span>⏱️ {session.duration}min</span>
+                      <span>{formatDate(session.scheduled_time)}</span>
+                      <span>{formatTime(session.scheduled_time)}</span>
+                      <span>{session.duration}min</span>
                     </div>
                   </div>
                   <button
@@ -316,21 +316,21 @@ function LiveSessionsCalendar({ userType = 'student' }) {
             
             <div className="space-y-3 mb-6">
               <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
-                <span className="text-2xl">📅</span>
+                <span className="text-2xl text-slate-600">D</span>
                 <div>
                   <p className="text-xs text-slate-400 font-bold uppercase">Date & Time</p>
                   <p className="font-bold text-slate-800">{formatDate(selectedSession.scheduled_time)} at {formatTime(selectedSession.scheduled_time)}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
-                <span className="text-2xl">⏱️</span>
+                <span className="text-2xl text-slate-600">T</span>
                 <div>
                   <p className="text-xs text-slate-400 font-bold uppercase">Duration</p>
                   <p className="font-bold text-slate-800">{selectedSession.duration} minutes</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
-                <span className="text-2xl">📚</span>
+                <span className="text-2xl text-slate-600">S</span>
                 <div>
                   <p className="text-xs text-slate-400 font-bold uppercase">Section</p>
                   <p className="font-bold text-slate-800">{selectedSession.section} - {selectedSession.subject}</p>
@@ -346,7 +346,7 @@ function LiveSessionsCalendar({ userType = 'student' }) {
                   : 'bg-indigo-600 hover:bg-indigo-700'
               }`}
             >
-              {isSessionLive(selectedSession) ? '🔴 Join Live Session Now' : '🎥 Open Meeting Room'}
+              {isSessionLive(selectedSession) ? 'LIVE - Join Session Now' : 'Open Meeting Room'}
             </button>
           </div>
         </div>

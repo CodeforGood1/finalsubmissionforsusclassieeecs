@@ -11,7 +11,7 @@ CREATE INDEX IF NOT EXISTS idx_modules_section_subject ON modules(section, subje
 -- 3. Update existing modules to have a default subject (optional)
 -- UPDATE modules SET subject = 'General' WHERE subject IS NULL;
 
-SELECT '✓ Added subject column to modules table' as status;
+SELECT '[OK] Added subject column to modules table' as status;
 
 -- 4. Verify the change
 SELECT column_name, data_type 

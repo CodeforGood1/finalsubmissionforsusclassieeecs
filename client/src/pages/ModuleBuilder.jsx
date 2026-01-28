@@ -587,7 +587,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                   {/* Constraints */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-white p-4 rounded-xl border-2 border-slate-200">
-                      <label className="text-xs font-bold text-slate-600 mb-2 block">⏱️ Time Limit (ms)</label>
+                      <label className="text-xs font-bold text-slate-600 mb-2 block">Time Limit (ms)</label>
                       <input
                         type="number"
                         className="w-full p-3 bg-slate-50 rounded-lg border font-bold"
@@ -596,7 +596,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                       />
                     </div>
                     <div className="bg-white p-4 rounded-xl border-2 border-slate-200">
-                      <label className="text-xs font-bold text-slate-600 mb-2 block">💾 Memory Limit (MB)</label>
+                      <label className="text-xs font-bold text-slate-600 mb-2 block">Memory Limit (MB)</label>
                       <input
                         type="number"
                         className="w-full p-3 bg-slate-50 rounded-lg border font-bold"

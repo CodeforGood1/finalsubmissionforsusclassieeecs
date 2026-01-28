@@ -86,7 +86,7 @@ function CoursePlayer() {
       });
       const data = await res.json();
       if (res.ok) {
-        alert(`🏆 MISSION ACCOMPLISHED\nScore: ${data.score}%\nTests Passed: ${data.passed}/${data.total}`);
+        alert(`MISSION ACCOMPLISHED\nScore: ${data.score}%\nTests Passed: ${data.passed}/${data.total}`);
         navigate('/dashboard');
       }
     } catch (err) { 
@@ -132,7 +132,7 @@ function CoursePlayer() {
           ))}
           {dbTestCases.some(tc => tc.isHidden) && (
             <div className="bg-slate-900 p-4 rounded-3xl text-center">
-              <p className="text-[10px] font-bold text-slate-400">🔒 {dbTestCases.filter(tc => tc.isHidden).length} Hidden Tests Locked</p>
+              <p className="text-[10px] font-bold text-slate-400">{dbTestCases.filter(tc => tc.isHidden).length} Hidden Tests Locked</p>
             </div>
           )}
         </div>

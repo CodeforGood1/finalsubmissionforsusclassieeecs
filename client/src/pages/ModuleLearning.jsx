@@ -138,7 +138,7 @@ function ModuleLearning() {
       const result = await response.json();
       
       if (result.allComplete) {
-        alert('🎉 Module completed! Great work!');
+        alert('Module completed! Great work!');
         navigate('/dashboard');
         return;
       }
@@ -151,7 +151,7 @@ function ModuleLearning() {
       // Refresh module data to update progress
       fetchModule();
     } else {
-      alert('🎉 Module completed! Great work!');
+      alert('Module completed! Great work!');
       navigate('/dashboard');
     }
   };

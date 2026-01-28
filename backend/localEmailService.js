@@ -82,10 +82,10 @@ const initializeEmailService = () => {
     // Verify connection
     transporter.verify((error, success) => {
       if (error) {
-        console.warn('[LOCAL EMAIL] ⚠ SMTP connection failed:', error.message);
+        console.warn('[LOCAL EMAIL] SMTP connection failed:', error.message);
         console.log('[LOCAL EMAIL] Emails will be queued and logged to console');
       } else {
-        console.log('[LOCAL EMAIL] ✓ SMTP server ready');
+        console.log('[LOCAL EMAIL] SMTP server ready');
       }
     });
     
@@ -151,11 +151,11 @@ const sendEmail = async (mailOptions) => {
     }
     
     const result = await transporter.sendMail(emailData);
-    console.log('[LOCAL EMAIL] ✓ Sent successfully:', result.messageId);
+    console.log('[LOCAL EMAIL] Sent successfully:', result.messageId);
     return { success: true, messageId: result.messageId };
     
   } catch (err) {
-    console.error('[LOCAL EMAIL] ✗ Send failed:', err.message);
+    console.error('[LOCAL EMAIL] Send failed:', err.message);
     
     // Queue for retry
     queueEmail(emailData);
@@ -244,7 +244,7 @@ const processEmailQueue = async () => {
     
     try {
       await transporter.sendMail(email);
-      console.log(`[LOCAL EMAIL] ✓ Queued email sent: ${email.to}`);
+      console.log(`[LOCAL EMAIL] Queued email sent: ${email.to}`);
     } catch (err) {
       console.log(`[LOCAL EMAIL] Retry failed (attempt ${email.attempts}): ${email.to}`);
       emailQueue.push(email); // Re-queue

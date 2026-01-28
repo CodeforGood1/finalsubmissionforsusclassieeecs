@@ -63,9 +63,9 @@ INNER JOIN teachers t ON a.teacher_id = t.id;
 DO $$
 BEGIN
     RAISE NOTICE '';
-    RAISE NOTICE '✓ teacher_student_allocations table created';
-    RAISE NOTICE '✓ Indexes created';
-    RAISE NOTICE '✓ Views created (v_teacher_students, v_student_teachers)';
+    RAISE NOTICE '[OK] teacher_student_allocations table created';
+    RAISE NOTICE '[OK] Indexes created';
+    RAISE NOTICE '[OK] Views created (v_teacher_students, v_student_teachers)';
     RAISE NOTICE '';
     RAISE NOTICE 'Allocation system is ready!';
     RAISE NOTICE 'You can now allocate teachers to students in admin dashboard.';

@@ -46,14 +46,14 @@ BEGIN
             CONSTRAINT chk_title_length CHECK (char_length(title) >= 3 AND char_length(title) <= 200)
         );
         
-        RAISE NOTICE '✓ mcq_tests table created';
+        RAISE NOTICE '[OK] mcq_tests table created';
     ELSE
         -- Add columns if they don't exist (for upgrades)
         ALTER TABLE mcq_tests 
             ADD COLUMN IF NOT EXISTS start_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
         
-        RAISE NOTICE '✓ mcq_tests table already exists (verified)';
+        RAISE NOTICE '[OK] mcq_tests table already exists (verified)';
     END IF;
 END $$;
 
@@ -82,9 +82,9 @@ BEGIN
             CONSTRAINT chk_answers_object CHECK (jsonb_typeof(answers) = 'object')
         );
         
-        RAISE NOTICE '✓ test_submissions table created';
+        RAISE NOTICE '[OK] test_submissions table created';
     ELSE
-        RAISE NOTICE '✓ test_submissions table already exists (verified)';
+        RAISE NOTICE '[OK] test_submissions table already exists (verified)';
     END IF;
 END $$;
 
@@ -109,7 +109,7 @@ BEGIN
     CREATE INDEX IF NOT EXISTS idx_submissions_score ON test_submissions(percentage DESC);
     CREATE INDEX IF NOT EXISTS idx_submissions_composite ON test_submissions(test_id, student_id, status);
     
-    RAISE NOTICE '✓ All indexes created';
+    RAISE NOTICE '[OK] All indexes created';
 END $$;
 
 -- STEP 5: Create advanced view for student progress with analytics
@@ -489,12 +489,12 @@ BEGIN
     RAISE NOTICE '║     ADVANCED DATABASE SETUP COMPLETED SUCCESSFULLY           ║';
     RAISE NOTICE '╚══════════════════════════════════════════════════════════════╝';
     RAISE NOTICE '';
-    RAISE NOTICE '📊 DATABASE STATISTICS:';
+    RAISE NOTICE '[INFO] DATABASE STATISTICS:';
     RAISE NOTICE '  ├─ Students: %', student_count;
     RAISE NOTICE '  ├─ MCQ Tests: %', test_count;
     RAISE NOTICE '  └─ Test Submissions: %', submission_count;
     RAISE NOTICE '';
-    RAISE NOTICE '🗄️  DATABASE OBJECTS CREATED:';
+    RAISE NOTICE '[INFO]  DATABASE OBJECTS CREATED:';
     RAISE NOTICE '  ├─ Tables: 2 (mcq_tests, test_submissions)';
     RAISE NOTICE '  ├─ Views: % (v_student_test_progress, v_test_statistics)', view_count;
     RAISE NOTICE '  ├─ Materialized Views: 1 (mv_student_performance_analytics)';
@@ -502,7 +502,7 @@ BEGIN
     RAISE NOTICE '  ├─ Triggers: 1 (trg_test_timestamp)';
     RAISE NOTICE '  └─ Indexes: 20+ (optimized for performance)';
     RAISE NOTICE '';
-    RAISE NOTICE '✅ FEATURES ENABLED:';
+    RAISE NOTICE '[OK] FEATURES ENABLED:';
     RAISE NOTICE '  ├─ Teachers can create MCQ tests with deadlines';
     RAISE NOTICE '  ├─ Students can take tests and get instant scores';
     RAISE NOTICE '  ├─ Automatic score calculation (backend + database)';
@@ -511,14 +511,14 @@ BEGIN
     RAISE NOTICE '  ├─ Test statistics with median, stddev, percentiles';
     RAISE NOTICE '  └─ Materialized views for fast analytics queries';
     RAISE NOTICE '';
-    RAISE NOTICE '🚀 NEXT STEPS:';
+    RAISE NOTICE '[INFO] NEXT STEPS:';
     RAISE NOTICE '  1. Restart your backend server (if running)';
     RAISE NOTICE '  2. Login as teacher and create a test';
     RAISE NOTICE '  3. Login as student and take the test';
     RAISE NOTICE '  4. Verify score calculates correctly (not 0.00%%)';
     RAISE NOTICE '  5. Check teacher dashboard for test statistics';
     RAISE NOTICE '';
-    RAISE NOTICE '💡 ADVANCED QUERIES YOU CAN NOW RUN:';
+    RAISE NOTICE '[TIP] ADVANCED QUERIES YOU CAN NOW RUN:';
     RAISE NOTICE '  • SELECT * FROM v_test_statistics;';
     RAISE NOTICE '  • SELECT * FROM v_student_test_progress;';
     RAISE NOTICE '  • SELECT * FROM get_student_detailed_progress(1);';

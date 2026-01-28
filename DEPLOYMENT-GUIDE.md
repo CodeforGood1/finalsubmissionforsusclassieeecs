@@ -1,4 +1,4 @@
-# 🏫 Africa Sustainable Classroom - On-Premise Deployment Guide
+# Africa Sustainable Classroom - On-Premise Deployment Guide
 
 ## Overview
 
@@ -6,7 +6,7 @@ This guide provides step-by-step instructions for deploying the Sustainable Clas
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
 1. [System Requirements](#system-requirements)
 2. [Architecture Overview](#architecture-overview)
@@ -21,7 +21,7 @@ This guide provides step-by-step instructions for deploying the Sustainable Clas
 
 ---
 
-## 🖥️ System Requirements
+## System Requirements
 
 ### Minimum Hardware
 | Component | Requirement |
@@ -47,7 +47,7 @@ This guide provides step-by-step instructions for deploying the Sustainable Clas
 
 ---
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -83,7 +83,7 @@ This guide provides step-by-step instructions for deploying the Sustainable Clas
 
 ---
 
-## 🚀 Quick Start with Docker
+## Quick Start with Docker
 
 ### Step 1: Clone the Repository
 
@@ -145,7 +145,7 @@ docker-compose exec backend npm run seed
 
 ---
 
-## 🔧 Manual Installation
+## Manual Installation
 
 For environments where Docker is not available.
 
@@ -226,7 +226,7 @@ sudo systemctl restart nginx
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### Backend Environment Variables
 
@@ -251,7 +251,7 @@ sudo systemctl restart nginx
 
 ---
 
-## 📹 Jitsi Video Conferencing Setup
+## Jitsi Video Conferencing Setup
 
 ### Option 1: Use Public Jitsi (Requires Internet)
 
@@ -285,7 +285,7 @@ VITE_JITSI_SERVER_URL=http://meet.classroom.local:8000
 
 ---
 
-## 🌐 LAN Deployment
+## LAN Deployment
 
 ### Step 1: Determine Server IP
 
@@ -332,7 +332,7 @@ http://192.168.1.100
 
 ---
 
-## 🔒 Security Configuration
+## Security Configuration
 
 ### 1. Enable HTTPS (Recommended)
 
@@ -373,7 +373,7 @@ Rate limiting is pre-configured:
 
 ---
 
-## 💾 Backup & Recovery
+## Backup and Recovery
 
 ### Automated Backup Script
 
@@ -408,7 +408,7 @@ tar -xzf uploads_backup.tar.gz -C ./
 
 ---
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -465,7 +465,7 @@ sudo ufw status
 
 ---
 
-## 📊 Performance Optimization
+## Performance Optimization
 
 ### 1. Enable Redis Caching
 
@@ -495,7 +495,7 @@ CREATE INDEX idx_assignments_course ON assignments(course_id);
 
 ---
 
-## 📞 Support
+## Support
 
 For issues or questions:
 - **GitHub Issues**: https://github.com/susclassglobal-oss/finalsubmission/issues
@@ -503,10 +503,10 @@ For issues or questions:
 
 ---
 
-## 📜 License
+## License
 
 Open-source under MIT License. See LICENSE file for details.
 
 ---
 
-*Sustainable Classroom LMS - Empowering Education in Africa* 🌍
+*Sustainable Classroom LMS - Empowering Education in Africa*

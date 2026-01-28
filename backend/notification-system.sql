@@ -155,7 +155,7 @@ ON CONFLICT (event_code) DO NOTHING;
 
 DO $$ 
 BEGIN
-    RAISE NOTICE '✓ Seeded % notification event types', (SELECT COUNT(*) FROM notification_events);
+    RAISE NOTICE '[OK] Seeded % notification event types', (SELECT COUNT(*) FROM notification_events);
 END $$;
 
 -- ============================================================
@@ -208,7 +208,7 @@ CREATE TRIGGER trg_teacher_notif_prefs
 
 DO $$ 
 BEGIN
-    RAISE NOTICE '✓ Created triggers for auto-generating notification preferences';
+    RAISE NOTICE '[OK] Created triggers for auto-generating notification preferences';
 END $$;
 
 -- Function to update updated_at timestamp
@@ -301,7 +301,7 @@ ORDER BY date DESC, event_code;
 DO $$ 
 BEGIN
     RAISE NOTICE '========================================';
-    RAISE NOTICE '✅ NOTIFICATION SYSTEM SETUP COMPLETE';
+    RAISE NOTICE '[OK] NOTIFICATION SYSTEM SETUP COMPLETE';
     RAISE NOTICE '========================================';
     RAISE NOTICE 'Tables Created:';
     RAISE NOTICE '  • notification_events (% event types)', (SELECT COUNT(*) FROM notification_events);

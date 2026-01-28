@@ -1,6 +1,7 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
+const http = require('http');
 const fs = require('fs');
 const { Pool } = require('pg');
 const cors = require('cors');
@@ -9,6 +10,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { Server } = require('socket.io');
 const notificationService = require('./notificationService');
 
 // Local services for on-premise deployment
@@ -197,7 +199,7 @@ notificationService.initializeNotificationService(pool);
     await pool.query('CREATE INDEX IF NOT EXISTS idx_daily_study_student_date ON daily_study_time(student_id, study_date)');
     console.log('daily_study_time table ready');
   } catch (err) {
-    console.error('⚠ Database table setup error:', err.message);
+    console.error('[WARNING] Database table setup error:', err.message);
   }
 })();
 
@@ -516,7 +518,7 @@ app.post('/api/admin/register-teacher', authenticateToken, adminOnly, async (req
     const result = await pool.query(query, values);
     const teacherId = result.rows[0].id;
     
-    // 🔔 NOTIFICATION: Welcome email
+    // NOTIFICATION: Welcome email
     try {
       const teacher = {
         id: teacherId,
@@ -562,14 +564,14 @@ app.post('/api/admin/register-student', authenticateToken, adminOnly, async (req
   try {
     // Validate required fields
     if (!name || !email || !password) {
-      console.log("❌ Missing required fields");
+      console.log("[ERROR] Missing required fields");
       return res.status(400).json({ error: "Name, email, and password are required" });
     }
     
     // Validate email format
     const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
     if (!emailRegex.test(email)) {
-      console.log("❌ Invalid email format:", email);
+      console.log("[ERROR] Invalid email format:", email);
       return res.status(400).json({ error: "Invalid email format. Please use a complete email address (e.g., user@example.com)" });
     }
     
@@ -585,7 +587,7 @@ app.post('/api/admin/register-student', authenticateToken, adminOnly, async (req
     const studentId = result.rows[0].id;
     console.log("Student registered successfully");
     
-    // 🔔 NOTIFICATION: Welcome email
+    // NOTIFICATION: Welcome email
     try {
       const student = {
         id: studentId,
@@ -613,7 +615,7 @@ app.post('/api/admin/register-student', authenticateToken, adminOnly, async (req
     
     res.status(201).json({ success: true });
   } catch (err) {
-    console.error("❌ Registration Error:", err.message);
+    console.error("[ERROR] Registration Error:", err.message);
     console.error("Error Code:", err.code);
     console.error("Error Detail:", err.detail);
     
@@ -1230,7 +1232,7 @@ app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
     const result = await pool.query(query, values);
     const moduleId = result.rows[0].id;
     
-    // 🔔 NOTIFICATION: Send to all students in section
+    // NOTIFICATION: Send to all students in section
     try {
       const students = await notificationService.getStudentsInSection(section, 'MODULE_PUBLISHED');
       
@@ -1259,7 +1261,7 @@ app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
           `, [
             student.id,
             'New Module Available',
-            `📚 ${teacherName} published "${topic}" for ${section}. Start learning now!`,
+            `${teacherName} published "${topic}" for ${section}. Start learning now!`,
             JSON.stringify({
               module_id: moduleId,
               module_title: topic,
@@ -1567,7 +1569,7 @@ app.post('/api/student/module/:moduleId/complete', authenticateToken, async (req
                 })
               ]);
               
-              console.log(`✓ Sent module completion notification to teacher ${teacher.name}`);
+              console.log(`[OK] Sent module completion notification to teacher ${teacher.name}`);
             }
           }
           
@@ -1655,7 +1657,7 @@ app.post('/api/student/module/:moduleId/complete', authenticateToken, async (req
               })
             ]);
             
-            console.log(`✓ Sent module completion notification to teacher ${teacher.name}`);
+            console.log(`[OK] Sent module completion notification to teacher ${teacher.name}`);
           }
         }
         
@@ -1666,7 +1668,7 @@ app.post('/api/student/module/:moduleId/complete', authenticateToken, async (req
           VALUES ('student', $1, 'module_achievement', $2, $3, $4, CURRENT_TIMESTAMP)
         `, [
           studentId,
-          '🎉 Module Completed!',
+          'Module Completed!',
           `Congratulations! You completed "${module.topic_title}" with all ${module.step_count} steps.`,
           JSON.stringify({
             module_id: moduleId,
@@ -1910,7 +1912,7 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
     
     const test = result.rows[0];
     
-    // 🔔 NOTIFICATION: Send to all students in section
+    // NOTIFICATION: Send to all students in section
     try {
       const students = await notificationService.getStudentsInSection(section, 'TEST_ASSIGNED');
       
@@ -1940,7 +1942,7 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
           `, [
             student.id,
             'New Test Assigned',
-            `📝 Test "${title}" assigned by ${teacher_name}. Due: ${new Date(deadline).toLocaleDateString()}`,
+            `Test "${title}" assigned by ${teacher_name}. Due: ${new Date(deadline).toLocaleDateString()}`,
             JSON.stringify({
               test_id: test.id,
               test_title: title,
@@ -1953,7 +1955,7 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
           ]);
         }
         
-        console.log(`✓ Sent TEST_ASSIGNED notifications to ${students.length} students`);
+        console.log(`[OK] Sent TEST_ASSIGNED notifications to ${students.length} students`);
       }
     } catch (notifErr) {
       console.error('Notification error (non-blocking):', notifErr);
@@ -2176,9 +2178,9 @@ app.post('/api/student/test/submit', authenticateToken, async (req, res) => {
       
       if (studentVal === correctVal) {
         correct_count++;
-        console.log(`  ✓ MATCH`);
+        console.log(`  [MATCH]`);
       } else {
-        console.log(`  ✗ NO MATCH`);
+        console.log(`  [NO MATCH]`);
       }
     }
     
@@ -2206,7 +2208,7 @@ app.post('/api/student/test/submit', authenticateToken, async (req, res) => {
     const submission = result.rows[0];
     console.log("Submission saved:", submission);
     
-    // 🔔 NOTIFICATION 1: Notify teacher about submission
+    // NOTIFICATION 1: Notify teacher about submission
     try {
       const testInfo = await pool.query(
         'SELECT teacher_id, teacher_name, section, title FROM mcq_tests WHERE id = $1',
@@ -2235,14 +2237,14 @@ app.post('/api/student/test/submit', authenticateToken, async (req, res) => {
             },
             { test_id, student_id, submission_id: submission.id }
           );
-          console.log(`✓ Sent TEST_SUBMITTED notification to teacher ${teacher.name}`);
+          console.log(`[OK] Sent TEST_SUBMITTED notification to teacher ${teacher.name}`);
         }
       }
     } catch (notifErr) {
       console.error('Teacher notification error (non-blocking):', notifErr);
     }
     
-    // 🔔 NOTIFICATION 2: Notify student about grade
+    // NOTIFICATION 2: Notify student about grade
     try {
       const studentInfo = await pool.query(
         'SELECT email FROM students WHERE id = $1',
@@ -2284,7 +2286,7 @@ app.post('/api/student/test/submit', authenticateToken, async (req, res) => {
         `, [
           student_id,
           'Grade Posted',
-          `📊 Your grade for "${testInfo.rows[0].title}" is ready: ${score}/${total_questions} (${percentage}%)`,
+          `Your grade for "${testInfo.rows[0].title}" is ready: ${score}/${total_questions} (${percentage}%)`,
           JSON.stringify({
             test_id: test_id,
             test_title: testInfo.rows[0].title,
@@ -2663,7 +2665,7 @@ app.post('/api/admin/send-deadline-reminders', authenticateToken, async (req, re
               VALUES ('student', $1, 'test_deadline_reminder', $2, $3, $4, CURRENT_TIMESTAMP)
             `, [
               student.id,
-              '⏰ Test Deadline Reminder',
+              'Test Deadline Reminder',
               `"${test.title}" is due in ${Math.ceil((new Date(test.deadline) - new Date()) / (1000 * 60 * 60))} hours! Don't forget to submit.`,
               JSON.stringify({
                 test_id: test.id,
@@ -2677,7 +2679,7 @@ app.post('/api/admin/send-deadline-reminders', authenticateToken, async (req, re
           }
 
           remindersSent += unsubmittedStudents.length;
-          console.log(`✓ Sent deadline reminders for "${test.title}" to ${unsubmittedStudents.length} students`);
+          console.log(`[OK] Sent deadline reminders for "${test.title}" to ${unsubmittedStudents.length} students`);
         }
       } catch (testErr) {
         console.error(`Error sending reminders for test ${test.id}:`, testErr);
@@ -2808,6 +2810,299 @@ app.get('/api/teacher/live-sessions', authenticateToken, async (req, res) => {
 });
 
 // =============================================================================
+// CHAT SYSTEM - Real-time Faculty-Student Communication
+// =============================================================================
+
+// Initialize chat tables
+const initChatTables = async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS chat_rooms (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        type VARCHAR(50) DEFAULT 'direct',
+        section VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS chat_participants (
+        id SERIAL PRIMARY KEY,
+        room_id INTEGER REFERENCES chat_rooms(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL,
+        user_role VARCHAR(20) NOT NULL,
+        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(room_id, user_id, user_role)
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id SERIAL PRIMARY KEY,
+        room_id INTEGER REFERENCES chat_rooms(id) ON DELETE CASCADE,
+        sender_id INTEGER NOT NULL,
+        sender_role VARCHAR(20) NOT NULL,
+        sender_name VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        message_type VARCHAR(20) DEFAULT 'text',
+        file_url VARCHAR(500),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        is_deleted BOOLEAN DEFAULT FALSE
+      )
+    `);
+    console.log('[CHAT] Tables initialized');
+  } catch (err) {
+    console.error('[CHAT] Table init error:', err.message);
+  }
+};
+
+// Initialize chat tables on startup
+initChatTables();
+
+// Get or create direct chat room between teacher and student
+app.post('/api/chat/room', authenticateToken, async (req, res) => {
+  try {
+    const { targetId, targetRole } = req.body;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    // Validate: teachers can chat with students, students can chat with teachers
+    if (userRole === targetRole) {
+      return res.status(400).json({ error: 'Cannot create chat with same role' });
+    }
+
+    // Check if room already exists
+    const existingRoom = await pool.query(`
+      SELECT cr.* FROM chat_rooms cr
+      JOIN chat_participants cp1 ON cr.id = cp1.room_id
+      JOIN chat_participants cp2 ON cr.id = cp2.room_id
+      WHERE cr.type = 'direct'
+        AND cp1.user_id = $1 AND cp1.user_role = $2
+        AND cp2.user_id = $3 AND cp2.user_role = $4
+    `, [userId, userRole, targetId, targetRole]);
+
+    if (existingRoom.rows.length > 0) {
+      return res.json({ room: existingRoom.rows[0] });
+    }
+
+    // Get names for room name
+    const userTable = userRole === 'student' ? 'students' : 'teachers';
+    const targetTable = targetRole === 'student' ? 'students' : 'teachers';
+    
+    const userData = await pool.query(`SELECT name FROM ${userTable} WHERE id = $1`, [userId]);
+    const targetData = await pool.query(`SELECT name FROM ${targetTable} WHERE id = $1`, [targetId]);
+
+    const roomName = `${userData.rows[0]?.name || 'User'} - ${targetData.rows[0]?.name || 'User'}`;
+
+    // Create new room
+    const newRoom = await pool.query(
+      `INSERT INTO chat_rooms (name, type) VALUES ($1, 'direct') RETURNING *`,
+      [roomName]
+    );
+
+    // Add participants
+    await pool.query(
+      `INSERT INTO chat_participants (room_id, user_id, user_role) VALUES ($1, $2, $3), ($1, $4, $5)`,
+      [newRoom.rows[0].id, userId, userRole, targetId, targetRole]
+    );
+
+    res.json({ room: newRoom.rows[0] });
+  } catch (err) {
+    console.error('Create chat room error:', err);
+    res.status(500).json({ error: 'Failed to create chat room' });
+  }
+});
+
+// Get user's chat rooms
+app.get('/api/chat/rooms', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    const rooms = await pool.query(`
+      SELECT cr.*, 
+        cp.last_read_at,
+        (SELECT COUNT(*) FROM chat_messages cm 
+         WHERE cm.room_id = cr.id AND cm.created_at > cp.last_read_at
+         AND NOT (cm.sender_id = $1 AND cm.sender_role = $2)) as unread_count,
+        (SELECT cm.message FROM chat_messages cm 
+         WHERE cm.room_id = cr.id ORDER BY cm.created_at DESC LIMIT 1) as last_message,
+        (SELECT cm.created_at FROM chat_messages cm 
+         WHERE cm.room_id = cr.id ORDER BY cm.created_at DESC LIMIT 1) as last_message_at
+      FROM chat_rooms cr
+      JOIN chat_participants cp ON cr.id = cp.room_id
+      WHERE cp.user_id = $1 AND cp.user_role = $2
+      ORDER BY last_message_at DESC NULLS LAST
+    `, [userId, userRole]);
+
+    // Get other participant info for each room
+    const roomsWithParticipants = await Promise.all(rooms.rows.map(async (room) => {
+      const otherParticipant = await pool.query(`
+        SELECT cp.user_id, cp.user_role,
+          CASE 
+            WHEN cp.user_role = 'student' THEN (SELECT name FROM students WHERE id = cp.user_id)
+            ELSE (SELECT name FROM teachers WHERE id = cp.user_id)
+          END as name
+        FROM chat_participants cp
+        WHERE cp.room_id = $1 AND NOT (cp.user_id = $2 AND cp.user_role = $3)
+        LIMIT 1
+      `, [room.id, userId, userRole]);
+
+      return {
+        ...room,
+        other_participant: otherParticipant.rows[0] || null
+      };
+    }));
+
+    res.json(roomsWithParticipants);
+  } catch (err) {
+    console.error('Get chat rooms error:', err);
+    res.status(500).json({ error: 'Failed to fetch chat rooms' });
+  }
+});
+
+// Get messages for a room
+app.get('/api/chat/rooms/:roomId/messages', authenticateToken, async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    const { limit = 50, before } = req.query;
+
+    // Verify user is participant
+    const participant = await pool.query(
+      `SELECT * FROM chat_participants WHERE room_id = $1 AND user_id = $2 AND user_role = $3`,
+      [roomId, userId, userRole]
+    );
+
+    if (participant.rows.length === 0) {
+      return res.status(403).json({ error: 'Not a participant of this room' });
+    }
+
+    let query = `
+      SELECT * FROM chat_messages 
+      WHERE room_id = $1 AND is_deleted = FALSE
+    `;
+    const params = [roomId];
+
+    if (before) {
+      query += ` AND created_at < $2`;
+      params.push(before);
+    }
+
+    query += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`;
+    params.push(parseInt(limit));
+
+    const messages = await pool.query(query, params);
+
+    // Update last read
+    await pool.query(
+      `UPDATE chat_participants SET last_read_at = CURRENT_TIMESTAMP 
+       WHERE room_id = $1 AND user_id = $2 AND user_role = $3`,
+      [roomId, userId, userRole]
+    );
+
+    res.json(messages.rows.reverse());
+  } catch (err) {
+    console.error('Get messages error:', err);
+    res.status(500).json({ error: 'Failed to fetch messages' });
+  }
+});
+
+// Send message (REST fallback - Socket.io preferred)
+app.post('/api/chat/rooms/:roomId/messages', authenticateToken, async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { message } = req.body;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    // Verify user is participant
+    const participant = await pool.query(
+      `SELECT * FROM chat_participants WHERE room_id = $1 AND user_id = $2 AND user_role = $3`,
+      [roomId, userId, userRole]
+    );
+
+    if (participant.rows.length === 0) {
+      return res.status(403).json({ error: 'Not a participant of this room' });
+    }
+
+    // Get sender name
+    const table = userRole === 'student' ? 'students' : 'teachers';
+    const userData = await pool.query(`SELECT name FROM ${table} WHERE id = $1`, [userId]);
+    const senderName = userData.rows[0]?.name || 'Unknown';
+
+    // Insert message
+    const newMessage = await pool.query(
+      `INSERT INTO chat_messages (room_id, sender_id, sender_role, sender_name, message)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [roomId, userId, userRole, senderName, message]
+    );
+
+    res.json(newMessage.rows[0]);
+  } catch (err) {
+    console.error('Send message error:', err);
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// Get list of users available to chat (for initiating new conversations)
+app.get('/api/chat/available-users', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    if (userRole === 'student') {
+      // Students can see their allocated teachers
+      const studentData = await pool.query(
+        `SELECT class_dept, section FROM students WHERE id = $1`, [userId]
+      );
+      
+      if (studentData.rows.length === 0) {
+        return res.json([]);
+      }
+
+      const { class_dept, section } = studentData.rows[0];
+      const fullSection = `${class_dept} ${section}`;
+
+      const teachers = await pool.query(`
+        SELECT DISTINCT t.id, t.name, t.email, ta.subject
+        FROM teachers t
+        JOIN teacher_allocations ta ON t.id = ta.teacher_id
+        WHERE LOWER(ta.section) = LOWER($1)
+      `, [fullSection]);
+
+      res.json(teachers.rows.map(t => ({ ...t, role: 'teacher' })));
+    } else if (userRole === 'teacher') {
+      // Teachers can see students in their allocated sections
+      const allocations = await pool.query(
+        `SELECT section FROM teacher_allocations WHERE teacher_id = $1`, [userId]
+      );
+
+      const sections = allocations.rows.map(a => a.section.toLowerCase());
+      
+      if (sections.length === 0) {
+        return res.json([]);
+      }
+
+      const students = await pool.query(`
+        SELECT id, name, email, class_dept, section
+        FROM students
+        WHERE LOWER(class_dept || ' ' || section) = ANY($1::text[])
+      `, [sections]);
+
+      res.json(students.rows.map(s => ({ ...s, role: 'student' })));
+    } else {
+      res.json([]);
+    }
+  } catch (err) {
+    console.error('Get available users error:', err);
+    res.status(500).json({ error: 'Failed to fetch available users' });
+  }
+});
+
+// =============================================================================
 // GLOBAL ERROR HANDLER - Must be last middleware
 // =============================================================================
 app.use((err, req, res, next) => {
@@ -2865,7 +3160,141 @@ app.get('*', (req, res) => {
 // Export app for testing, only listen if run directly
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => console.log(`SERVER ACTIVE ON PORT ${PORT}`));
+  
+  // Create HTTP server for Socket.io
+  const server = http.createServer(app);
+  
+  // Initialize Socket.io
+  const io = new Server(server, {
+    cors: {
+      origin: process.env.FRONTEND_URL || '*',
+      methods: ['GET', 'POST']
+    }
+  });
+
+  // Socket.io authentication middleware
+  io.use((socket, next) => {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+      return next(new Error('Authentication required'));
+    }
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      socket.user = decoded;
+      next();
+    } catch (err) {
+      next(new Error('Invalid token'));
+    }
+  });
+
+  // Socket.io connection handler
+  io.on('connection', (socket) => {
+    const user = socket.user;
+    console.log(`[SOCKET] User connected: ${user.email} (${user.role})`);
+
+    // Join user's personal room for direct messages
+    socket.join(`user:${user.role}:${user.id}`);
+
+    // Join chat room
+    socket.on('join-room', async (roomId) => {
+      try {
+        // Verify user is participant
+        const participant = await pool.query(
+          `SELECT * FROM chat_participants WHERE room_id = $1 AND user_id = $2 AND user_role = $3`,
+          [roomId, user.id, user.role]
+        );
+        
+        if (participant.rows.length > 0) {
+          socket.join(`room:${roomId}`);
+          console.log(`[SOCKET] ${user.email} joined room ${roomId}`);
+        }
+      } catch (err) {
+        console.error('[SOCKET] Join room error:', err);
+      }
+    });
+
+    // Leave chat room
+    socket.on('leave-room', (roomId) => {
+      socket.leave(`room:${roomId}`);
+    });
+
+    // Send message
+    socket.on('send-message', async (data) => {
+      try {
+        const { roomId, message } = data;
+
+        // Verify user is participant
+        const participant = await pool.query(
+          `SELECT * FROM chat_participants WHERE room_id = $1 AND user_id = $2 AND user_role = $3`,
+          [roomId, user.id, user.role]
+        );
+
+        if (participant.rows.length === 0) {
+          socket.emit('error', { message: 'Not authorized' });
+          return;
+        }
+
+        // Get sender name
+        const table = user.role === 'student' ? 'students' : 'teachers';
+        const userData = await pool.query(`SELECT name FROM ${table} WHERE id = $1`, [user.id]);
+        const senderName = userData.rows[0]?.name || 'Unknown';
+
+        // Save message
+        const newMessage = await pool.query(
+          `INSERT INTO chat_messages (room_id, sender_id, sender_role, sender_name, message)
+           VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+          [roomId, user.id, user.role, senderName, message]
+        );
+
+        // Broadcast to room
+        io.to(`room:${roomId}`).emit('new-message', newMessage.rows[0]);
+
+        // Also notify other participant if not in room
+        const otherParticipants = await pool.query(
+          `SELECT user_id, user_role FROM chat_participants 
+           WHERE room_id = $1 AND NOT (user_id = $2 AND user_role = $3)`,
+          [roomId, user.id, user.role]
+        );
+
+        otherParticipants.rows.forEach(p => {
+          io.to(`user:${p.user_role}:${p.user_id}`).emit('message-notification', {
+            roomId,
+            message: newMessage.rows[0],
+            from: senderName
+          });
+        });
+
+      } catch (err) {
+        console.error('[SOCKET] Send message error:', err);
+        socket.emit('error', { message: 'Failed to send message' });
+      }
+    });
+
+    // Typing indicator
+    socket.on('typing', (roomId) => {
+      socket.to(`room:${roomId}`).emit('user-typing', {
+        userId: user.id,
+        userRole: user.role,
+        roomId
+      });
+    });
+
+    // Stop typing indicator
+    socket.on('stop-typing', (roomId) => {
+      socket.to(`room:${roomId}`).emit('user-stopped-typing', {
+        userId: user.id,
+        userRole: user.role,
+        roomId
+      });
+    });
+
+    // Disconnect
+    socket.on('disconnect', () => {
+      console.log(`[SOCKET] User disconnected: ${user.email}`);
+    });
+  });
+
+  server.listen(PORT, () => console.log(`SERVER ACTIVE ON PORT ${PORT}`));
 }
 
 module.exports = app;

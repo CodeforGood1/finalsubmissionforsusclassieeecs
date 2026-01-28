@@ -21,16 +21,16 @@ async function createTable() {
         UNIQUE(module_id, student_id, step_index)
       )
     `);
-    console.log('✓ Table created');
+    console.log('[OK] Table created');
     
     await pool.query('CREATE INDEX IF NOT EXISTS idx_module_completion_module ON module_completion(module_id)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_module_completion_student ON module_completion(student_id)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_module_completion_completed ON module_completion(is_completed)');
-    console.log('✓ Indexes created');
+    console.log('[OK] Indexes created');
     
-    console.log('\n✅ module_completion table setup complete!');
+    console.log('\n[OK] module_completion table setup complete!');
   } catch (err) {
-    console.error('❌ Error:', err.message);
+    console.error('[ERROR] Error:', err.message);
   } finally {
     await pool.end();
   }

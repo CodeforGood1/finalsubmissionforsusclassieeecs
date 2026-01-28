@@ -87,7 +87,7 @@ const pool = new Pool({
     console.log('Modules with completion status:');
     altQuery.rows.forEach(m => {
       const isComplete = parseInt(m.completed_steps) === m.step_count;
-      console.log(`  ${m.topic_title}: ${m.completed_steps}/${m.step_count} ${isComplete ? '✓ COMPLETE' : '✗ INCOMPLETE'}`);
+      console.log(`  ${m.topic_title}: ${m.completed_steps}/${m.step_count} ${isComplete ? '[COMPLETE]' : '[INCOMPLETE]'}`);
     });
     
     const actualCompleted = altQuery.rows.filter(m => parseInt(m.completed_steps) === m.step_count).length;

@@ -206,7 +206,7 @@ function Login() {
           </h2>
           {inactivityMessage && (
             <div className="mt-6 p-3 bg-amber-50 text-amber-700 text-[10px] font-bold rounded-xl uppercase border border-amber-200">
-              ⏱ {inactivityMessage}
+               {inactivityMessage}
             </div>
           )}
           {error && (

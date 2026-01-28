@@ -8,7 +8,7 @@ const pool = new Pool({
 
 async function createInAppNotificationsTable() {
   try {
-    console.log('🔧 Creating in_app_notifications table...\n');
+    console.log('[INFO] Creating in_app_notifications table...\n');
 
     // Create table
     await pool.query(`
@@ -29,17 +29,17 @@ async function createInAppNotificationsTable() {
         CONSTRAINT chk_notification_type CHECK (type IN ('module', 'test', 'submission', 'deadline', 'grade', 'announcement', 'system'))
       )
     `);
-    console.log('✅ Table created successfully');
+    console.log('[OK] Table created successfully');
 
     // Create indexes
     await pool.query('CREATE INDEX IF NOT EXISTS idx_inapp_recipient ON in_app_notifications(recipient_id, recipient_type)');
-    console.log('✅ Index 1 created (recipient)');
+    console.log('[OK] Index 1 created (recipient)');
 
     await pool.query('CREATE INDEX IF NOT EXISTS idx_inapp_unread ON in_app_notifications(recipient_id, recipient_type, is_read)');
-    console.log('✅ Index 2 created (unread)');
+    console.log('[OK] Index 2 created (unread)');
 
     await pool.query('CREATE INDEX IF NOT EXISTS idx_inapp_created ON in_app_notifications(created_at DESC)');
-    console.log('✅ Index 3 created (created_at)');
+    console.log('[OK] Index 3 created (created_at)');
 
     // Verify table exists
     const result = await pool.query(`
@@ -48,13 +48,13 @@ async function createInAppNotificationsTable() {
       WHERE table_name = 'in_app_notifications'
     `);
 
-    console.log('\n🎉 Setup complete!');
-    console.log(`📊 Table verified: ${result.rows.length > 0 ? 'EXISTS' : 'NOT FOUND'}`);
+    console.log('\n[OK] Setup complete!');
+    console.log(`[INFO] Table verified: ${result.rows.length > 0 ? 'EXISTS' : 'NOT FOUND'}`);
     
     await pool.end();
     process.exit(0);
   } catch (err) {
-    console.error('\n❌ Error:', err.message);
+    console.error('\n[ERROR] Error:', err.message);
     console.error('Full error:', err);
     await pool.end();
     process.exit(1);

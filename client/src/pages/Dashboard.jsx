@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import TimeTracker from '../components/TimeTracker';
 import NotificationBell from '../components/NotificationBell';
 import LiveSessionsCalendar from '../components/LiveSessionsCalendar';
+import Chat from '../components/Chat';
 import API_BASE_URL from '../config/api';
 
 function Dashboard() {
@@ -11,6 +12,7 @@ function Dashboard() {
   const [recentModules, setRecentModules] = useState([]);
   const [upcomingLive, setUpcomingLive] = useState([]);
   const [stats, setStats] = useState({ modulesCompleted: 0, totalModules: 0, streak: 0 });
+  const [showChat, setShowChat] = useState(false);
 
   useEffect(() => {
     fetchDashboardData();
@@ -92,6 +94,15 @@ function Dashboard() {
             <span className="font-bold text-slate-700 text-sm md:text-base">Sustainable Classroom</span>
           </div>
           <div className="flex items-center gap-2 md:gap-4">
+            <button 
+              onClick={() => setShowChat(true)} 
+              className="relative p-2 text-slate-500 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition-colors"
+              title="Messages"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </button>
             <NotificationBell />
             <button onClick={() => navigate('/profile')} className="text-xs md:text-sm text-slate-600 hover:text-emerald-600 hidden sm:block">
               {userInfo?.full_name || 'Profile'}
@@ -196,6 +207,9 @@ function Dashboard() {
       
       {/* Time Tracker Widget */}
       <TimeTracker />
+      
+      {/* Chat Component */}
+      {showChat && <Chat onClose={() => setShowChat(false)} />}
     </div>
   );
 }

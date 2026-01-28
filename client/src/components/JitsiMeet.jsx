@@ -210,7 +210,7 @@ function JitsiMeet({ roomName, displayName, onClose, isTeacher = false }) {
               ? 'bg-emerald-500/20 text-emerald-400' 
               : 'bg-blue-500/20 text-blue-400'
           }`}>
-            {connectionMode === 'local' ? '🏠 Local Server' : '☁️ Public Server'}
+          {connectionMode === 'local' ? 'Local Server' : 'Public Server'}
           </span>
         </div>
         <button 

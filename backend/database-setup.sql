@@ -28,7 +28,7 @@ BEGIN
             EXECUTE format('ALTER TABLE %I ADD COLUMN %I %s', 
                 p_table_name, p_column_name, p_column_type);
         END IF;
-        RAISE NOTICE '✓ Added column %.% (%)', p_table_name, p_column_name, p_column_type;
+        RAISE NOTICE '[OK] Added column %.% (%)', p_table_name, p_column_name, p_column_type;
     ELSE
         RAISE NOTICE '→ Column %.% already exists, skipping', p_table_name, p_column_name;
     END IF;
@@ -51,7 +51,7 @@ BEGIN
     ) THEN
         EXECUTE format('CREATE INDEX %I ON %I (%s)', 
             p_index_name, p_table_name, p_columns);
-        RAISE NOTICE '✓ Created index %', p_index_name;
+        RAISE NOTICE '[OK] Created index %', p_index_name;
     ELSE
         RAISE NOTICE '→ Index % already exists, skipping', p_index_name;
     END IF;
@@ -77,7 +77,7 @@ BEGIN
             password TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
-        RAISE NOTICE '✓ Created teachers table';
+        RAISE NOTICE '[OK] Created teachers table';
     ELSE
         RAISE NOTICE '→ Teachers table already exists';
     END IF;
@@ -109,7 +109,7 @@ BEGIN
             password TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
-        RAISE NOTICE '✓ Created students table';
+        RAISE NOTICE '[OK] Created students table';
     ELSE
         RAISE NOTICE '→ Students table already exists';
     END IF;
@@ -146,7 +146,7 @@ BEGIN
             CONSTRAINT fk_teacher FOREIGN KEY (teacher_id) 
                 REFERENCES teachers(id) ON DELETE CASCADE
         );
-        RAISE NOTICE '✓ Created modules table with foreign key constraint';
+        RAISE NOTICE '[OK] Created modules table with foreign key constraint';
     ELSE
         RAISE NOTICE '→ Modules table already exists';
         
@@ -159,7 +159,7 @@ BEGIN
             ALTER TABLE modules 
             ADD CONSTRAINT fk_teacher 
             FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE;
-            RAISE NOTICE '✓ Added foreign key constraint to modules table';
+            RAISE NOTICE '[OK] Added foreign key constraint to modules table';
         END IF;
     END IF;
 END $$;
@@ -218,7 +218,7 @@ FROM teachers t
 LEFT JOIN modules m ON t.id = m.teacher_id
 GROUP BY t.id, t.name, t.email, t.staff_id, t.dept, t.allocated_sections, t.created_at;
 
-RAISE NOTICE '✓ Created view: v_teachers_with_stats';
+RAISE NOTICE '[OK] Created view: v_teachers_with_stats';
 
 -- View: Student with progress
 CREATE OR REPLACE VIEW v_students_with_section AS
@@ -233,7 +233,7 @@ SELECT
     s.created_at
 FROM students s;
 
-RAISE NOTICE '✓ Created view: v_students_with_section';
+RAISE NOTICE '[OK] Created view: v_students_with_section';
 
 -- View: Modules with full details
 CREATE OR REPLACE VIEW v_modules_detailed AS
@@ -250,7 +250,7 @@ SELECT
 FROM modules m
 LEFT JOIN teachers t ON m.teacher_id = t.id;
 
-RAISE NOTICE '✓ Created view: v_modules_detailed';
+RAISE NOTICE '[OK] Created view: v_modules_detailed';
 
 -- ============================================================
 -- STEP 8: VERIFICATION AND SUMMARY
@@ -274,31 +274,31 @@ BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'teachers') THEN
         SELECT COUNT(*) INTO teacher_count FROM teachers;
         SELECT COUNT(*) INTO teacher_cols FROM information_schema.columns WHERE table_name = 'teachers';
-        RAISE NOTICE '✓ TEACHERS table exists (% columns, % records)', teacher_cols, teacher_count;
+        RAISE NOTICE '[OK] TEACHERS table exists (% columns, % records)', teacher_cols, teacher_count;
     ELSE
-        RAISE NOTICE '✗ TEACHERS table missing!';
+        RAISE NOTICE '[ERROR] TEACHERS table missing!';
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'students') THEN
         SELECT COUNT(*) INTO student_count FROM students;
         SELECT COUNT(*) INTO student_cols FROM information_schema.columns WHERE table_name = 'students';
-        RAISE NOTICE '✓ STUDENTS table exists (% columns, % records)', student_cols, student_count;
+        RAISE NOTICE '[OK] STUDENTS table exists (% columns, % records)', student_cols, student_count;
     ELSE
-        RAISE NOTICE '✗ STUDENTS table missing!';
+        RAISE NOTICE '[ERROR] STUDENTS table missing!';
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'modules') THEN
         SELECT COUNT(*) INTO module_count FROM modules;
         SELECT COUNT(*) INTO module_cols FROM information_schema.columns WHERE table_name = 'modules';
-        RAISE NOTICE '✓ MODULES table exists (% columns, % records)', module_cols, module_count;
+        RAISE NOTICE '[OK] MODULES table exists (% columns, % records)', module_cols, module_count;
     ELSE
-        RAISE NOTICE '✗ MODULES table missing!';
+        RAISE NOTICE '[ERROR] MODULES table missing!';
     END IF;
     
     RAISE NOTICE '';
-    RAISE NOTICE '✓ All indexes created successfully';
-    RAISE NOTICE '✓ All views created successfully';
-    RAISE NOTICE '✓ Foreign key constraints configured';
+    RAISE NOTICE '[OK] All indexes created successfully';
+    RAISE NOTICE '[OK] All views created successfully';
+    RAISE NOTICE '[OK] Foreign key constraints configured';
     RAISE NOTICE '';
     RAISE NOTICE '╔════════════════════════════════════════════════════════╗';
     RAISE NOTICE '║              SETUP COMPLETED SUCCESSFULLY              ║';

@@ -8,7 +8,7 @@ BEGIN
         WHERE table_name = 'mcq_tests' AND column_name = 'start_date'
     ) THEN
         ALTER TABLE mcq_tests ADD COLUMN start_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
-        RAISE NOTICE '✓ Added start_date column to mcq_tests';
+        RAISE NOTICE '[OK] Added start_date column to mcq_tests';
     ELSE
         RAISE NOTICE '→ start_date column already exists';
     END IF;

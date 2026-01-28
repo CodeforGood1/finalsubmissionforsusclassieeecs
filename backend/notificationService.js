@@ -32,7 +32,7 @@ const createMailjetClient = () => {
     return Mailjet.apiConnect(mjApiKeyPublic, mjApiKeyPrivate);
   }
   
-  console.warn('⚠ Mailjet API keys not set - emails will be logged only');
+  console.warn('[WARNING] Mailjet API keys not set - emails will be logged only');
   return null;
 };
 
@@ -113,11 +113,11 @@ const emailTemplates = {
   }),
 
   TEST_DEADLINE_REMINDER: (data) => ({
-    subject: `⏰ Urgent: Test "${data.test_title}" Due in ${data.hours_remaining} Hours!`,
+    subject: `Urgent: Test "${data.test_title}" Due in ${data.hours_remaining} Hours!`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
         <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.06);">
-          <h2 style="color: #dc2626; margin-bottom: 16px; font-weight: 700;">⏰ Test Deadline Approaching!</h2>
+          <h2 style="color: #dc2626; margin-bottom: 16px; font-weight: 700;">Test Deadline Approaching!</h2>
           <p style="color: #1f2937; line-height: 1.6;">Hello <strong>${data.student_name}</strong>,</p>
           <p style="color: #1f2937; line-height: 1.6;">This is an urgent reminder! Your test deadline is approaching:</p>
           
@@ -125,7 +125,7 @@ const emailTemplates = {
             <h3 style="color: #dc2626; margin: 0 0 10px 0; font-size: 20px;">${data.test_title}</h3>
             <p style="color: #b91c1c; margin: 5px 0;"><strong>Section:</strong> ${data.section}</p>
             <p style="color: #b91c1c; margin: 5px 0;"><strong>Teacher:</strong> ${data.teacher_name}</p>
-            <p style="color: #b91c1c; margin: 5px 0; font-size: 18px; font-weight: bold;">⏰ Due: ${data.deadline}</p>
+            <p style="color: #b91c1c; margin: 5px 0; font-size: 18px; font-weight: bold;">Due: ${data.deadline}</p>
             <p style="color: #dc2626; margin: 10px 0; font-size: 24px; font-weight: bold;">Only ${data.hours_remaining} hours remaining!</p>
           </div>
           
@@ -159,7 +159,7 @@ const emailTemplates = {
             <p style="color: #991b1b; margin: 5px 0; font-size: 18px; font-weight: bold;">Deadline: ${new Date(data.deadline).toLocaleString()}</p>
           </div>
           
-          <p style="color: #4b5563; line-height: 1.6;">${data.submitted ? '✓ You have already submitted this test.' : '⚠️ You have not submitted this test yet. Complete it before the deadline!'}</p>
+          <p style="color: #4b5563; line-height: 1.6;">${data.submitted ? 'You have already submitted this test.' : 'You have not submitted this test yet. Complete it before the deadline!'}</p>
           
           ${!data.submitted ? `
             <a href="${FRONTEND_BASE}/test" 
@@ -220,7 +220,7 @@ const emailTemplates = {
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
         <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.06);">
-          <h2 style="color: #111827; margin-bottom: 16px; font-weight: 700;">🎉 Student Module Completion</h2>
+          <h2 style="color: #111827; margin-bottom: 16px; font-weight: 700;">Student Module Completion</h2>
           <p style="color: #1f2937; line-height: 1.6;">Hello <strong>${data.teacher_name}</strong>,</p>
           <p style="color: #1f2937; line-height: 1.6;">Great news! One of your students has completed a module:</p>
           
@@ -426,14 +426,14 @@ const sendEmail = async (eventCode, recipient, data, metadata = {}) => {
         [eventCode, recipient.id, recipient.type, recipient.email, 'email', 'sent', subject, html, JSON.stringify(metadata)]
       );
 
-      console.log(`✓ Email sent via Mailjet to ${recipient.email} (${eventCode})`);
+      console.log(`[OK] Email sent via Mailjet to ${recipient.email} (${eventCode})`);
       return { success: true, messageId: result.body.Messages[0].To[0].MessageUUID };
     } else {
       throw new Error(`Mailjet status: ${status}`);
     }
 
   } catch (error) {
-    console.error(`✗ Email send failed for ${recipient.email} (${eventCode}):`, error.message);
+    console.error(`[ERROR] Email send failed for ${recipient.email} (${eventCode}):`, error.message);
 
     // Log failure
     await dbPool.query(

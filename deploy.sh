@@ -3,37 +3,33 @@
 # ============================================================
 # SUSTAINABLE CLASSROOM - ONE-COMMAND DEPLOYMENT SCRIPT
 # ============================================================
-# Africa Sustainable Classroom Challenge - Finals Edition
-# Automated deployment for On-Premise Student Learning System
+# Usage: ./deploy.sh [dev|prod]
+#   dev  - Builds images locally (default)
+#   prod - Uses pre-built images from GitHub Container Registry
 # ============================================================
 
 set -e  # Exit on any error
 
-echo "🎓 ======================================"
+MODE="${1:-dev}"
+
+echo "============================================================"
 echo "   SUSTAINABLE CLASSROOM DEPLOYMENT"
-echo "   Africa Challenge - On-Premise Setup"
-echo "======================================"
+echo "   Mode: $MODE"
+echo "============================================================"
 echo ""
 
-# Color codes for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Function to print colored messages
-print_success() { echo -e "${GREEN}✓ $1${NC}"; }
-print_error() { echo -e "${RED}✗ $1${NC}"; }
-print_info() { echo -e "${BLUE}ℹ $1${NC}"; }
-print_warning() { echo -e "${YELLOW}⚠ $1${NC}"; }
+# Function to print messages
+print_success() { echo "[SUCCESS] $1"; }
+print_error() { echo "[ERROR] $1"; }
+print_info() { echo "[INFO] $1"; }
+print_warning() { echo "[WARNING] $1"; }
 
 # Check prerequisites
-echo "📋 Checking prerequisites..."
+echo "[INFO] Checking prerequisites..."
 
 # Check Docker
 if ! command -v docker &> /dev/null; then
-    print_error "Docker not found! Please install Docker first."
+    print_error "Docker not found. Please install Docker first."
     echo "Visit: https://docs.docker.com/get-docker/"
     exit 1
 fi
@@ -41,10 +37,17 @@ print_success "Docker installed"
 
 # Check Docker Compose
 if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
-    print_error "Docker Compose not found! Please install Docker Compose."
+    print_error "Docker Compose not found. Please install Docker Compose."
     exit 1
 fi
 print_success "Docker Compose installed"
+
+# Use docker compose (v2) if available, otherwise docker-compose (v1)
+if docker compose version &> /dev/null 2>&1; then
+    COMPOSE_CMD="docker compose"
+else
+    COMPOSE_CMD="docker-compose"
+fi
 
 # Check if .env exists
 if [ ! -f .env ]; then
@@ -52,39 +55,76 @@ if [ ! -f .env ]; then
     if [ -f .env.example ]; then
         cp .env.example .env
         print_info "Created .env from template. Please edit with your values."
-        print_info "Minimum required: DB_PASSWORD, JWT_SECRET, ADMIN_PASSWORD"
-        echo ""
-        read -p "Press Enter after editing .env file (or Ctrl+C to exit)..."
     else
-        print_error ".env.example not found!"
-        exit 1
+        # Create default .env
+        cat > .env << EOF
+# Database
+DB_PASSWORD=SecureLocalDB2026
+
+# Authentication
+JWT_SECRET=OnPremiseSecureKey2026AfricaChallenge
+ADMIN_EMAIL=admin@classroom.local
+ADMIN_PASSWORD=Admin@2026
+
+# Email Configuration
+# For Gmail: SMTP_HOST=smtp.gmail.com, SMTP_PORT=587, SMTP_SECURE=true
+SMTP_HOST=mailhog
+SMTP_PORT=1025
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASS=
+EMAIL_FROM_ADDRESS=noreply@classroom.local
+
+# Jitsi Configuration
+JITSI_PUBLIC_URL=https://localhost:8443
+DOCKER_HOST_ADDRESS=127.0.0.1
+JICOFO_AUTH_PASSWORD=jicofopassword
+JVB_AUTH_PASSWORD=jvbpassword
+
+# Production Settings (for prod mode)
+GITHUB_REPOSITORY=susclass/sustainable-classroom
+IMAGE_TAG=latest
+EOF
+        print_info "Created default .env file."
     fi
 else
     print_success ".env file exists"
 fi
 
 echo ""
-echo "🐳 Starting Docker deployment..."
+echo "[INFO] Starting Docker deployment..."
 echo ""
 
 # Stop any existing containers
 print_info "Stopping existing containers..."
-docker-compose down 2>/dev/null || true
+$COMPOSE_CMD down 2>/dev/null || true
 
-# Pull latest images
-print_info "Pulling Docker images..."
-docker-compose pull
-
-# Build the application
-print_info "Building application..."
-docker-compose build
+if [ "$MODE" = "prod" ]; then
+    print_info "Production mode - using pre-built images from GHCR..."
+    COMPOSE_FILE="docker-compose.prod.yml"
+    
+    # Pull pre-built images
+    print_info "Pulling Docker images..."
+    $COMPOSE_CMD -f $COMPOSE_FILE pull
+else
+    print_info "Development mode - building locally..."
+    COMPOSE_FILE="docker-compose.yml"
+    
+    # Pull base images
+    print_info "Pulling Docker images..."
+    $COMPOSE_CMD -f $COMPOSE_FILE pull || true
+    
+    # Build the application
+    print_info "Building application..."
+    $COMPOSE_CMD -f $COMPOSE_FILE build
+fi
 
 # Start services
 print_info "Starting services..."
-docker-compose up -d
+$COMPOSE_CMD -f $COMPOSE_FILE up -d
 
 echo ""
-echo "⏳ Waiting for services to be healthy..."
+echo "[INFO] Waiting for services to be healthy..."
 echo ""
 
 # Wait for database
@@ -100,8 +140,8 @@ if [ $COUNTER -eq $MAX_WAIT ]; then
     echo ""
     print_error "Database failed to start within ${MAX_WAIT} seconds"
     echo ""
-    echo "📋 Checking logs..."
-    docker-compose logs postgres | tail -20
+    echo "[INFO] Checking logs..."
+    $COMPOSE_CMD -f $COMPOSE_FILE logs postgres | tail -20
     exit 1
 fi
 
@@ -130,8 +170,8 @@ if [ $COUNTER -eq 60 ]; then
     echo ""
     print_error "Backend failed to start"
     echo ""
-    echo "📋 Checking backend logs..."
-    docker-compose logs backend | tail -30
+    echo "[INFO] Checking backend logs..."
+    $COMPOSE_CMD -f $COMPOSE_FILE logs backend | tail -30
     exit 1
 fi
 
@@ -139,64 +179,30 @@ echo ""
 print_success "Backend API is ready"
 
 echo ""
-echo "🎉 ======================================"
-echo "   DEPLOYMENT SUCCESSFUL!"
-echo "======================================"
+echo "============================================================"
+echo "   DEPLOYMENT SUCCESSFUL"
+echo "============================================================"
 echo ""
-print_success "All services are running!"
+print_success "All services are running"
 echo ""
-echo "📍 Access Points:"
-echo "   • Application: http://localhost:5000"
-echo "   • MailHog (Email): http://localhost:8025"
-echo "   • Database: localhost:5432"
+echo "Access Points:"
+echo "   Application:     http://localhost:5000"
+echo "   Email UI:        http://localhost:8025"
+echo "   Jitsi Meet:      https://localhost:8443"
+echo "   Database:        localhost:5432"
 echo ""
-echo "🔑 Default Credentials:"
-echo "   • Admin: admin@classroom.local / Admin@2026"
-echo "   • Teacher: susclass.global+sarah.teacher@gmail.com / password123"
-echo "   • Student: susclass.global+amara@gmail.com / student123"
+echo "Default Credentials:"
+echo "   Admin:   admin@classroom.local / Admin@2026"
 echo ""
-echo "📚 Quick Commands:"
-echo "   • View logs: docker-compose logs -f"
-echo "   • Stop: docker-compose down"
-echo "   • Restart: docker-compose restart"
-echo "   • Status: docker-compose ps"
+echo "Commands:"
+echo "   View logs:   $COMPOSE_CMD -f $COMPOSE_FILE logs -f"
+echo "   Stop:        $COMPOSE_CMD -f $COMPOSE_FILE down"
+echo "   Restart:     $COMPOSE_CMD -f $COMPOSE_FILE restart"
+echo "   Status:      $COMPOSE_CMD -f $COMPOSE_FILE ps"
 echo ""
-print_warning "⚠️  SECURITY REMINDER:"
-echo "   Change default passwords immediately!"
-echo "   Edit JWT_SECRET in .env for production!"
+print_warning "SECURITY: Change default passwords for production use."
 echo ""
-echo "📖 For more info, see README.md and DEPLOYMENT.md"
+echo "See README.md and DEPLOYMENT.md for more information."
 echo ""
-
-# Optional: Run verification tests
-read -p "Run automated verification tests? (y/n) " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo ""
-    echo "🧪 Running verification tests..."
-    
-    # Test health endpoint
-    if curl -s http://localhost:5000/api/health | grep -q "ok"; then
-        print_success "Health check passed"
-    else
-        print_error "Health check failed"
-    fi
-    
-    # Test admin login
-    RESPONSE=$(curl -s -X POST http://localhost:5000/api/admin/login \
-        -H "Content-Type: application/json" \
-        -d '{"email":"admin@classroom.local","password":"Admin@2026"}')
-    
-    if echo "$RESPONSE" | grep -q "token"; then
-        print_success "Admin login works"
-    else
-        print_error "Admin login failed"
-    fi
-    
-    echo ""
-    print_success "Basic verification complete!"
-fi
-
-echo ""
-echo "✅ Setup complete! Happy teaching and learning! 🎓"
+echo "[COMPLETE] Deployment finished successfully."
 echo ""

@@ -1,106 +1,133 @@
-# Deployment Guide - Sustainable Classroom LMS
+# Deployment Guide
 
-This guide covers deployment scenarios for the Sustainable Classroom LMS.
-
----
-
-## 📦 Deployment Options
-
-1. **Docker Compose (Recommended)** - Full stack with database
-2. **Single Docker Container** - Backend + Frontend only
-3. **Manual Deployment** - Traditional VPS/server setup
-4. **Cloud Platform** - Render, Railway, Heroku, etc.
+This document covers deployment options for the Sustainable Classroom LMS.
 
 ---
 
-## 🐳 Docker Compose Deployment (Recommended)
+## Table of Contents
+
+1. [Quick Deployment](#quick-deployment)
+2. [Docker Compose Deployment](#docker-compose-deployment)
+3. [Production Deployment](#production-deployment)
+4. [Manual Deployment](#manual-deployment)
+5. [Environment Configuration](#environment-configuration)
+6. [SSL/TLS Configuration](#ssltls-configuration)
+7. [Database Management](#database-management)
+8. [Monitoring](#monitoring)
+9. [Troubleshooting](#troubleshooting)
+
+---
+
+## Quick Deployment
 
 ### Prerequisites
 - Docker Engine 20.10+
 - Docker Compose v2.0+
-- 2GB RAM minimum
-- 10GB disk space
+- 4GB RAM minimum
+- 20GB disk space
 
-### Step 1: Clone & Configure
+### One-Command Deploy
+
+Linux/Mac:
 ```bash
 git clone https://github.com/susclassglobal-oss/susclasssrefine.git
 cd susclasssrefine
-
-# Create environment file
-cat > .env << 'EOF'
-DB_PASSWORD=SecurePassword2026
-JWT_SECRET=YourVeryLongRandomSecretKey32Characters
-ADMIN_EMAIL=admin@school.local
-ADMIN_PASSWORD=Admin@2026
-GMAIL_USER=your-email@gmail.com
-GMAIL_APP_PASSWORD=your-16-char-app-password
-EOF
+./deploy.sh          # Development mode (local build)
+./deploy.sh prod     # Production mode (pre-built images)
 ```
 
-### Step 2: Start Services
-```bash
-# Start all services (database, cache, mail, app)
-docker-compose up -d
-
-# View logs
-docker-compose logs -f backend
-
-# Check status
-docker-compose ps
+Windows:
+```cmd
+git clone https://github.com/susclassglobal-oss/susclasssrefine.git
+cd susclasssrefine
+deploy.bat           # Development mode (local build)
+deploy.bat prod      # Production mode (pre-built images)
 ```
 
-### Step 3: Verify
-```bash
-# Health check
-curl http://localhost:5000/api/health
-
-# Test login
-curl -X POST http://localhost:5000/api/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@school.local","password":"Admin@2026","role":"admin"}'
-```
-
-### Step 4: Access Application
-- Application: http://localhost:5000
-- MailHog (dev): http://localhost:8025
-- PostgreSQL: localhost:5432
+Development mode builds Docker images locally. Production mode pulls pre-built images from GitHub Container Registry.
 
 ---
 
-## 🏢 Production Deployment
+## Docker Compose Deployment
 
-### Environment Variables (Critical)
+### Services Overview
+
+| Service | Image | Port | Purpose |
+|---------|-------|------|---------|
+| backend | ghcr.io/susclassglobal-oss/susclass-lms:latest | 5000 | API and frontend |
+| postgres | postgres:15-alpine | 5432 | Database |
+| redis | redis:7-alpine | 6379 | Cache |
+| jitsi-web | jitsi/web:stable | 8443 | Video conferencing |
+| jitsi-prosody | jitsi/prosody:stable | 5222 | XMPP server |
+| jitsi-jicofo | jitsi/jicofo:stable | - | Focus component |
+| jitsi-jvb | jitsi/jvb:stable | 10000/udp | Video bridge |
+| mailhog | mailhog/mailhog:latest | 8025 | Local email |
+
+### Start Services
+
+```bash
+# Pull images and start
+docker-compose pull
+docker-compose up -d
+
+# Verify status
+docker-compose ps
+
+# Check health
+curl http://localhost:5000/api/health
+```
+
+### Stop Services
+
+```bash
+# Stop containers
+docker-compose down
+
+# Stop and remove volumes (data loss)
+docker-compose down -v
+```
+
+---
+
+## Production Deployment
+
+### Environment Setup
+
+1. Create production .env file:
+
 ```env
 NODE_ENV=production
 PORT=5000
 
 # Database
-DATABASE_URL=postgresql://lms_admin:password@postgres:5432/sustainable_classroom
-DB_SSL=true  # Enable for production databases
+DATABASE_URL=postgresql://lms_admin:STRONG_PASSWORD@postgres:5432/sustainable_classroom
+DB_SSL=false
 
 # Security
-JWT_SECRET=<GENERATE_64_CHAR_RANDOM_STRING>
+JWT_SECRET=GENERATE_64_CHAR_RANDOM_STRING
+
+# Admin
 ADMIN_EMAIL=admin@yourdomain.com
-ADMIN_PASSWORD=<STRONG_PASSWORD>
+ADMIN_PASSWORD=STRONG_ADMIN_PASSWORD
 
 # Email (Gmail)
 GMAIL_USER=notifications@yourdomain.com
-GMAIL_APP_PASSWORD=<16_CHAR_APP_PASSWORD>
-
-# Or SMTP
-SMTP_HOST=smtp.yourdomain.com
-SMTP_PORT=587
-SMTP_SECURE=true
-SMTP_USER=smtp-user
-SMTP_PASSWORD=smtp-password
-EMAIL_FROM_NAME=School LMS
-EMAIL_FROM_ADDRESS=noreply@yourdomain.com
+GMAIL_APP_PASSWORD=YOUR_APP_PASSWORD
 
 # URLs
 FRONTEND_URL=https://yourdomain.com
+
+# Jitsi
+JITSI_DOMAIN=meet.yourdomain.com
 ```
 
-### SSL/TLS Setup (Nginx)
+2. Generate secure JWT secret:
+```bash
+openssl rand -hex 64
+```
+
+### Nginx Reverse Proxy
+
 ```nginx
 server {
     listen 80;
@@ -121,306 +148,276 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    location /socket.io {
+        proxy_pass http://localhost:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
     }
 }
 ```
 
----
+### SSL with Let's Encrypt
 
-## 🔨 Build Custom Docker Image
-
-### Build
 ```bash
-# Build image
-docker build -t susclass-lms:v1.0.0 .
-
-# Tag for registry
-docker tag susclass-lms:v1.0.0 yourregistry/susclass-lms:v1.0.0
-
-# Push to registry
-docker push yourregistry/susclass-lms:v1.0.0
-```
-
-### Run Custom Image
-```bash
-docker run -d \
-  --name lms-app \
-  -p 5000:5000 \
-  -e DATABASE_URL=postgresql://user:pass@host:5432/db \
-  -e JWT_SECRET=your-secret \
-  -e GMAIL_USER=user@gmail.com \
-  -e GMAIL_APP_PASSWORD=pass \
-  -e ADMIN_EMAIL=admin@school.local \
-  -e ADMIN_PASSWORD=Admin@2026 \
-  -v $(pwd)/uploads:/app/backend/uploads \
-  --restart unless-stopped \
-  susclass-lms:v1.0.0
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d yourdomain.com
 ```
 
 ---
 
-## 🖥️ Manual Deployment (VPS)
+## Manual Deployment
 
-### Prerequisites
-- Ubuntu 20.04+ / CentOS 8+
+### Without Docker
+
+#### Prerequisites
 - Node.js 18+
 - PostgreSQL 15+
-- Nginx (optional)
+- Redis 7+ (optional)
 
-### Step 1: Install Dependencies
+#### Backend Setup
+
 ```bash
-# Node.js 18
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# PostgreSQL 15
-sudo apt-get install -y postgresql-15 postgresql-client-15
-
-# PM2 (process manager)
-sudo npm install -g pm2
+cd backend
+npm install
+cp .env.example .env
+# Edit .env with database credentials
+node server.js
 ```
 
-### Step 2: Setup Database
+#### Frontend Setup
+
 ```bash
-# Switch to postgres user
-sudo -u postgres psql
+cd client
+npm install
+npm run build
+# Copy dist/ contents to backend/public/
+```
 
-# Create database and user
-CREATE DATABASE sustainable_classroom;
-CREATE USER lms_admin WITH PASSWORD 'SecurePassword2026';
-GRANT ALL PRIVILEGES ON DATABASE sustainable_classroom TO lms_admin;
-\q
+#### Database Setup
 
-# Import schema
-cd /path/to/project/backend
+```bash
+psql -U postgres -c "CREATE DATABASE sustainable_classroom;"
+psql -U postgres -c "CREATE USER lms_admin WITH PASSWORD 'password';"
+psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE sustainable_classroom TO lms_admin;"
+
+cd backend
 psql -U lms_admin -d sustainable_classroom -f FRESH-COMPLETE-DATABASE.sql
 psql -U lms_admin -d sustainable_classroom -f add-module-progress-tracking.sql
 psql -U lms_admin -d sustainable_classroom -f add-coding-submissions.sql
 psql -U lms_admin -d sustainable_classroom -f add-inapp-notifications-table.sql
+psql -U lms_admin -d sustainable_classroom -f add-chat-tables.sql
 ```
 
-### Step 3: Deploy Application
+#### Process Manager
+
 ```bash
-# Clone repository
-cd /opt
-git clone https://github.com/susclassglobal-oss/susclasssrefine.git
-cd susclasssrefine
-
-# Install backend dependencies
-cd backend
-npm install --production
-cp .env.example .env
-# Edit .env with production values
-
-# Build frontend
-cd ../client
-npm install
-npm run build
-
-# Copy built frontend to backend
-cp -r dist/* ../backend/public/
-
-# Start with PM2
-cd ../backend
+npm install -g pm2
 pm2 start server.js --name lms-backend
 pm2 save
 pm2 startup
 ```
 
-### Step 4: Configure Nginx
+---
+
+## Environment Configuration
+
+### Required Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| DATABASE_URL | PostgreSQL connection string | - |
+| JWT_SECRET | Token signing key | - |
+| ADMIN_EMAIL | Admin account email | admin@classroom.local |
+| ADMIN_PASSWORD | Admin account password | Admin@2026 |
+
+### Optional Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| PORT | Server port | 5000 |
+| NODE_ENV | Environment | development |
+| DB_SSL | Enable SSL for database | false |
+| GMAIL_USER | Gmail account | - |
+| GMAIL_APP_PASSWORD | Gmail app password | - |
+| REDIS_URL | Redis connection | redis://localhost:6379 |
+| JITSI_DOMAIN | Jitsi server domain | localhost:8443 |
+
+### Gmail Configuration
+
+1. Enable 2-Factor Authentication on Google account
+2. Generate App Password at https://myaccount.google.com/apppasswords
+3. Set GMAIL_USER and GMAIL_APP_PASSWORD in .env
+
+---
+
+## SSL/TLS Configuration
+
+### Self-Signed Certificate (Testing)
+
 ```bash
-sudo nano /etc/nginx/sites-available/lms
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout nginx/ssl/server.key \
+  -out nginx/ssl/server.crt
+```
 
-# Add configuration (see SSL/TLS section above)
+### Let's Encrypt (Production)
 
-sudo ln -s /etc/nginx/sites-available/lms /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
+```bash
+sudo certbot certonly --standalone -d yourdomain.com
 ```
 
 ---
 
-## ☁️ Cloud Platform Deployment
+## Database Management
 
-### Render.com
-1. Connect GitHub repository
-2. Create Web Service
-3. Build Command: 
-   ```bash
-   cd client && npm install && npm run build && cd ../backend && npm install
-   ```
-4. Start Command: `cd backend && node server.js`
-5. Add environment variables from production list
-6. Create PostgreSQL database (managed)
-7. Deploy
+### Backup
 
-### Railway
-1. New Project → Deploy from GitHub
-2. Add PostgreSQL plugin
-3. Set environment variables
-4. Deploy automatically on push
-
-### Heroku
-```bash
-# Install Heroku CLI
-heroku create susclass-lms
-
-# Add PostgreSQL addon
-heroku addons:create heroku-postgresql:mini
-
-# Set environment variables
-heroku config:set JWT_SECRET=your-secret
-heroku config:set GMAIL_USER=user@gmail.com
-# ... etc
-
-# Deploy
-git push heroku main
-
-# Run migrations
-heroku run bash
-cd backend
-psql $DATABASE_URL < FRESH-COMPLETE-DATABASE.sql
-```
-
----
-
-## 🔄 Updates & Maintenance
-
-### Update Application
-```bash
-# With Docker Compose
-cd susclasssrefine
-git pull
-docker-compose down
-docker-compose build
-docker-compose up -d
-
-# Manual deployment
-cd /opt/susclasssrefine
-git pull
-cd backend && npm install
-cd ../client && npm install && npm run build
-pm2 restart lms-backend
-```
-
-### Database Backup
-```bash
-# Backup
-docker exec lms-database pg_dump -U lms_admin sustainable_classroom > backup.sql
-
-# Or manual
-pg_dump -U lms_admin -h localhost sustainable_classroom > backup.sql
-
-# Restore
-psql -U lms_admin -d sustainable_classroom < backup.sql
-```
-
-### Monitor Logs
 ```bash
 # Docker
+docker exec lms-database pg_dump -U lms_admin sustainable_classroom > backup.sql
+
+# Local
+pg_dump -U lms_admin -h localhost sustainable_classroom > backup.sql
+```
+
+### Restore
+
+```bash
+# Docker
+docker exec -i lms-database psql -U lms_admin sustainable_classroom < backup.sql
+
+# Local
+psql -U lms_admin -h localhost sustainable_classroom < backup.sql
+```
+
+### Migrations
+
+SQL migration files are in backend/ directory. Run in order:
+1. FRESH-COMPLETE-DATABASE.sql
+2. add-module-progress-tracking.sql
+3. add-coding-submissions.sql
+4. add-inapp-notifications-table.sql
+5. add-chat-tables.sql
+
+---
+
+## Monitoring
+
+### Health Check
+
+```bash
+curl http://localhost:5000/api/health
+```
+
+### Logs
+
+```bash
+# All services
+docker-compose logs -f
+
+# Specific service
 docker-compose logs -f backend
 
-# PM2
-pm2 logs lms-backend
+# Last 100 lines
+docker-compose logs --tail 100 backend
+```
 
-# Nginx
-tail -f /var/log/nginx/access.log
-tail -f /var/log/nginx/error.log
+### Resource Usage
+
+```bash
+docker stats
 ```
 
 ---
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
-### Database Connection Issues
+### Common Issues
+
+#### Port Already in Use
+
 ```bash
-# Check database is running
-docker-compose ps postgres
-# or
-sudo systemctl status postgresql
-
-# Test connection
-docker exec -it lms-database psql -U lms_admin -d sustainable_classroom
-# or
-psql -U lms_admin -h localhost -d sustainable_classroom
-
-# Check environment variables
-docker-compose exec backend env | grep DATABASE_URL
-```
-
-### Port Already in Use
-```bash
-# Find process using port 5000
-sudo lsof -i :5000
-# or on Windows
+# Find process
 netstat -ano | findstr :5000
+lsof -i :5000
 
 # Kill process
+taskkill /PID <PID> /F
 kill -9 <PID>
 ```
 
-### Permission Issues
+#### Database Connection Failed
+
 ```bash
-# Fix uploads directory
-sudo chown -R node:node /app/backend/uploads
-# or for manual deployment
-sudo chown -R $USER:$USER /opt/susclasssrefine/backend/uploads
+# Check database status
+docker-compose ps postgres
+docker exec -it lms-database pg_isready -U lms_admin
+
+# View database logs
+docker-compose logs postgres
+```
+
+#### Backend Not Starting
+
+```bash
+# View backend logs
+docker-compose logs backend
+
+# Check environment
+docker-compose exec backend env | grep DATABASE_URL
+```
+
+#### Jitsi Not Working
+
+```bash
+# Check all Jitsi services
+docker-compose ps | grep jitsi
+
+# View Jitsi logs
+docker-compose logs jitsi-web
+docker-compose logs jitsi-jvb
+```
+
+### Reset Everything
+
+```bash
+# Stop all services
+docker-compose down
+
+# Remove volumes
+docker volume prune -f
+
+# Start fresh
+docker-compose up -d
 ```
 
 ---
 
-## 📊 Performance Tuning
+## Security Checklist
 
-### PostgreSQL Optimization
-```sql
--- Edit postgresql.conf
-shared_buffers = 256MB
-effective_cache_size = 1GB
-maintenance_work_mem = 64MB
-max_connections = 100
-```
-
-### Redis Integration (Optional)
-```javascript
-// In server.js, replace in-memory cache with Redis
-const redis = require('redis');
-const client = redis.createClient({
-  url: process.env.REDIS_URL || 'redis://localhost:6379'
-});
-```
-
-### Nginx Caching
-```nginx
-# Add to nginx config
-location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
-    expires 1y;
-    add_header Cache-Control "public, immutable";
-}
-```
-
----
-
-## 🔐 Security Checklist
+Before production deployment:
 
 - [ ] Change default admin password
-- [ ] Use strong JWT_SECRET (64+ characters)
-- [ ] Enable HTTPS/SSL in production
-- [ ] Set DB_SSL=true for external databases
+- [ ] Generate strong JWT_SECRET (64+ characters)
+- [ ] Enable HTTPS with valid SSL certificate
 - [ ] Configure firewall (allow only 80, 443, 22)
-- [ ] Keep .env files out of version control
-- [ ] Regularly update dependencies (`npm audit`)
-- [ ] Enable database backups
-- [ ] Use environment-specific secrets
-- [ ] Implement rate limiting (nginx/app level)
+- [ ] Set DB_SSL=true for external databases
+- [ ] Remove default test accounts
+- [ ] Review and restrict CORS settings
+- [ ] Enable rate limiting
+- [ ] Set up log rotation
+- [ ] Configure backup schedule
 
 ---
 
-## 📞 Support
+## Support
 
-For deployment issues:
-- GitHub Issues: https://github.com/susclassglobal-oss/susclasssrefine/issues
-- Email: susclass.global@gmail.com
+For issues and questions:
+- GitHub: https://github.com/susclassglobal-oss/susclasssrefine/issues

@@ -1,15 +1,15 @@
 version: '3.8'
 
 # ============================================================
-# SUSTAINABLE CLASSROOM LMS - ON-PREMISE DOCKER STACK
+# SUSTAINABLE CLASSROOM LMS - PRODUCTION DEPLOYMENT
 # ============================================================
-# Africa Sustainable Classroom Challenge - Finals Edition
-# Complete offline deployment with all services local
+# Uses pre-built images from GitHub Container Registry
+# No local Docker build required - just docker-compose up
 # ============================================================
 
 services:
   # ============================================================
-  # PostgreSQL Database (Local)
+  # PostgreSQL Database
   # ============================================================
   postgres:
     image: postgres:15-alpine
@@ -37,7 +37,7 @@ services:
     restart: unless-stopped
 
   # ============================================================
-  # Redis Cache (For Performance Optimization)
+  # Redis Cache
   # ============================================================
   redis:
     image: redis:7-alpine
@@ -57,51 +57,44 @@ services:
     restart: unless-stopped
 
   # ============================================================
-  # MailHog (Local Email Server for Development/Testing)
+  # MailHog (Email Server)
   # ============================================================
   mailhog:
     image: mailhog/mailhog:latest
     container_name: lms-mailserver
     ports:
-      - "1025:1025"   # SMTP port
-      - "8025:8025"   # Web UI to view emails
+      - "1025:1025"
+      - "8025:8025"
     networks:
       - lms-network
     restart: unless-stopped
 
   # ============================================================
-  # Backend Application (Node.js + Express)
+  # Backend Application (Pre-built from GHCR)
   # ============================================================
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/${GITHUB_REPOSITORY:-susclass/sustainable-classroom}:${IMAGE_TAG:-latest}
     container_name: lms-backend
     ports:
       - "5000:5000"
     environment:
       NODE_ENV: production
       PORT: 5000
-      # Database (Local PostgreSQL)
       DATABASE_URL: postgresql://lms_admin:${DB_PASSWORD:-SecureLocalDB2026}@postgres:5432/sustainable_classroom
       DB_SSL: "false"
-      # Authentication
       JWT_SECRET: ${JWT_SECRET:-OnPremiseSecureKey2026AfricaChallenge}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@classroom.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@2026}
-      # Local Email (MailHog)
-      SMTP_HOST: mailhog
-      SMTP_PORT: 1025
-      SMTP_SECURE: "false"
+      SMTP_HOST: ${SMTP_HOST:-mailhog}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
       EMAIL_FROM_NAME: Sustainable Classroom
-      EMAIL_FROM_ADDRESS: noreply@classroom.local
-      # Frontend URL
-      FRONTEND_URL: http://localhost:5000
-      # Jitsi Meet URL (Local)
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-noreply@classroom.local}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5000}
       JITSI_SERVER_URL: ${JITSI_SERVER_URL:-https://localhost:8443}
-      # Storage
       UPLOAD_DIR: /app/backend/uploads
-      # Redis Cache
       REDIS_ENABLED: "true"
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -111,40 +104,15 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      # Persist uploaded files
       - uploads_data:/app/backend/uploads
-      # Persist logs
       - logs_data:/app/backend/logs
-      # Persist email queue
-      - ./backend/data:/app/backend/data
     networks:
       - lms-network
     restart: unless-stopped
 
   # ============================================================
-  # Nginx Reverse Proxy (Load Balancing & SSL)
+  # Jitsi Meet (Video Conferencing)
   # ============================================================
-  nginx:
-    image: nginx:alpine
-    container_name: lms-proxy
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-      - uploads_data:/var/www/uploads:ro
-    depends_on:
-      - backend
-    networks:
-      - lms-network
-    restart: unless-stopped
-
-  # ============================================================
-  # Jitsi Meet (Self-Hosted Video Conferencing)
-  # ============================================================
-  # Full local Jitsi stack for offline video conferencing
-  
   jitsi-web:
     image: jitsi/web:stable-9457
     container_name: lms-jitsi-web
@@ -153,8 +121,6 @@ services:
     environment:
       - ENABLE_AUTH=0
       - ENABLE_GUESTS=1
-      - ENABLE_TRANSCRIPTIONS=0
-      - DISABLE_HTTPS=0
       - JICOFO_AUTH_USER=focus
       - PUBLIC_URL=${JITSI_PUBLIC_URL:-https://localhost:8443}
       - TZ=${TZ:-UTC}
@@ -163,11 +129,9 @@ services:
       - XMPP_DOMAIN=meet.jitsi
       - XMPP_GUEST_DOMAIN=guest.meet.jitsi
       - XMPP_MUC_DOMAIN=muc.meet.jitsi
-      - XMPP_RECORDER_DOMAIN=recorder.meet.jitsi
     volumes:
       - jitsi_web_config:/config:Z
       - jitsi_web_certs:/config/keys:Z
-      - jitsi_transcripts:/usr/share/jitsi-meet/transcripts:Z
     depends_on:
       - jitsi-prosody
     networks:
@@ -187,13 +151,8 @@ services:
       - AUTH_TYPE=internal
       - ENABLE_AUTH=0
       - ENABLE_GUESTS=1
-      - ENABLE_LOBBY=1
-      - ENABLE_XMPP_WEBSOCKET=1
-      - GLOBAL_MODULES=statistics,alert
-      - GLOBAL_CONFIG=statistics_interval = 60
       - JICOFO_AUTH_USER=focus
       - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD:-jicofopassword}
-      - JICOFO_COMPONENT_SECRET=${JICOFO_COMPONENT_SECRET:-componentpassword}
       - JVB_AUTH_USER=jvb
       - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD:-jvbpassword}
       - PUBLIC_URL=${JITSI_PUBLIC_URL:-https://localhost:8443}
@@ -202,13 +161,9 @@ services:
       - XMPP_DOMAIN=meet.jitsi
       - XMPP_GUEST_DOMAIN=guest.meet.jitsi
       - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
-      - XMPP_INTERNAL_MUC_MODULES=muc_hide_all
       - XMPP_MUC_DOMAIN=muc.meet.jitsi
-      - XMPP_MUC_MODULES=muc_meeting_id
-      - XMPP_RECORDER_DOMAIN=recorder.meet.jitsi
     volumes:
       - jitsi_prosody_config:/config:Z
-      - jitsi_prosody_plugins:/prosody-plugins-custom:Z
     networks:
       lms-network:
         aliases:
@@ -219,13 +174,8 @@ services:
     image: jitsi/jicofo:stable-9457
     container_name: lms-jitsi-jicofo
     environment:
-      - AUTH_TYPE=internal
-      - ENABLE_AUTH=0
-      - ENABLE_AUTO_OWNER=1
       - JICOFO_AUTH_USER=focus
       - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD:-jicofopassword}
-      - JICOFO_COMPONENT_SECRET=${JICOFO_COMPONENT_SECRET:-componentpassword}
-      - SENTRY_DSN=
       - TZ=${TZ:-UTC}
       - XMPP_AUTH_DOMAIN=auth.meet.jitsi
       - XMPP_DOMAIN=meet.jitsi
@@ -252,9 +202,7 @@ services:
       - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD:-jvbpassword}
       - JVB_BREWERY_MUC=jvbbrewery
       - JVB_PORT=10000
-      - JVB_STUN_SERVERS=stun.l.google.com:19302,stun1.l.google.com:19302
       - PUBLIC_URL=${JITSI_PUBLIC_URL:-https://localhost:8443}
-      - SENTRY_DSN=
       - TZ=${TZ:-UTC}
       - XMPP_AUTH_DOMAIN=auth.meet.jitsi
       - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
@@ -283,12 +231,8 @@ volumes:
     name: lms-jitsi-web-config
   jitsi_web_certs:
     name: lms-jitsi-web-certs
-  jitsi_transcripts:
-    name: lms-jitsi-transcripts
   jitsi_prosody_config:
     name: lms-jitsi-prosody-config
-  jitsi_prosody_plugins:
-    name: lms-jitsi-prosody-plugins
   jitsi_jicofo_config:
     name: lms-jitsi-jicofo-config
   jitsi_jvb_config:

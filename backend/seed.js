@@ -159,12 +159,12 @@ async function seed() {
 
   try {
     // Test connection
-    console.log('🔌 Connecting to database...');
+    console.log('Connecting to database...');
     await pool.query('SELECT NOW()');
-    console.log('✅ Database connected successfully\n');
+    console.log('[OK] Database connected successfully\n');
 
     // Check if tables exist, if not, create basic structure
-    console.log('📋 Checking database schema...');
+    console.log('Checking database schema...');
     const tablesExist = await pool.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -173,7 +173,7 @@ async function seed() {
     `);
     
     if (!tablesExist.rows[0].exists) {
-      console.log('⚠️  Tables not found, creating basic schema...');
+      console.log('[WARNING] Tables not found, creating basic schema...');
       await pool.query(`
         CREATE TABLE IF NOT EXISTS teachers (
           id SERIAL PRIMARY KEY,
@@ -240,22 +240,22 @@ async function seed() {
           UNIQUE(test_id, student_id)
         );
       `);
-      console.log('✅ Basic schema created\n');
+      console.log('[OK] Basic schema created\n');
     } else {
-      console.log('✅ Tables already exist\n');
+      console.log('[OK] Tables already exist\n');
     }
 
     // Clear existing data
-    console.log('🧹 Clearing existing data...');
+    console.log('Clearing existing data...');
     await pool.query('DELETE FROM test_submissions');
     await pool.query('DELETE FROM mcq_tests');
     await pool.query('DELETE FROM modules');
     await pool.query('DELETE FROM students');
     await pool.query('DELETE FROM teachers');
-    console.log('✅ Existing data cleared\n');
+    console.log('[OK] Existing data cleared\n');
 
     // Seed teachers
-    console.log('👨‍🏫 Creating teachers...');
+    console.log('Creating teachers...');
     const teacherIdMap = {}; // Map original teacher_id (1,2,3) to actual DB IDs
     let teacherIndex = 1;
     for (const teacher of teachers) {
@@ -267,12 +267,12 @@ async function seed() {
       );
       teacherIdMap[teacherIndex] = result.rows[0].id;
       teacherIndex++;
-      console.log(`   ✓ ${teacher.name} (${teacher.email}) - ID: ${result.rows[0].id}`);
+      console.log(`   [OK] ${teacher.name} (${teacher.email}) - ID: ${result.rows[0].id}`);
     }
     console.log('');
 
     // Seed students
-    console.log('👨‍🎓 Creating students...');
+    console.log('Creating students...');
     for (const student of students) {
       const hashedPassword = await bcrypt.hash(student.password, SALT_ROUNDS);
       await pool.query(
@@ -280,12 +280,12 @@ async function seed() {
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [student.name, student.email, hashedPassword, student.reg_no, student.class_dept, student.section]
       );
-      console.log(`   ✓ ${student.name} (${student.class_dept} ${student.section})`);
+      console.log(`   [OK] ${student.name} (${student.class_dept} ${student.section})`);
     }
     console.log('');
 
     // Seed modules
-    console.log('📚 Creating learning modules...');
+    console.log('Creating learning modules...');
     for (const module of modules) {
       const actualTeacherId = teacherIdMap[module.teacher_id]; // Map to actual DB ID
       await pool.query(
@@ -293,12 +293,12 @@ async function seed() {
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [module.section, module.topic_title, actualTeacherId, module.teacher_name, module.steps.length, JSON.stringify(module.steps)]
       );
-      console.log(`   ✓ ${module.topic_title}`);
+      console.log(`   [OK] ${module.topic_title}`);
     }
     console.log('');
 
     // Seed MCQ tests
-    console.log('📝 Creating MCQ tests...');
+    console.log('Creating MCQ tests...');
     for (const test of mcqTests) {
       const deadline = new Date();
       deadline.setDate(deadline.getDate() + test.daysUntilDeadline);
@@ -309,12 +309,12 @@ async function seed() {
          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)`,
         [actualTeacherId, test.teacher_name, test.section, test.title, test.description, JSON.stringify(test.questions), test.questions.length, deadline]
       );
-      console.log(`   ✓ ${test.title}`);
+      console.log(`   [OK] ${test.title}`);
     }
     console.log('');
 
     // Verify counts
-    console.log('📊 Verifying seed data...');
+    console.log('Verifying seed data...');
     const counts = await pool.query(`
       SELECT 'Teachers' as entity, COUNT(*) as count FROM teachers
       UNION ALL SELECT 'Students', COUNT(*) FROM students
@@ -333,7 +333,7 @@ async function seed() {
 
     console.log('');
     console.log('╔════════════════════════════════════════════════════════════════╗');
-    console.log('║                   ✅ SEEDING COMPLETED!                        ║');
+    console.log('║                   SEEDING COMPLETED!                          ║');
     console.log('╠════════════════════════════════════════════════════════════════╣');
     console.log('║  LOGIN CREDENTIALS (all emails go to susclass.global@gmail.com)║');
     console.log('║                                                                ║');
@@ -352,10 +352,10 @@ async function seed() {
 
   } catch (error) {
     console.error('');
-    console.error('❌ Seeding failed:', error.message);
+    console.error('[ERROR] Seeding failed:', error.message);
     console.error('');
     if (error.code === 'ECONNREFUSED') {
-      console.error('💡 Make sure PostgreSQL is running:');
+      console.error('[TIP] Make sure PostgreSQL is running:');
       console.error('   docker-compose up -d postgres');
     }
     process.exit(1);

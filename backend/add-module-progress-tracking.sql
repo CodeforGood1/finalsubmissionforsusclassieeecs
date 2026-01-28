@@ -20,7 +20,7 @@ CREATE INDEX IF NOT EXISTS idx_module_progress_student ON module_progress(studen
 CREATE INDEX IF NOT EXISTS idx_module_progress_module ON module_progress(module_id);
 CREATE INDEX IF NOT EXISTS idx_module_progress_completed ON module_progress(is_completed);
 
-SELECT '✓ Created module_progress table' as status;
+SELECT '[OK] Created module_progress table' as status;
 
 -- 2. Create view for student module progress
 -- ============================================================
@@ -44,7 +44,7 @@ LEFT JOIN modules m ON LOWER(m.section) = LOWER(s.class_dept || ' ' || s.section
 LEFT JOIN module_progress mp ON m.id = mp.module_id AND mp.student_id = s.id
 GROUP BY s.id, s.name, s.reg_no, s.class_dept, s.section;
 
-SELECT '✓ Created v_student_module_progress view' as status;
+SELECT '[OK] Created v_student_module_progress view' as status;
 
 -- 3. Create view for module statistics
 -- ============================================================
@@ -70,7 +70,7 @@ LEFT JOIN students s ON LOWER(m.section) = LOWER(s.class_dept || ' ' || s.sectio
 LEFT JOIN module_progress mp ON m.id = mp.module_id AND mp.student_id = s.id
 GROUP BY m.id, m.topic_title, m.section, m.teacher_name, m.step_count, m.created_at;
 
-SELECT '✓ Created v_module_statistics view' as status;
+SELECT '[OK] Created v_module_statistics view' as status;
 
 -- 4. Create function to mark module as complete
 -- ============================================================
@@ -89,7 +89,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-SELECT '✓ Created mark_module_complete function' as status;
+SELECT '[OK] Created mark_module_complete function' as status;
 
 -- 5. Create function to track module access
 -- ============================================================
@@ -105,7 +105,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-SELECT '✓ Created track_module_access function' as status;
+SELECT '[OK] Created track_module_access function' as status;
 
 -- 6. Verification
 -- ============================================================
