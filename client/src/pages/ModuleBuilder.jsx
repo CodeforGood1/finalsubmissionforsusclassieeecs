@@ -2,6 +2,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import API_BASE_URL from '../config/api';
 
 function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
+  // Debug logging
+  console.log('[ModuleBuilder] Component mounted/updated', {
+    selectedSection,
+    hasAuthHeaders: !!authHeaders,
+    allocatedSections,
+    allocatedSectionsType: typeof allocatedSections,
+    isArray: Array.isArray(allocatedSections)
+  });
+  
   const [existingModules, setExistingModules] = useState([]);
   const [isBuilding, setIsBuilding] = useState(false);
   const [moduleQueue, setModuleQueue] = useState([]);
@@ -257,6 +266,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
 
   // Safety check to prevent blank screen
   if (!allocatedSections || !authHeaders) {
+    console.log('[ModuleBuilder] Showing loading state - missing required props');
     return (
       <div className="max-w-6xl mx-auto">
         <div className="bg-slate-50 border-2 border-slate-200 rounded-3xl p-12 text-center">
@@ -269,6 +279,11 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
       </div>
     );
   }
+  
+  console.log('[ModuleBuilder] Rendering main content', {
+    allocatedSectionsLength: allocatedSections.length,
+    isBuilding
+  });
 
   return (
     <div className="max-w-6xl mx-auto space-y-10">
@@ -451,8 +466,9 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                     <p className="font-bold">Live Session Info:</p>
                     <p>Students will be able to join the Jitsi meeting at the scheduled time.</p>
                     <p className="mt-2 font-mono text-xs">
-                      Meeting URL: https://8x8.vc/{jitsiData.roomName.replace(/\s+/g, '-').toLowerCase() || 'room-name'}
+                      Meeting URL: https://localhost:8443/{jitsiData.roomName.replace(/\s+/g, '-').toLowerCase() || 'room-name'}
                     </p>
+                    <p className="text-xs text-indigo-600 mt-2">✅ Using local Jitsi server (on-premise)</p>
                   </div>
                 </div>
               )}

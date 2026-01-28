@@ -3034,6 +3034,11 @@ app.get('/api/student/live-sessions', authenticateToken, async (req, res) => {
         module.steps.forEach((step, index) => {
           if (step.type === 'jitsi' && step.data) {
             const sessionData = typeof step.data === 'string' ? JSON.parse(step.data) : step.data;
+            
+            // Use localhost Jitsi server for on-premise deployment
+            const jitsiServerUrl = process.env.JITSI_SERVER_URL || 'https://localhost:8443';
+            const meetingUrl = `${jitsiServerUrl}/${sessionData.roomName}`;
+            
             sessions.push({
               id: `${module.module_id}-${index}`,
               module_id: module.module_id,
@@ -3045,7 +3050,7 @@ app.get('/api/student/live-sessions', authenticateToken, async (req, res) => {
               room_name: sessionData.roomName,
               scheduled_time: sessionData.scheduledTime,
               duration: sessionData.duration || 60,
-              meeting_url: sessionData.meetingUrl || `https://8x8.vc/${sessionData.roomName}`
+              meeting_url: meetingUrl
             });
           }
         });
@@ -3082,6 +3087,10 @@ app.get('/api/teacher/live-sessions', authenticateToken, async (req, res) => {
         module.steps.forEach((step, index) => {
           if (step.type === 'jitsi' && step.data) {
             const sessionData = typeof step.data === 'string' ? JSON.parse(step.data) : step.data;
+            // Use localhost Jitsi server for on-premise deployment
+            const jitsiServerUrl = process.env.JITSI_SERVER_URL || 'https://localhost:8443';
+            const meetingUrl = `${jitsiServerUrl}/${sessionData.roomName}`;
+            
             sessions.push({
               id: `${module.module_id}-${index}`,
               module_id: module.module_id,
@@ -3092,7 +3101,7 @@ app.get('/api/teacher/live-sessions', authenticateToken, async (req, res) => {
               room_name: sessionData.roomName,
               scheduled_time: sessionData.scheduledTime,
               duration: sessionData.duration || 60,
-              meeting_url: sessionData.meetingUrl || `https://8x8.vc/${sessionData.roomName}`
+              meeting_url: meetingUrl
             });
           }
         });
