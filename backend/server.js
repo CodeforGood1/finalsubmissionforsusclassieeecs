@@ -111,9 +111,120 @@ app.use('/api/forgot-password', authLimiter);
 // Serve static files from /public in production
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Health check endpoint for Docker/Render
+// ============================================================
+// PRODUCTION MONITORING & HEALTH ENDPOINTS
+// ============================================================
+
+// Track request metrics for Prometheus
+const metrics = {
+  requests: { total: 0, success: 0, errors: 0 },
+  latency: { sum: 0, count: 0 },
+  startTime: Date.now(),
+  activeConnections: 0
+};
+
+// Middleware to track metrics
+app.use((req, res, next) => {
+  if (req.path === '/api/health' || req.path === '/api/metrics') {
+    return next();
+  }
+  const start = Date.now();
+  metrics.requests.total++;
+  metrics.activeConnections++;
+  
+  res.on('finish', () => {
+    metrics.activeConnections--;
+    metrics.latency.sum += Date.now() - start;
+    metrics.latency.count++;
+    if (res.statusCode >= 400) {
+      metrics.requests.errors++;
+    } else {
+      metrics.requests.success++;
+    }
+  });
+  next();
+});
+
+// Simple health check endpoint for Docker/Kubernetes
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Detailed health check with database connectivity
+app.get('/api/health/detailed', async (req, res) => {
+  const healthStatus = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor((Date.now() - metrics.startTime) / 1000),
+    services: {}
+  };
+  
+  try {
+    // Check database
+    const dbStart = Date.now();
+    await pool.query('SELECT 1');
+    healthStatus.services.database = {
+      status: 'healthy',
+      latencyMs: Date.now() - dbStart
+    };
+  } catch (err) {
+    healthStatus.status = 'degraded';
+    healthStatus.services.database = { status: 'unhealthy', error: err.message };
+  }
+  
+  // Check cache
+  healthStatus.services.cache = {
+    status: 'healthy',
+    entries: cache.data.size
+  };
+  
+  res.status(healthStatus.status === 'ok' ? 200 : 503).json(healthStatus);
+});
+
+// Prometheus-compatible metrics endpoint
+app.get('/api/metrics', (req, res) => {
+  const uptime = Math.floor((Date.now() - metrics.startTime) / 1000);
+  const avgLatency = metrics.latency.count > 0 
+    ? Math.round(metrics.latency.sum / metrics.latency.count) 
+    : 0;
+  
+  const prometheusMetrics = `
+# HELP lms_uptime_seconds Server uptime in seconds
+# TYPE lms_uptime_seconds counter
+lms_uptime_seconds ${uptime}
+
+# HELP lms_http_requests_total Total HTTP requests
+# TYPE lms_http_requests_total counter
+lms_http_requests_total{status="success"} ${metrics.requests.success}
+lms_http_requests_total{status="error"} ${metrics.requests.errors}
+
+# HELP lms_http_request_duration_avg Average request duration in ms
+# TYPE lms_http_request_duration_avg gauge
+lms_http_request_duration_avg ${avgLatency}
+
+# HELP lms_active_connections Current active connections
+# TYPE lms_active_connections gauge
+lms_active_connections ${metrics.activeConnections}
+
+# HELP lms_cache_entries Current cache entries
+# TYPE lms_cache_entries gauge
+lms_cache_entries ${cache.data.size}
+
+# HELP lms_db_pool_total Database pool total connections
+# TYPE lms_db_pool_total gauge
+lms_db_pool_total ${pool.totalCount || 0}
+
+# HELP lms_db_pool_idle Database pool idle connections
+# TYPE lms_db_pool_idle gauge
+lms_db_pool_idle ${pool.idleCount || 0}
+
+# HELP lms_db_pool_waiting Database pool waiting clients
+# TYPE lms_db_pool_waiting gauge
+lms_db_pool_waiting ${pool.waitingCount || 0}
+`.trim();
+
+  res.set('Content-Type', 'text/plain; charset=utf-8');
+  res.send(prometheusMetrics);
 });
 
 // --- CONFIGURATION ---
@@ -1303,6 +1414,80 @@ app.get('/api/admin/student/:id/teachers', authenticateToken, adminOnly, async (
     );
     res.json(result.rows);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 7j. Admin: System Status Dashboard (Production Monitoring)
+app.get('/api/admin/system-status', authenticateToken, adminOnly, async (req, res) => {
+  try {
+    const uptime = Math.floor((Date.now() - metrics.startTime) / 1000);
+    const avgLatency = metrics.latency.count > 0 
+      ? Math.round(metrics.latency.sum / metrics.latency.count) 
+      : 0;
+    
+    // Get database stats
+    const dbStats = await pool.query(`
+      SELECT 
+        (SELECT COUNT(*) FROM students) as total_students,
+        (SELECT COUNT(*) FROM teachers) as total_teachers,
+        (SELECT COUNT(*) FROM modules) as total_modules,
+        (SELECT COUNT(*) FROM mcq_tests) as total_tests,
+        (SELECT COUNT(*) FROM chat_messages) as total_messages,
+        (SELECT COUNT(*) FROM student_submissions) as total_submissions
+    `);
+    
+    // Get recent activity (based on created_at since updated_at may not exist)
+    const recentActivity = await pool.query(`
+      SELECT 
+        (SELECT COUNT(*) FROM chat_messages WHERE created_at > NOW() - INTERVAL '24 hours') as recent_messages,
+        (SELECT COUNT(*) FROM student_submissions WHERE submitted_at > NOW() - INTERVAL '24 hours') as recent_submissions
+    `);
+    
+    // Get storage usage estimate
+    const storageStats = await pool.query(`
+      SELECT pg_size_pretty(pg_database_size(current_database())) as database_size
+    `);
+    
+    res.json({
+      system: {
+        uptime: `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m`,
+        uptimeSeconds: uptime,
+        nodeVersion: process.version,
+        memoryUsage: {
+          heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + ' MB',
+          heapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + ' MB',
+          rss: Math.round(process.memoryUsage().rss / 1024 / 1024) + ' MB'
+        }
+      },
+      database: {
+        status: 'healthy',
+        size: storageStats.rows[0].database_size,
+        pool: {
+          total: pool.totalCount || 0,
+          idle: pool.idleCount || 0,
+          waiting: pool.waitingCount || 0
+        },
+        stats: dbStats.rows[0]
+      },
+      requests: {
+        total: metrics.requests.total,
+        success: metrics.requests.success,
+        errors: metrics.requests.errors,
+        avgLatencyMs: avgLatency,
+        activeConnections: metrics.activeConnections
+      },
+      cache: {
+        entries: cache.data.size
+      },
+      activity: {
+        last24hMessages: parseInt(recentActivity.rows[0]?.recent_messages || 0),
+        last24hSubmissions: parseInt(recentActivity.rows[0]?.recent_submissions || 0)
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('System status error:', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -1,0 +1,92 @@
+# Sustainable Classroom LMS - Production Monitoring Stack
+# Optional: Run with main docker-compose using profiles or separately
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+
+services:
+  # ============================================================
+  # PROMETHEUS - Metrics Collection
+  # ============================================================
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: lms-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - lms-network
+    restart: unless-stopped
+
+  # ============================================================
+  # GRAFANA - Dashboards & Visualization
+  # ============================================================
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: lms-grafana
+    ports:
+      - "3001:3000"  # Using 3001 to avoid conflict with Vite
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-Admin@2026}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3001
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/lms.json:ro
+    networks:
+      - lms-network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  # ============================================================
+  # NODE EXPORTER - System Metrics
+  # ============================================================
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    container_name: lms-node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - lms-network
+    restart: unless-stopped
+
+  # ============================================================
+  # POSTGRES EXPORTER - Database Metrics
+  # ============================================================
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: lms-postgres-exporter
+    ports:
+      - "9187:9187"
+    environment:
+      DATA_SOURCE_NAME: "postgresql://lms_admin:${DB_PASSWORD:-SecureLocalDB2026}@postgres:5432/sustainable_classroom?sslmode=disable"
+    networks:
+      - lms-network
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+    name: lms-prometheus-data
+  grafana_data:
+    name: lms-grafana-data
+
+networks:
+  lms-network:
+    external: true
+    name: refine_lms-network
