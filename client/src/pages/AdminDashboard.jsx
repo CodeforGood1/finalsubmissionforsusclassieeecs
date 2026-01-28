@@ -14,6 +14,11 @@ function AdminDashboard() {
   const [selectedSections, setSelectedSections] = useState([]); // Changed from selectedStudents
   const [allocationSubject, setAllocationSubject] = useState("");
   const [availableSections, setAvailableSections] = useState([]); // List of unique class/sections
+  
+  // States for Editing Allocations
+  const [showEditAllocModal, setShowEditAllocModal] = useState(false);
+  const [editingAllocTeacher, setEditingAllocTeacher] = useState(null);
+  const [editAllocSections, setEditAllocSections] = useState([]);
 
   // States for Registration
   const [studentData, setStudentData] = useState({ 
@@ -121,6 +126,70 @@ function AdminDashboard() {
     } catch (err) {
       alert(`Server error: ${err.message}`);
       console.error("Allocation error:", err);
+    }
+  };
+
+  // Open edit allocation modal
+  const openEditAllocModal = (teacher) => {
+    setEditingAllocTeacher(teacher);
+    setEditAllocSections(teacher.allocated_sections || []);
+    setShowEditAllocModal(true);
+  };
+
+  // Toggle section in edit modal
+  const toggleEditAllocSection = (sectionStr) => {
+    setEditAllocSections(prev =>
+      prev.includes(sectionStr)
+        ? prev.filter(s => s !== sectionStr)
+        : [...prev, sectionStr]
+    );
+  };
+
+  // Save edited allocations
+  const handleSaveEditedAllocations = async () => {
+    if (!editingAllocTeacher) return;
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/teacher/${editingAllocTeacher.id}/allocations`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ sections: editAllocSections })
+      });
+
+      const data = await res.json();
+      
+      if (res.ok) {
+        alert('Allocations updated!');
+        setShowEditAllocModal(false);
+        setEditingAllocTeacher(null);
+        fetchTeachers();
+      } else {
+        alert(`Error: ${data.error || 'Failed to update'}`);
+      }
+    } catch (err) {
+      alert(`Server error: ${err.message}`);
+    }
+  };
+
+  // Remove single section from teacher
+  const handleRemoveSection = async (teacherId, section) => {
+    if (!confirm(`Remove section "${section}" from this teacher?`)) return;
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/teacher/${teacherId}/section/${encodeURIComponent(section)}`, {
+        method: 'DELETE',
+        headers: authHeaders
+      });
+
+      if (res.ok) {
+        alert('Section removed!');
+        fetchTeachers();
+      } else {
+        const data = await res.json();
+        alert(`Error: ${data.error || 'Failed to remove'}`);
+      }
+    } catch (err) {
+      alert(`Server error: ${err.message}`);
     }
   };
 
@@ -406,9 +475,29 @@ function AdminDashboard() {
                       <p className="font-black text-slate-800 uppercase text-sm">{t.name}</p>
                       <p className="text-[10px] font-bold text-slate-400 uppercase">{t.dept} • {t.staff_id}</p>
                       {t.allocated_sections && t.allocated_sections.length > 0 && (
-                        <p className="text-[10px] text-emerald-600 font-bold mt-1">
-                          Currently: {t.allocated_sections.join(', ')}
-                        </p>
+                        <div className="mt-2">
+                          <p className="text-[10px] text-emerald-600 font-bold mb-1">Current Allocations:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {t.allocated_sections.map(sec => (
+                              <span key={sec} className="inline-flex items-center text-[9px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                                {sec}
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); handleRemoveSection(t.id, sec); }}
+                                  className="ml-1 text-red-500 hover:text-red-700 font-bold"
+                                  title="Remove this section"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openEditAllocModal(t); }}
+                            className="mt-2 text-[9px] text-blue-600 font-bold hover:underline"
+                          >
+                            ✎ Edit All Allocations
+                          </button>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -534,6 +623,82 @@ function AdminDashboard() {
           </div>
         )}
       </div>
+      
+      {/* Edit Allocations Modal */}
+      {showEditAllocModal && editingAllocTeacher && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl max-h-[80vh] overflow-y-auto">
+            <h3 className="text-lg font-black text-slate-800 mb-2">Edit Allocations</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Teacher: <strong>{editingAllocTeacher.name}</strong>
+            </p>
+            
+            <p className="text-xs font-bold text-slate-400 uppercase mb-3">Select sections to allocate:</p>
+            
+            <div className="space-y-2 mb-6 max-h-64 overflow-y-auto">
+              {availableSections.length === 0 ? (
+                <p className="text-slate-400 text-sm">No sections available. Register students first.</p>
+              ) : (
+                availableSections.map(section => {
+                  const sectionStr = `${section.class_dept} ${section.section}`;
+                  const isSelected = editAllocSections.includes(sectionStr);
+                  return (
+                    <div
+                      key={section.id}
+                      onClick={() => toggleEditAllocSection(sectionStr)}
+                      className={`p-4 rounded-xl cursor-pointer border-2 transition-all ${
+                        isSelected 
+                          ? 'border-blue-500 bg-blue-50' 
+                          : 'border-transparent bg-slate-50 hover:bg-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-slate-800">{section.class_dept} - {section.section}</p>
+                          <p className="text-[10px] text-slate-400">{section.student_count} student(s)</p>
+                        </div>
+                        {isSelected && (
+                          <span className="text-blue-500 font-bold text-lg">✓</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            
+            <div className="bg-slate-50 p-4 rounded-xl mb-6">
+              <p className="text-xs font-bold text-slate-500 mb-2">Currently selected ({editAllocSections.length}):</p>
+              {editAllocSections.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {editAllocSections.map(sec => (
+                    <span key={sec} className="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-bold">
+                      {sec}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-slate-400 text-sm italic">No sections selected</p>
+              )}
+            </div>
+            
+            <div className="flex gap-3">
+              <button 
+                onClick={() => { setShowEditAllocModal(false); setEditingAllocTeacher(null); }}
+                className="flex-1 px-6 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSaveEditedAllocations}
+                className="flex-1 px-6 py-3 bg-blue-500 text-white rounded-xl font-bold hover:bg-blue-600"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

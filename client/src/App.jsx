@@ -78,6 +78,7 @@ function App() {
       <Route path="/progress" element={<ProtectedRoute allowedRole="student"><ProgressTracker /></ProtectedRoute>} />
       <Route path="/test" element={<ProtectedRoute allowedRole="student"><TestKnowledge /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute allowedRole="student"><StudentProfile /></ProtectedRoute>} />
+      <Route path="/workbench" element={<ProtectedRoute allowedRole="student"><CodingWorkbench /></ProtectedRoute>} />
       <Route path="/courses/code" element={<ProtectedRoute allowedRole="student"><CodingWorkbench /></ProtectedRoute>} />
       
       {/* CRITICAL FIX: The Course Player must be protected so only logged-in students see it */}

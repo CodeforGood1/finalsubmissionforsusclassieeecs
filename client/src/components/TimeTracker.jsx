@@ -31,18 +31,47 @@ function TimeTracker() {
   const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
   const [lastActivityTime, setLastActivityTime] = useState(Date.now());
   const [isActive, setIsActive] = useState(true);
+  const [token, setToken] = useState(localStorage.getItem('token'));
 
-  const token = localStorage.getItem('token');
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Check for token changes (logout/expiry) every second
+  useEffect(() => {
+    const tokenCheckInterval = setInterval(() => {
+      const currentToken = localStorage.getItem('token');
+      if (currentToken !== token) {
+        console.log('[TimeTracker] Token changed, updating state');
+        setToken(currentToken);
+        if (!currentToken) {
+          // Token was removed (logout) - reset all state
+          console.log('[TimeTracker] Token removed, resetting timer');
+          setSessionTime(0);
+          setTotalDailyTime(0);
+          setIsActive(false);
+          localStorage.removeItem('currentSessionTime');
+          localStorage.removeItem('sessionStartTime');
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(tokenCheckInterval);
+  }, [token]);
+
+  // Stop timer immediately if no token
+  useEffect(() => {
+    if (!token) {
+      setIsActive(false);
+    }
+  }, [token]);
+
   // Persist session time to localStorage whenever it changes
   useEffect(() => {
-    if (sessionTime > 0) {
+    if (sessionTime > 0 && token) {
       localStorage.setItem('currentSessionTime', sessionTime.toString());
       localStorage.setItem('sessionStartTime', (Date.now() - sessionTime * 1000).toString());
     }
-  }, [sessionTime]);
+  }, [sessionTime, token]);
 
   // Check if on video page (exempt from auto-logout)
   const isOnVideoPage = location.pathname.includes('/learning/') || 

@@ -21,6 +21,11 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
   const [targetSubject, setTargetSubject] = useState(""); // Subject for this module
   const [uploadingVideo, setUploadingVideo] = useState(false);
   
+  // Section editing modal state
+  const [showSectionModal, setShowSectionModal] = useState(false);
+  const [editingSectionModuleId, setEditingSectionModuleId] = useState(null);
+  const [newSectionValue, setNewSectionValue] = useState("");
+  
   const [textData, setTextData] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [videoFile, setVideoFile] = useState(null);
@@ -55,17 +60,25 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
   }, [selectedSection]);
 
   const fetchModules = useCallback(async () => {
-    if (!selectedSection || !authHeaders) return;
+    if (!authHeaders) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/teacher/modules/${selectedSection}`, { headers: authHeaders() });
+      // If teacher has no allocations or no selected section, fetch ALL their modules
+      // Otherwise, fetch modules for the selected section
+      const hasAllocations = allocatedSections && allocatedSections.length > 0;
+      const endpoint = hasAllocations && selectedSection 
+        ? `${API_BASE_URL}/api/teacher/modules/${selectedSection}`
+        : `${API_BASE_URL}/api/teacher/my-modules`;
+      
+      console.log('[ModuleBuilder] Fetching modules from:', endpoint);
+      const res = await fetch(endpoint, { headers: authHeaders() });
       const data = await res.json();
       setExistingModules(Array.isArray(data) ? data : []);
     } catch (err) { console.error("Error fetching modules:", err); }
-  }, [selectedSection, authHeaders]);
+  }, [selectedSection, authHeaders, allocatedSections]);
 
   useEffect(() => { fetchModules(); }, [fetchModules]);
 
-  // Handle video file upload to Cloudinary
+  // Handle video file upload to local server
   const handleVideoUpload = async (file) => {
     if (!file) return null;
     
@@ -109,7 +122,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
     
     if (contentType === 'video') {
       if (videoFile) {
-        // Upload video to Cloudinary
+        // Upload video to local server
         const uploadedUrl = await handleVideoUpload(videoFile);
         if (!uploadedUrl) return;
         stepData = uploadedUrl;
@@ -238,6 +251,9 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
       setTopicTitle(module.topic_title);
       setModuleQueue(module.steps);
       setEditingModuleId(moduleId);
+      // Also load section and subject for editing
+      setTargetSection(module.section || '');
+      setTargetSubject(module.subject || '');
       setIsBuilding(true);
     } catch (err) {
       alert("Failed to load module for editing");
@@ -264,6 +280,38 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
     }
   };
 
+  // Handle changing module section
+  const handleSectionChange = async () => {
+    if (!editingSectionModuleId || !newSectionValue) return;
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/teacher/module/${editingSectionModuleId}/section`, {
+        method: 'PUT',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section: newSectionValue })
+      });
+      
+      if (res.ok) {
+        alert("Section updated!");
+        setShowSectionModal(false);
+        setEditingSectionModuleId(null);
+        setNewSectionValue("");
+        fetchModules();
+      } else {
+        const data = await res.json();
+        alert("Error: " + (data.error || 'Failed to update section'));
+      }
+    } catch (err) {
+      alert("Server error: " + err.message);
+    }
+  };
+
+  const openSectionModal = (moduleId, currentSection) => {
+    setEditingSectionModuleId(moduleId);
+    setNewSectionValue(currentSection || '');
+    setShowSectionModal(true);
+  };
+
   // Safety check to prevent blank screen
   if (!allocatedSections || !authHeaders) {
     console.log('[ModuleBuilder] Showing loading state - missing required props');
@@ -287,45 +335,82 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
 
   return (
     <div className="max-w-6xl mx-auto space-y-10">
-      {/* Check if teacher has allocated sections */}
-      {allocatedSections.length === 0 ? (
-        <div className="bg-amber-50 border-2 border-amber-200 rounded-3xl p-12 text-center">
-          <svg className="w-16 h-16 text-amber-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <h3 className="text-2xl font-bold text-amber-700 mb-2">No Sections Allocated</h3>
-          <p className="text-amber-600">Please contact admin to allocate class sections to you before creating modules.</p>
+      {/* Show info if no sections allocated, but still allow module creation */}
+      {allocatedSections.length === 0 && !isBuilding && (
+        <div className="bg-amber-50 border-2 border-amber-200 rounded-3xl p-8 mb-6">
+          <div className="flex items-start gap-4">
+            <svg className="w-8 h-8 text-amber-400 flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div>
+              <h3 className="text-lg font-bold text-amber-700 mb-1">No Sections Assigned Yet</h3>
+              <p className="text-amber-600 text-sm">You don't have sections allocated, but you can still create modules. Just type your target section manually below.</p>
+            </div>
+          </div>
         </div>
-      ) : !isBuilding ? (
+      )}
+      
+      {/* Always show module builder - works with or without allocations */}
+      {!isBuilding ? (
         <div className="space-y-6">
           <div className="flex justify-between items-center">
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Live Modules</h3>
-            <button onClick={() => setIsBuilding(true)} className="bg-emerald-500 text-white px-6 py-3 rounded-full font-black text-[10px] uppercase shadow-lg">Create New Module</button>
+            <button onClick={() => setIsBuilding(true)} className="bg-emerald-500 text-white px-6 py-3 rounded-full font-black text-[10px] uppercase shadow-lg hover:bg-emerald-600 transition-colors">Create New Module</button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {existingModules.map(mod => (
-              <div key={mod.id} className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
-                <p className="text-[10px] font-black text-emerald-500 uppercase">Module</p>
-                <h4 className="text-lg font-black text-slate-800 uppercase mb-2">{mod.topic_title}</h4>
-                <p className="text-[10px] text-slate-400 font-bold mb-4">{mod.step_count} SECTIONS</p>
-                
-                <div className="flex gap-2 mt-4">
-                  <button 
-                    onClick={() => handleEditModule(mod.id)}
-                    className="flex-1 bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-blue-100"
-                  >
-                    Edit
-                  </button>
-                  <button 
-                    onClick={() => handleDeleteModule(mod.id)}
-                    className="flex-1 bg-red-50 text-red-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-red-100"
-                  >
-                    Delete
-                  </button>
+          
+          {existingModules.length === 0 ? (
+            <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center">
+              <svg className="w-16 h-16 text-slate-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              <h3 className="text-xl font-bold text-slate-500 mb-2">No Modules Yet</h3>
+              <p className="text-slate-400 mb-4">Click "Create New Module" to build your first learning module</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {existingModules.map(mod => (
+                <div key={mod.id} className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                  <p className="text-[10px] font-black text-emerald-500 uppercase">Module</p>
+                  <h4 className="text-lg font-black text-slate-800 uppercase mb-2">{mod.topic_title}</h4>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {mod.section && (
+                      <button 
+                        onClick={() => openSectionModal(mod.id, mod.section)}
+                        className="text-[9px] font-bold text-white bg-blue-500 px-2 py-1 rounded-full hover:bg-blue-600 cursor-pointer"
+                        title="Click to change section"
+                      >
+                        {mod.section} ✎
+                      </button>
+                    )}
+                    {!mod.section && (
+                      <button 
+                        onClick={() => openSectionModal(mod.id, '')}
+                        className="text-[9px] font-bold text-white bg-amber-500 px-2 py-1 rounded-full hover:bg-amber-600 cursor-pointer"
+                      >
+                        + Add Section
+                      </button>
+                    )}
+                    <span className="text-[9px] font-bold text-white bg-slate-400 px-2 py-1 rounded-full">{mod.step_count} STEPS</span>
+                  </div>
+                  
+                  <div className="flex gap-2 mt-4">
+                    <button 
+                      onClick={() => handleEditModule(mod.id)}
+                      className="flex-1 bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-blue-100"
+                    >
+                      Edit
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteModule(mod.id)}
+                      className="flex-1 bg-red-50 text-red-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-red-100"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-10">
@@ -337,18 +422,31 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                   <label className="text-xs font-black text-emerald-700 uppercase mb-3 block">
                     Target Section
                   </label>
-                  <select 
-                    className="w-full p-4 bg-white rounded-xl font-bold border-2 border-emerald-300 focus:border-emerald-500 outline-none"
-                    value={targetSection}
-                    onChange={e => setTargetSection(e.target.value)}
-                  >
-                    <option value="">-- Choose Section --</option>
-                    {allocatedSections && allocatedSections.map(sec => (
-                      <option key={sec} value={sec}>{sec}</option>
-                    ))}
-                  </select>
+                  {allocatedSections && allocatedSections.length > 0 ? (
+                    <select 
+                      className="w-full p-4 bg-white rounded-xl font-bold border-2 border-emerald-300 focus:border-emerald-500 outline-none"
+                      value={targetSection}
+                      onChange={e => setTargetSection(e.target.value)}
+                    >
+                      <option value="">-- Choose Section --</option>
+                      {allocatedSections.map(sec => (
+                        <option key={sec} value={sec}>{sec}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="e.g., CS A, ECE B (manually enter)"
+                      className="w-full p-4 bg-white rounded-xl font-bold border-2 border-emerald-300 focus:border-emerald-500 outline-none"
+                      value={targetSection}
+                      onChange={e => setTargetSection(e.target.value)}
+                    />
+                  )}
                   {!targetSection && (
                     <p className="text-xs text-red-600 font-bold mt-2">Required</p>
+                  )}
+                  {allocatedSections.length === 0 && (
+                    <p className="text-xs text-emerald-600 font-bold mt-2">No sections assigned - type section name (e.g., "CS A")</p>
                   )}
                 </div>
 
@@ -387,7 +485,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                 <div className="space-y-4">
                   <div className="bg-blue-50 p-6 rounded-2xl border-2 border-blue-200">
                     <label className="text-xs font-black text-blue-700 uppercase mb-3 block">
-                      Upload Video to Cloudinary
+                      Upload Video (Local Server)
                     </label>
                     <input 
                       type="file" 
@@ -484,6 +582,21 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                   <select className="w-full p-4 rounded-xl border font-bold" value={mcqData.correct} onChange={e => setMcqData({...mcqData, correct: e.target.value})}>
                     {['A','B','C','D'].map(v => <option key={v} value={v}>Correct: {v}</option>)}
                   </select>
+                  
+                  {/* CSV Format Example */}
+                  <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 mt-4">
+                    <p className="text-xs font-black text-amber-700 uppercase mb-2">📋 Bulk Upload via CSV</p>
+                    <p className="text-sm text-amber-800 mb-2">For uploading multiple MCQs at once, use a CSV file with this format:</p>
+                    <div className="bg-white rounded-lg p-3 font-mono text-xs text-slate-700 overflow-x-auto">
+                      <p className="font-bold text-slate-500 mb-1">Header Row:</p>
+                      <p>question,a,b,c,d,correct</p>
+                      <p className="font-bold text-slate-500 mt-2 mb-1">Example Data:</p>
+                      <p>"What is 2+2?","3","4","5","6","B"</p>
+                      <p>"Capital of France?","London","Paris","Berlin","Rome","B"</p>
+                      <p>"Largest planet?","Mars","Jupiter","Saturn","Earth","B"</p>
+                    </div>
+                    <p className="text-xs text-amber-600 mt-2">💡 Upload CSV in the Test Knowledge section for full quiz creation.</p>
+                  </div>
                 </div>
               )}
               {contentType === 'code' && <textarea placeholder="Paste reference solution code here..." className="w-full p-8 bg-slate-900 text-emerald-400 rounded-2xl h-64 font-mono" value={codeStarter} onChange={e => setCodeStarter(e.target.value)} />}
@@ -686,6 +799,43 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
               ))}
              </div>
              <button onClick={() => {setIsBuilding(false); setModuleQueue([]); setEditingModuleId(null);}} className="w-full mt-6 text-red-500 text-[10px] font-black uppercase p-4">Discard</button>
+          </div>
+        </div>
+      )}
+      
+      {/* Section Edit Modal */}
+      {showSectionModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
+            <h3 className="text-lg font-black text-slate-800 mb-4">Change Module Section</h3>
+            <p className="text-sm text-slate-500 mb-4">Select a new section for this module:</p>
+            
+            <select 
+              className="w-full p-4 bg-slate-50 rounded-xl font-bold border-2 border-slate-200 focus:border-blue-500 outline-none mb-6"
+              value={newSectionValue}
+              onChange={e => setNewSectionValue(e.target.value)}
+            >
+              <option value="">-- Choose Section --</option>
+              {allocatedSections && allocatedSections.map(sec => (
+                <option key={sec} value={sec}>{sec}</option>
+              ))}
+            </select>
+            
+            <div className="flex gap-3">
+              <button 
+                onClick={() => { setShowSectionModal(false); setEditingSectionModuleId(null); }}
+                className="flex-1 px-6 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSectionChange}
+                disabled={!newSectionValue}
+                className="flex-1 px-6 py-3 bg-blue-500 text-white rounded-xl font-bold hover:bg-blue-600 disabled:bg-slate-300"
+              >
+                Save
+              </button>
+            </div>
           </div>
         </div>
       )}

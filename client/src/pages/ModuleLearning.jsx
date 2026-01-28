@@ -29,6 +29,11 @@ function ModuleLearning() {
   // Jitsi state
   const [showJitsi, setShowJitsi] = useState(false);
 
+  // Code submission state
+  const [codeSubmitted, setCodeSubmitted] = useState(false);
+  const [codeResults, setCodeResults] = useState(null);
+  const [customInput, setCustomInput] = useState('');
+
   const langMap = {
     java: { name: "java", version: "15.0.2" },
     python: { name: "python", version: "3.10.0" },
@@ -83,6 +88,9 @@ function ModuleLearning() {
     setMcqCorrect(false);
     setOutput('');
     setShowJitsi(false);
+    setCodeSubmitted(false);
+    setCodeResults(null);
+    setCustomInput('');
     
     // Set starter code for coding steps
     const step = steps[currentStepIndex];
@@ -114,11 +122,92 @@ function ModuleLearning() {
           language: langMap[language]?.name || 'python',
           version: langMap[language]?.version || '3.10.0',
           files: [{ content: code }],
-          stdin: ''
+          stdin: customInput
         }),
       });
       const data = await res.json();
       setOutput(data.run?.output || data.run?.stderr || "No output.");
+    } catch (err) {
+      setOutput("Execution failed: " + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleCodeSubmit = async () => {
+    const testCases = currentStep.mcq_data?.testCases || [];
+    if (testCases.length === 0) {
+      setOutput("No test cases defined for this problem.");
+      return;
+    }
+
+    setIsProcessing(true);
+    setOutput('> Running test cases...');
+    setCodeSubmitted(false);
+    setCodeResults(null);
+
+    try {
+      // Run code against each test case
+      const results = [];
+      let passedCount = 0;
+
+      for (let i = 0; i < testCases.length; i++) {
+        const tc = testCases[i];
+        setOutput(`> Running test case ${i + 1} of ${testCases.length}...`);
+        
+        const res = await fetch("https://emkc.org/api/v2/piston/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            language: langMap[language]?.name || 'python',
+            version: langMap[language]?.version || '3.10.0',
+            files: [{ content: code }],
+            stdin: tc.input || ''
+          }),
+        });
+        
+        const data = await res.json();
+        const actualOutput = (data.run?.stdout || data.run?.output || '').trim();
+        const expectedOutput = (tc.expected || '').trim();
+        const passed = actualOutput === expectedOutput;
+        
+        if (passed) passedCount++;
+        
+        results.push({
+          testCase: i + 1,
+          input: tc.input,
+          expected: expectedOutput,
+          actual: actualOutput,
+          passed,
+          isHidden: tc.isHidden
+        });
+      }
+
+      const score = ((passedCount / testCases.length) * 100).toFixed(0);
+      
+      // Save submission to backend
+      try {
+        await fetch(`${API_BASE_URL}/api/student/submit-code`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            moduleId,
+            code,
+            language: langMap[language]?.name || 'python',
+            testCases: testCases.map(tc => ({ input: tc.input, expected: tc.expected }))
+          })
+        });
+      } catch (saveErr) {
+        console.error("Failed to save submission:", saveErr);
+      }
+
+      setCodeResults({ results, passedCount, total: testCases.length, score });
+      setCodeSubmitted(true);
+      setOutput(`✅ Completed: ${passedCount}/${testCases.length} test cases passed (${score}%)`);
+      
     } catch (err) {
       setOutput("Execution failed: " + err.message);
     } finally {
@@ -378,7 +467,31 @@ function ModuleLearning() {
                 {/* Problem Description */}
                 {currentStep.mcq_data?.description && (
                   <div className="bg-slate-50 p-6 rounded-2xl">
-                    <p className="text-slate-700">{currentStep.mcq_data.description}</p>
+                    <p className="text-slate-700 whitespace-pre-wrap">{currentStep.mcq_data.description}</p>
+                  </div>
+                )}
+
+                {/* Sample Test Cases (non-hidden) */}
+                {currentStep.mcq_data?.testCases && currentStep.mcq_data.testCases.filter(tc => !tc.isHidden).length > 0 && (
+                  <div className="bg-blue-50 p-4 rounded-xl">
+                    <p className="text-sm font-bold text-blue-800 mb-3">Sample Test Cases:</p>
+                    <div className="space-y-2">
+                      {currentStep.mcq_data.testCases.filter(tc => !tc.isHidden).map((tc, idx) => (
+                        <div key={idx} className="grid grid-cols-2 gap-4 text-sm">
+                          <div className="bg-white p-2 rounded font-mono">
+                            <span className="text-slate-500 text-xs">Input:</span>
+                            <pre className="text-slate-700">{tc.input || '(empty)'}</pre>
+                          </div>
+                          <div className="bg-white p-2 rounded font-mono">
+                            <span className="text-slate-500 text-xs">Expected:</span>
+                            <pre className="text-slate-700">{tc.expected || '(empty)'}</pre>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {currentStep.mcq_data.testCases.some(tc => tc.isHidden) && (
+                      <p className="text-xs text-blue-600 mt-2">+ {currentStep.mcq_data.testCases.filter(tc => tc.isHidden).length} hidden test case(s)</p>
+                    )}
                   </div>
                 )}
 
@@ -408,6 +521,17 @@ function ModuleLearning() {
                   />
                 </div>
 
+                {/* Custom Input for Run */}
+                <div className="bg-slate-100 rounded-xl p-4">
+                  <p className="text-xs text-slate-500 font-bold uppercase mb-2">Custom Input (for Run)</p>
+                  <textarea
+                    value={customInput}
+                    onChange={(e) => setCustomInput(e.target.value)}
+                    placeholder="Enter custom input here..."
+                    className="w-full h-20 p-3 bg-white border rounded-lg font-mono text-sm outline-none resize-none"
+                  />
+                </div>
+
                 {/* Output */}
                 <div className="bg-slate-800 rounded-2xl p-4">
                   <p className="text-xs text-slate-500 font-bold uppercase mb-2">Output</p>
@@ -416,14 +540,62 @@ function ModuleLearning() {
                   </pre>
                 </div>
 
-                {/* Run Button */}
-                <button
-                  onClick={handleCodeRun}
-                  disabled={isProcessing}
-                  className="px-8 py-4 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 disabled:bg-slate-400"
-                >
-                  {isProcessing ? 'Running...' : 'Run Code'}
-                </button>
+                {/* Test Case Results */}
+                {codeSubmitted && codeResults && (
+                  <div className={`p-4 rounded-xl ${codeResults.passedCount === codeResults.total ? 'bg-emerald-50' : 'bg-amber-50'}`}>
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="font-bold text-lg">
+                        {codeResults.passedCount === codeResults.total ? '🎉 All Tests Passed!' : `⚠️ ${codeResults.passedCount}/${codeResults.total} Tests Passed`}
+                      </p>
+                      <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                        parseInt(codeResults.score) >= 70 ? 'bg-emerald-500 text-white' : 
+                        parseInt(codeResults.score) >= 40 ? 'bg-amber-500 text-white' : 'bg-red-500 text-white'
+                      }`}>
+                        Score: {codeResults.score}%
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {codeResults.results.map((r, idx) => (
+                        <div key={idx} className={`p-3 rounded-lg ${r.passed ? 'bg-emerald-100' : 'bg-red-100'}`}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`text-lg ${r.passed ? 'text-emerald-600' : 'text-red-600'}`}>
+                              {r.passed ? '✓' : '✗'}
+                            </span>
+                            <span className="font-medium">Test Case {r.testCase}</span>
+                            {r.isHidden && <span className="text-xs bg-slate-300 px-2 py-0.5 rounded">Hidden</span>}
+                          </div>
+                          {!r.isHidden && !r.passed && (
+                            <div className="text-sm mt-2 grid grid-cols-3 gap-2 font-mono">
+                              <div><span className="text-slate-500">Input:</span> <pre className="inline">{r.input || '(empty)'}</pre></div>
+                              <div><span className="text-slate-500">Expected:</span> <pre className="inline">{r.expected}</pre></div>
+                              <div><span className="text-red-600">Got:</span> <pre className="inline">{r.actual}</pre></div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Run and Submit Buttons */}
+                <div className="flex gap-4">
+                  <button
+                    onClick={handleCodeRun}
+                    disabled={isProcessing}
+                    className="px-8 py-4 bg-slate-600 text-white rounded-xl font-bold hover:bg-slate-700 disabled:bg-slate-400"
+                  >
+                    {isProcessing ? 'Running...' : '▶ Run Code'}
+                  </button>
+                  {currentStep.mcq_data?.testCases && currentStep.mcq_data.testCases.length > 0 && (
+                    <button
+                      onClick={handleCodeSubmit}
+                      disabled={isProcessing}
+                      className="px-8 py-4 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 disabled:bg-slate-400"
+                    >
+                      {isProcessing ? 'Validating...' : '✓ Submit Code'}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 

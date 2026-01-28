@@ -67,7 +67,8 @@ services:
     ports:
       - "5000:5000"
     environment:
-      NODE_ENV: production
+      # IMPORTANT: Set to 'development' to disable rate limiting
+      NODE_ENV: development
       PORT: 5000
       # Database (Local PostgreSQL)
       DATABASE_URL: postgresql://lms_admin:${DB_PASSWORD:-SecureLocalDB2026}@postgres:5432/sustainable_classroom

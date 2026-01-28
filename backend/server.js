@@ -29,6 +29,10 @@ localEmailService.initializeEmailService();
 const { upload } = localStorageService;
 
 const app = express();
+
+// Trust proxy for rate limiting behind nginx/docker
+app.set('trust proxy', 1);
+
 app.use(express.json());
 app.use(cors());
 
@@ -44,10 +48,10 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       imgSrc: ["'self'", "data:", "blob:"],
       mediaSrc: ["'self'", "blob:"],
-      connectSrc: ["'self'", "http://localhost:*", "ws://localhost:*"],
+      connectSrc: ["'self'", "http://localhost:*", "ws://localhost:*", "https://emkc.org"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
-      frameSrc: ["'self'", "https://meet.jit.si", "https://*.8x8.vc"],
+      frameSrc: ["'self'", "https://meet.jit.si", "https://*.8x8.vc", "https://localhost:*"],
     },
   },
   crossOriginEmbedderPolicy: false, // Required for video embedding
@@ -56,24 +60,43 @@ app.use(helmet({
 // Rate limiting - disabled in development for easier testing
 const isDev = process.env.NODE_ENV !== 'production';
 
-// Rate limiting - general API protection
+// Rate limiting - general API protection (MUCH higher limits for on-premise)
 const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDev ? 1000 : 100, // Higher limit in dev
+  windowMs: 1 * 60 * 1000, // 1 minute window
+  max: isDev ? 10000 : 500, // 500 requests per minute per IP (very high for on-premise)
   message: { error: 'Too many requests, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => isDev, // Skip rate limiting in development
+  skip: (req) => {
+    // Skip rate limiting in development
+    if (isDev) return true;
+    // Skip rate limiting for admin endpoints (admin needs to create many users)
+    if (req.path.includes('/admin/')) return true;
+    // Skip health checks
+    if (req.path === '/api/health') return true;
+    return false;
+  },
+  // Use IP address as key, falling back to socket address
+  keyGenerator: (req) => {
+    return req.ip || req.socket?.remoteAddress || 'unknown';
+  }
 });
 
-// Stricter rate limiting for authentication endpoints
+// Stricter rate limiting for authentication endpoints (per user email, not IP)
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDev ? 100 : 10, // Higher limit in dev
-  message: { error: 'Too many login attempts, please try again after 15 minutes' },
+  windowMs: 1 * 60 * 1000, // 1 minute window
+  max: isDev ? 1000 : 20, // 20 login attempts per minute per email (reasonable)
+  message: { error: 'Too many login attempts. Please wait 1 minute before trying again.' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => isDev, // Skip rate limiting in development
+  skip: (req) => isDev, // Skip in development
+  // Key by email (if provided) to allow different users from same IP
+  keyGenerator: (req) => {
+    const email = req.body?.email || req.body?.identifier || '';
+    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    // If email provided, use email+IP combo. Otherwise just IP.
+    return email ? `${email.toLowerCase()}:${ip}` : ip;
+  }
 });
 
 // Apply general rate limiting to all API routes
@@ -1179,6 +1202,77 @@ app.post('/api/admin/allocate-sections', authenticateToken, adminOnly, async (re
   }
 });
 
+// 7g4. Admin: Update Teacher Allocations (Replace existing allocations)
+app.put('/api/admin/teacher/:id/allocations', authenticateToken, adminOnly, async (req, res) => {
+  const { id } = req.params;
+  const { sections, subject } = req.body;
+  
+  console.log("Update teacher allocations:", { teacher_id: id, sections, subject });
+  
+  try {
+    // Update teacher's allocated_sections - replace entirely
+    await pool.query(
+      'UPDATE teachers SET allocated_sections = $1 WHERE id = $2',
+      [JSON.stringify(sections || []), id]
+    );
+    
+    // Delete existing allocations in teacher_allocations table
+    await pool.query('DELETE FROM teacher_allocations WHERE teacher_id = $1', [id]);
+    
+    // Add new allocations
+    if (sections && sections.length > 0 && subject) {
+      for (const sectionStr of sections) {
+        await pool.query(
+          'INSERT INTO teacher_allocations (teacher_id, section, subject) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+          [id, sectionStr, subject]
+        );
+      }
+    }
+    
+    res.json({ success: true, message: `Teacher allocations updated to: ${(sections || []).join(', ')}` });
+  } catch (err) {
+    console.error("Update allocations error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 7g5. Admin: Remove specific section from teacher
+app.delete('/api/admin/teacher/:id/section/:section', authenticateToken, adminOnly, async (req, res) => {
+  const { id, section } = req.params;
+  const decodedSection = decodeURIComponent(section);
+  
+  console.log("Remove teacher section:", { teacher_id: id, section: decodedSection });
+  
+  try {
+    // Get current sections
+    const teacherResult = await pool.query('SELECT allocated_sections FROM teachers WHERE id = $1', [id]);
+    let currentSections = teacherResult.rows[0]?.allocated_sections || [];
+    
+    if (typeof currentSections === 'string') {
+      try { currentSections = JSON.parse(currentSections); } catch(e) { currentSections = []; }
+    }
+    
+    // Remove the section (case-insensitive)
+    const updatedSections = currentSections.filter(s => 
+      s.toUpperCase().replace(/\\s+/g, ' ').trim() !== decodedSection.toUpperCase().replace(/\\s+/g, ' ').trim()
+    );
+    
+    // Update teacher
+    await pool.query('UPDATE teachers SET allocated_sections = $1 WHERE id = $2', [JSON.stringify(updatedSections), id]);
+    
+    // Remove from teacher_allocations table
+    await pool.query(
+      'DELETE FROM teacher_allocations WHERE teacher_id = $1 AND UPPER(TRIM(section)) = UPPER(TRIM($2))',
+      [id, decodedSection]
+    );
+    
+    res.json({ success: true, message: `Removed section: ${decodedSection}` });
+  } catch (err) {
+    console.error("Remove section error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 7h. Admin: Get Teacher's Students
 app.get('/api/admin/teacher/:id/students', authenticateToken, adminOnly, async (req, res) => {
   const { id } = req.params;
@@ -1595,7 +1689,7 @@ app.get('/api/teacher/modules/:section', authenticateToken, async (req, res) => 
     const section = req.params.section;
     
     const result = await pool.query(
-      `SELECT id, topic_title, teacher_name, step_count, created_at 
+      `SELECT id, topic_title, section, teacher_name, step_count, created_at 
        FROM modules 
        WHERE LOWER(section) = LOWER($1) 
        ORDER BY created_at DESC`,
@@ -1606,6 +1700,26 @@ app.get('/api/teacher/modules/:section', authenticateToken, async (req, res) => 
   } catch (err) {
     console.error("Fetch Modules Error:", err);
     res.status(500).json({ error: "Failed to load modules" });
+  }
+});
+
+// 11a. Teacher: Fetch ALL modules created by this teacher (regardless of section)
+app.get('/api/teacher/my-modules', authenticateToken, async (req, res) => {
+  try {
+    const teacherId = req.user.id;
+    
+    const result = await pool.query(
+      `SELECT id, topic_title, section, subject, teacher_name, step_count, created_at 
+       FROM modules 
+       WHERE teacher_id = $1 
+       ORDER BY created_at DESC`,
+      [teacherId]
+    );
+    
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Fetch My Modules Error:", err);
+    res.status(500).json({ error: "Failed to load your modules" });
   }
 });
 
@@ -1635,7 +1749,7 @@ app.get('/api/teacher/module/:moduleId', authenticateToken, async (req, res) => 
 app.put('/api/teacher/module/:moduleId', authenticateToken, async (req, res) => {
   try {
     const moduleId = req.params.moduleId;
-    const { topic, subject, steps } = req.body;
+    const { topic, subject, steps, section } = req.body;
     const teacherId = req.user.id;
     
     // Verify teacher owns this module
@@ -1648,15 +1762,27 @@ app.put('/api/teacher/module/:moduleId', authenticateToken, async (req, res) => 
       return res.status(403).json({ error: "Not authorized to edit this module" });
     }
     
-    // Update module
-    const query = `
-      UPDATE modules 
-      SET topic_title = $1, subject = $2, steps = $3, step_count = $4
-      WHERE id = $5
-      RETURNING id
-    `;
+    // Update module - include section if provided
+    let query, params;
+    if (section !== undefined) {
+      query = `
+        UPDATE modules 
+        SET topic_title = $1, subject = $2, steps = $3, step_count = $4, section = $5
+        WHERE id = $6
+        RETURNING id
+      `;
+      params = [topic, subject, JSON.stringify(steps), steps.length, section, moduleId];
+    } else {
+      query = `
+        UPDATE modules 
+        SET topic_title = $1, subject = $2, steps = $3, step_count = $4
+        WHERE id = $5
+        RETURNING id
+      `;
+      params = [topic, subject, JSON.stringify(steps), steps.length, moduleId];
+    }
     
-    await pool.query(query, [topic, subject, JSON.stringify(steps), steps.length, moduleId]);
+    await pool.query(query, params);
     res.json({ success: true, message: "Module updated successfully" });
   } catch (err) {
     console.error("Module Update Error:", err);
@@ -1664,7 +1790,36 @@ app.put('/api/teacher/module/:moduleId', authenticateToken, async (req, res) => 
   }
 });
 
-// 11c. Teacher: Delete Module
+// 11c2. Teacher: Update Module Section Only
+app.put('/api/teacher/module/:moduleId/section', authenticateToken, async (req, res) => {
+  try {
+    const moduleId = req.params.moduleId;
+    const { section } = req.body;
+    const teacherId = req.user.id;
+    
+    // Verify teacher owns this module
+    const checkOwner = await pool.query(
+      'SELECT id FROM modules WHERE id = $1 AND teacher_id = $2',
+      [moduleId, teacherId]
+    );
+    
+    if (checkOwner.rows.length === 0) {
+      return res.status(403).json({ error: "Not authorized to edit this module" });
+    }
+    
+    await pool.query('UPDATE modules SET section = $1 WHERE id = $2', [section, moduleId]);
+    
+    // Invalidate cache
+    cache.invalidate(`modules_section_${section.toLowerCase()}`);
+    
+    res.json({ success: true, message: `Module section updated to: ${section}` });
+  } catch (err) {
+    console.error("Module Section Update Error:", err);
+    res.status(500).json({ error: "Failed to update module section" });
+  }
+});
+
+// 11d. Teacher: Delete Module
 app.delete('/api/teacher/module/:moduleId', authenticateToken, async (req, res) => {
   try {
     const moduleId = req.params.moduleId;
@@ -3363,7 +3518,7 @@ app.get('/api/chat/available-users', authenticateToken, async (req, res) => {
     const userRole = req.user.role;
 
     if (userRole === 'student') {
-      // Students can see their allocated teachers
+      // Students can see their allocated teachers AND teachers who created modules for their section
       const studentData = await pool.query(
         `SELECT class_dept, section FROM students WHERE id = $1`, [userId]
       );
@@ -3373,34 +3528,84 @@ app.get('/api/chat/available-users', authenticateToken, async (req, res) => {
       }
 
       const { class_dept, section } = studentData.rows[0];
-      const fullSection = `${class_dept} ${section}`;
+      // Normalize section format: UPPER case, trimmed, single space
+      const fullSection = `${class_dept} ${section}`.toUpperCase().replace(/\s+/g, ' ').trim();
+      console.log('[Chat] Student looking for teachers in section:', fullSection);
 
+      // Get teachers from allocations AND from modules created for this section
+      // Use UPPER/TRIM for case-insensitive, whitespace-normalized comparison
       const teachers = await pool.query(`
-        SELECT DISTINCT t.id, t.name, t.email, ta.subject
+        SELECT DISTINCT t.id, t.name, t.email, 
+          COALESCE(ta.subject, m.subject, 'Teacher') as subject
         FROM teachers t
-        JOIN teacher_allocations ta ON t.id = ta.teacher_id
-        WHERE LOWER(ta.section) = LOWER($1)
+        LEFT JOIN teacher_allocations ta ON t.id = ta.teacher_id 
+          AND UPPER(TRIM(REGEXP_REPLACE(ta.section, '\\s+', ' ', 'g'))) = $1
+        LEFT JOIN modules m ON t.id = m.teacher_id 
+          AND UPPER(TRIM(REGEXP_REPLACE(m.section, '\\s+', ' ', 'g'))) = $1
+        WHERE ta.teacher_id IS NOT NULL OR m.teacher_id IS NOT NULL
       `, [fullSection]);
 
+      console.log('[Chat] Found teachers:', teachers.rows.length);
       res.json(teachers.rows.map(t => ({ ...t, role: 'teacher' })));
     } else if (userRole === 'teacher') {
-      // Teachers can see students in their allocated sections
+      // Teachers can see students from allocated sections AND sections where they've created modules
+      
+      // Get sections from allocations - normalize to UPPER case
       const allocations = await pool.query(
-        `SELECT section FROM teacher_allocations WHERE teacher_id = $1`, [userId]
+        `SELECT UPPER(TRIM(REGEXP_REPLACE(section, '\\s+', ' ', 'g'))) as section FROM teacher_allocations WHERE teacher_id = $1`, [userId]
+      );
+      
+      // Get sections from modules this teacher created - normalize to UPPER case
+      const moduleSections = await pool.query(
+        `SELECT DISTINCT UPPER(TRIM(REGEXP_REPLACE(section, '\\s+', ' ', 'g'))) as section FROM modules WHERE teacher_id = $1`, [userId]
       );
 
-      const sections = allocations.rows.map(a => a.section.toLowerCase());
+      // Also check allocated_sections JSONB column on teachers table
+      const teacherData = await pool.query(
+        `SELECT allocated_sections FROM teachers WHERE id = $1`, [userId]
+      );
       
-      if (sections.length === 0) {
-        return res.json([]);
+      let allocatedSectionsFromColumn = [];
+      if (teacherData.rows[0]?.allocated_sections) {
+        let sections = teacherData.rows[0].allocated_sections;
+        if (typeof sections === 'string') {
+          try { sections = JSON.parse(sections); } catch(e) { sections = []; }
+        }
+        if (Array.isArray(sections)) {
+          allocatedSectionsFromColumn = sections.map(s => s.toUpperCase().replace(/\s+/g, ' ').trim());
+        }
       }
 
+      // Combine all section sources
+      const allSections = new Set([
+        ...allocations.rows.map(a => a.section),
+        ...moduleSections.rows.map(m => m.section),
+        ...allocatedSectionsFromColumn
+      ]);
+      
+      const sections = Array.from(allSections);
+      console.log('[Chat] Teacher looking for students in sections:', sections);
+      
+      if (sections.length === 0) {
+        // If no allocations and no modules, show all students (for new teachers)
+        const allStudents = await pool.query(`
+          SELECT id, name, email, class_dept, section
+          FROM students
+          ORDER BY class_dept, section, name
+          LIMIT 100
+        `);
+        return res.json(allStudents.rows.map(s => ({ ...s, role: 'student' })));
+      }
+
+      // Find students matching normalized sections
       const students = await pool.query(`
         SELECT id, name, email, class_dept, section
         FROM students
-        WHERE LOWER(class_dept || ' ' || section) = ANY($1::text[])
+        WHERE UPPER(TRIM(REGEXP_REPLACE(class_dept || ' ' || section, '\\s+', ' ', 'g'))) = ANY($1::text[])
+        ORDER BY class_dept, section, name
       `, [sections]);
 
+      console.log('[Chat] Found students:', students.rows.length);
       res.json(students.rows.map(s => ({ ...s, role: 'student' })));
     } else {
       res.json([]);
