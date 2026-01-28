@@ -57,48 +57,188 @@ Sustainable Classroom provides a complete e-learning platform that runs entirely
 ### Prerequisites
 - Docker and Docker Compose installed
 - Git installed
+- 4GB RAM minimum, 8GB recommended
+- 10GB free disk space
 
-### One-Command Deployment
+### Local Deployment (All Services Run On-Premise)
 
-Linux/Mac:
+This system runs 100% locally without cloud dependencies. All components including database, cache, email server, and video conferencing are self-hosted.
+
+#### Step 1: Clone Repository
 ```bash
 git clone https://github.com/susclassglobal-oss/susclasssrefine.git
 cd susclasssrefine
-./deploy.sh          # Local build (dev mode)
-./deploy.sh prod     # Pre-built images (production)
 ```
 
-Windows:
-```cmd
-git clone https://github.com/susclassglobal-oss/susclasssrefine.git
-cd susclasssrefine
-deploy.bat           # Local build (dev mode)
-deploy.bat prod      # Pre-built images (production)
+#### Step 2: Configure Environment
+
+Create `.env` file in the project root:
+
+```env
+# Database Configuration (Local PostgreSQL)
+DATABASE_URL=postgresql://lms_admin:secure_password_here@postgres:5432/sustainable_classroom
+POSTGRES_USER=lms_admin
+POSTGRES_PASSWORD=secure_password_here
+POSTGRES_DB=sustainable_classroom
+
+# JWT Security (Generate Random Secret)
+# Run: openssl rand -base64 32
+JWT_SECRET=replace_with_random_32_character_string
+
+# Admin Account Setup
+ADMIN_EMAIL=admin@classroom.local
+ADMIN_PASSWORD=Admin@2026
+
+# Email Service (Local MailHog - No Internet Required)
+# For local development, MailHog catches all emails at http://localhost:8025
+MAILHOG_SMTP_PORT=1025
+MAILHOG_UI_PORT=8025
+
+# Optional: Gmail for Real Email Delivery
+# Leave blank to use local MailHog
+GMAIL_USER=
+GMAIL_APP_PASSWORD=
+
+# Redis Cache (Local)
+REDIS_HOST=redis
+REDIS_PORT=6379
+
+# Jitsi Meet (Self-Hosted Video)
+JITSI_DOMAIN=localhost:8443
+ENABLE_LOCAL_JITSI=true
+
+# Application Settings
+NODE_ENV=production
+PORT=5000
 ```
 
-The deployment script will:
-1. Verify prerequisites
-2. Create environment configuration
-3. Pull pre-built images from GitHub Container Registry
-4. Start all services
-5. Run health checks
-6. Display access information
+#### Step 3: Generate JWT Secret
+
+Linux/Mac:
+```bash
+openssl rand -base64 32
+```
+
+Windows PowerShell:
+```powershell
+-join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | % {[char]$_})
+```
+
+Copy the generated string to `JWT_SECRET` in `.env` file.
+
+#### Step 4: Deploy Services
+
+Option A - Using Pre-Built Images (Recommended):
+```bash
+# Linux/Mac
+./deploy.sh prod
+
+# Windows
+deploy.bat prod
+```
+
+Option B - Build Locally:
+```bash
+# Linux/Mac
+./deploy.sh
+
+# Windows
+deploy.bat
+```
+
+The deployment script automatically:
+1. Validates prerequisites (Docker, Git)
+2. Creates environment configuration
+3. Pulls or builds Docker images
+4. Starts all services (database, cache, email, app, video)
+5. Initializes database schema
+6. Seeds default users
+7. Runs health checks
+8. Displays access URLs
+
+#### Step 5: Verify Deployment
+
+Check all services are running:
+```bash
+docker-compose ps
+```
+
+Expected services:
+- lms-backend (Backend API)
+- lms-frontend (React frontend)
+- lms-database (PostgreSQL)
+- lms-redis (Redis cache)
+- lms-mailhog (Local email server)
+- jitsi-meet (Video conferencing)
 
 ### Access Points
 
-| Service | URL |
-|---------|-----|
-| Application | http://localhost:5000 |
-| Jitsi Meet | http://localhost:8443 |
-| Email Viewer | http://localhost:8025 |
+After successful deployment, access these URLs:
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Application | http://localhost:5000 | Main LMS interface |
+| Jitsi Meet | http://localhost:8443 | Self-hosted video conferencing |
+| Email Viewer | http://localhost:8025 | Local email inbox (MailHog) |
+| Database | localhost:5432 | PostgreSQL (internal access) |
+| Redis | localhost:6379 | Cache server (internal access) |
+
+All services run on your local machine. No external connections required.
 
 ### Default Credentials
 
-| Role | Email | Password |
-|------|-------|----------|
-| Admin | admin@classroom.local | Admin@2026 |
-| Teacher | teacher@classroom.local | password123 |
-| Student | student@classroom.local | student123 |
+Login credentials seeded during deployment:
+
+| Role | Email | Password | Permissions |
+|------|-------|----------|-------------|
+| Admin | admin@classroom.local | Admin@2026 | Full system access |
+| Teacher | teacher@classroom.local | password123 | Create modules, manage students |
+| Student | student@classroom.local | student123 | View modules, submit work |
+
+IMPORTANT: Change default passwords after first login in production deployments.
+
+---
+
+## Local Infrastructure Details
+
+### Database (PostgreSQL 15)
+- Runs in Docker container: `lms-database`
+- Port: 5432 (internal network)
+- Volume: `postgres_data` (persistent storage)
+- User: `lms_admin`
+- Database: `sustainable_classroom`
+- Automatic schema initialization on first run
+
+### Cache (Redis 7)
+- Runs in Docker container: `lms-redis`
+- Port: 6379 (internal network)
+- Used for: Session management, API caching
+- Cache TTL: 5 minutes default
+
+### Email Server (MailHog)
+- Runs in Docker container: `lms-mailhog`
+- SMTP: Port 1025 (internal)
+- Web UI: http://localhost:8025
+- Catches all outbound emails locally
+- No actual email delivery (perfect for testing)
+- View OTP codes, notifications, test results
+
+### Video Conferencing (Jitsi Meet)
+- Self-hosted Jitsi Meet instance
+- Port: 8443
+- No external Jitsi servers required
+- Privacy-focused local video calls
+- Integrated into module live sessions
+
+### JWT Authentication
+- Stateless authentication using JSON Web Tokens
+- Secret key: Must be generated randomly (32+ characters)
+- Generation methods:
+  - Linux/Mac: `openssl rand -base64 32`
+  - Windows: PowerShell random string generator
+  - Online: Use any secure random string generator
+- Stored in `.env` as `JWT_SECRET`
+- DO NOT use default or weak secrets in production
 
 ---
 
@@ -181,17 +321,36 @@ susclasssrefine/
 
 ## Offline Capability
 
-The system operates fully offline with these services:
-- All core learning features
-- Coding workbench and assessments
-- Local video playback
-- Internal Jitsi for live sessions
-- MailHog for email testing
-- Chat functionality
+The system operates 100% offline with zero internet dependency:
 
-Internet required only for:
-- Gmail email delivery (optional)
-- External YouTube video URLs (optional)
+### Fully Local Services
+- PostgreSQL database (all data stored locally)
+- Redis cache (in-memory, local)
+- Backend API (runs on host machine)
+- React frontend (served from host)
+- MailHog email server (catches emails locally)
+- Jitsi Meet video server (self-hosted)
+- File storage (local disk)
+
+### Features Available Offline
+- All core learning features
+- Module creation and viewing
+- Video playback (uploaded videos)
+- PDF and text content
+- Coding workbench with test validation
+- MCQ assessments and grading
+- Live video sessions via local Jitsi
+- Real-time chat between users
+- Email notifications (viewable in MailHog)
+- Progress tracking and analytics
+- User authentication (JWT)
+
+### Optional Internet Features
+- Gmail email delivery (if configured)
+- External YouTube video URLs (if used in modules)
+- Docker image pulls (only during deployment)
+
+The system can run indefinitely without internet after initial deployment.
 
 ---
 
@@ -246,25 +405,95 @@ docker-compose up -d
 
 ## Environment Configuration
 
-Key environment variables in .env:
+Complete environment setup for local deployment. All values run on your local machine.
+
+### Required Configuration
+
+Create `.env` file with these essential settings:
 
 ```env
-# Database
-DATABASE_URL=postgresql://lms_admin:password@postgres:5432/sustainable_classroom
+# ------------------------------------------
+# DATABASE - Local PostgreSQL Container
+# ------------------------------------------
+DATABASE_URL=postgresql://lms_admin:your_secure_password@postgres:5432/sustainable_classroom
+POSTGRES_USER=lms_admin
+POSTGRES_PASSWORD=your_secure_password
+POSTGRES_DB=sustainable_classroom
 
-# Security
-JWT_SECRET=your-secret-key
+# ------------------------------------------
+# JWT SECURITY - Generate Random Secret
+# ------------------------------------------
+# CRITICAL: Generate a random 32+ character string
+# Method 1 (Linux/Mac): openssl rand -base64 32
+# Method 2 (Windows PowerShell): -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | % {[char]$_})
+# Method 3 (Online): Use random string generator
+JWT_SECRET=REPLACE_THIS_WITH_RANDOM_STRING_32_CHARS_MINIMUM
 
-# Admin
+# ------------------------------------------
+# ADMIN ACCOUNT - Change After First Login
+# ------------------------------------------
 ADMIN_EMAIL=admin@classroom.local
 ADMIN_PASSWORD=Admin@2026
 
-# Email (Gmail - optional)
-GMAIL_USER=your-email@gmail.com
-GMAIL_APP_PASSWORD=your-app-password
+# ------------------------------------------
+# EMAIL - Local MailHog (No Internet)
+# ------------------------------------------
+# All emails caught locally at http://localhost:8025
+MAILHOG_SMTP_PORT=1025
+MAILHOG_UI_PORT=8025
+EMAIL_FROM=noreply@classroom.local
+
+# Optional: Real Gmail Delivery (Requires Internet)
+# Leave blank to use local MailHog only
+GMAIL_USER=
+GMAIL_APP_PASSWORD=
+
+# ------------------------------------------
+# REDIS CACHE - Local Container
+# ------------------------------------------
+REDIS_HOST=redis
+REDIS_PORT=6379
+CACHE_TTL=300
+
+# ------------------------------------------
+# JITSI VIDEO - Self-Hosted Local Server
+# ------------------------------------------
+JITSI_DOMAIN=localhost:8443
+ENABLE_LOCAL_JITSI=true
+
+# ------------------------------------------
+# APPLICATION SETTINGS
+# ------------------------------------------
+NODE_ENV=production
+PORT=5000
+FRONTEND_URL=http://localhost:5000
 ```
 
-See .env.example for complete configuration options.
+### Configuration Details
+
+1. **Database Credentials**
+   - Choose a secure password for `POSTGRES_PASSWORD`
+   - Must match in both `DATABASE_URL` and `POSTGRES_PASSWORD` fields
+   - Database runs in isolated Docker network
+
+2. **JWT Secret Generation**
+   - NEVER use default or example values
+   - Must be random, unpredictable string
+   - Minimum 32 characters recommended
+   - Used to sign authentication tokens
+
+3. **Email Setup**
+   - Default: MailHog (local, no configuration needed)
+   - View all emails at http://localhost:8025
+   - No real emails sent (perfect for testing)
+   - Optional: Configure Gmail for real delivery
+
+4. **Jitsi Video**
+   - Self-hosted on localhost
+   - No external Jitsi account required
+   - All video data stays on local network
+
+See `.env.example` for additional optional configurations.
 
 ---
 
