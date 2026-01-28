@@ -293,6 +293,25 @@ susclasssrefine/
 - Difficulty levels
 - Automatic grading with analytics
 
+#### MCQ CSV Upload Format
+
+Teachers can upload MCQ questions via CSV file. The expected format:
+
+```csv
+Question,Option A,Option B,Option C,Option D,Correct Answer
+What is the capital of France?,London,Berlin,Paris,Madrid,C
+Which planet is known as the Red Planet?,Venus,Mars,Jupiter,Saturn,B
+What is 2 + 2?,3,4,5,6,B
+```
+
+**CSV Format Rules:**
+- First row is the header (optional, auto-detected)
+- 6 columns: Question, Option A, Option B, Option C, Option D, Correct Answer
+- Correct Answer must be A, B, C, or D (case-insensitive)
+- Use quotes for text containing commas: `"What is 1,000 + 1,000?"`
+- Minimum 5 questions required per test
+- Sample file: [sample-mcq-questions.csv](sample-mcq-questions.csv)
+
 ### 5. Live Sessions
 - Self-hosted Jitsi Meet integration
 - Scheduled sessions in module steps
