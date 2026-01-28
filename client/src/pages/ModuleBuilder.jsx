@@ -46,7 +46,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
   }, [selectedSection]);
 
   const fetchModules = useCallback(async () => {
-    if (!selectedSection) return;
+    if (!selectedSection || !authHeaders) return;
     try {
       const res = await fetch(`${API_BASE_URL}/api/teacher/modules/${selectedSection}`, { headers: authHeaders() });
       const data = await res.json();
@@ -256,7 +256,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
   };
 
   // Safety check to prevent blank screen
-  if (!allocatedSections) {
+  if (!allocatedSections || !authHeaders) {
     return (
       <div className="max-w-6xl mx-auto">
         <div className="bg-slate-50 border-2 border-slate-200 rounded-3xl p-12 text-center">
@@ -264,7 +264,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
             <div className="h-4 bg-slate-200 rounded w-3/4 mx-auto"></div>
             <div className="h-4 bg-slate-200 rounded w-1/2 mx-auto"></div>
           </div>
-          <p className="text-slate-400 mt-4">Loading...</p>
+          <p className="text-slate-400 mt-4">Loading teacher data...</p>
         </div>
       </div>
     );
