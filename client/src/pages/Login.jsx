@@ -14,6 +14,11 @@ function Login() {
   const [loading, setLoading] = useState(false);
   const [inactivityMessage, setInactivityMessage] = useState('');
   
+  // TOTP State
+  const [totpEnabled, setTotpEnabled] = useState(false);
+  const [useEmailOtp, setUseEmailOtp] = useState(false);
+  const [requestingEmailOtp, setRequestingEmailOtp] = useState(false);
+  
   // Password Reset State
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
@@ -54,6 +59,8 @@ function Login() {
 
       if (data.mfaRequired) {
         // Correct password! Now show the OTP popup
+        setTotpEnabled(data.totpEnabled || false);
+        setUseEmailOtp(!data.totpEnabled); // If no TOTP, default to email
         setShowOtp(true); 
       } else if (data.success) {
         // Direct login (usually for Admin or if MFA is disabled)
@@ -69,21 +76,54 @@ function Login() {
     }
   };
 
-  // STEP 2: Handle OTP Verification
+  // Request Email OTP (for users who have TOTP but want email fallback)
+  const handleRequestEmailOtp = async () => {
+    setRequestingEmailOtp(true);
+    setError('');
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/request-email-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          email: email.trim(), 
+          role: role.toLowerCase() 
+        })
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        setUseEmailOtp(true);
+        setOtp(''); // Clear any entered TOTP code
+      } else {
+        setError(data.error || "Failed to send email OTP");
+      }
+    } catch (err) {
+      setError("Connection failed");
+    } finally {
+      setRequestingEmailOtp(false);
+    }
+  };
+
+  // STEP 2: Handle OTP Verification (TOTP or Email OTP)
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     
+    // Choose endpoint based on whether using TOTP or email OTP
+    const endpoint = (totpEnabled && !useEmailOtp) ? '/api/verify-totp' : '/api/verify-otp';
+    
+    // TOTP uses 'code', email OTP uses 'otp'
+    const bodyData = totpEnabled && !useEmailOtp
+      ? { email: email.trim(), code: otp.trim(), role: role.toLowerCase() }
+      : { email: email.trim(), otp: otp.trim(), role: role.toLowerCase() };
+    
     try {
-      const res = await fetch(`${API_BASE_URL}/api/verify-otp`, {
+      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email: email.trim(), 
-          otp: otp.trim(), 
-          role: role.toLowerCase() 
-        })
+        body: JSON.stringify(bodyData)
       });
       const data = await res.json();
       
@@ -91,7 +131,7 @@ function Login() {
         completeAuth(data, role.toLowerCase());
       } else {
         // Use alert or error state for invalid OTP
-        setError(data.message || "Invalid OTP");
+        setError(data.error || data.message || "Invalid code");
         setOtp(''); // Clear input on failure
       }
     } catch (err) { 
@@ -103,11 +143,30 @@ function Login() {
   };
 
   // Helper to save data and redirect
-  const completeAuth = (data, activeRole) => {
+  const completeAuth = async (data, activeRole) => {
     localStorage.setItem('token', data.token);
     localStorage.setItem('user_role', activeRole);
     if (data.user) {
       localStorage.setItem('user_data', JSON.stringify(data.user));
+    }
+    
+    // For teachers/students: Check if they need to set up TOTP
+    if (activeRole === 'teacher' || activeRole === 'student') {
+      try {
+        const checkRes = await fetch(`${API_BASE_URL}/api/check-totp`, {
+          headers: { 'Authorization': `Bearer ${data.token}` }
+        });
+        const checkData = await checkRes.json();
+        
+        // First-time users without TOTP - redirect to setup
+        if (!checkData.totpEnabled) {
+          navigate('/setup-authenticator');
+          return;
+        }
+      } catch (err) {
+        console.error('TOTP check failed:', err);
+        // Continue to dashboard if check fails
+      }
     }
     
     // Navigation Logic
@@ -256,8 +315,28 @@ function Login() {
       {showOtp && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md px-4">
           <div className="w-full max-w-sm rounded-[2.5rem] bg-white p-10 shadow-2xl border border-slate-100 text-center animate-in zoom-in duration-300">
-            <h3 className="text-xl font-black uppercase italic tracking-tighter">Enter <span className="text-emerald-500">OTP</span></h3>
-            <p className="text-[10px] font-bold text-slate-400 uppercase mt-2 mb-6 tracking-widest">Verify the code sent to {email}</p>
+            {/* TOTP Mode - User has authenticator app */}
+            {totpEnabled && !useEmailOtp ? (
+              <>
+                <h3 className="text-xl font-black uppercase italic tracking-tighter">
+                  <span className="text-emerald-500">Authenticator</span> Code
+                </h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase mt-2 mb-6 tracking-widest">
+                  Enter 6-digit code from your authenticator app
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-xl font-black uppercase italic tracking-tighter">Enter <span className="text-emerald-500">OTP</span></h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase mt-2 mb-6 tracking-widest">Verify the code sent to {email}</p>
+              </>
+            )}
+            
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 text-red-500 text-[10px] font-bold rounded-xl uppercase border border-red-100">
+                {error}
+              </div>
+            )}
             
             <form onSubmit={handleVerifyOtp} className="space-y-4">
               <input 
@@ -267,7 +346,7 @@ function Login() {
                 value={otp}
                 placeholder="------" 
                 className="w-full text-center text-3xl tracking-[0.3em] font-black rounded-2xl border-2 border-slate-100 bg-slate-50 p-5 outline-none focus:border-emerald-500" 
-                onChange={(e) => setOtp(e.target.value)} 
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} 
               />
               <button 
                 type="submit" 
@@ -276,9 +355,33 @@ function Login() {
               >
                 {loading ? 'Verifying...' : 'Verify Identity'}
               </button>
+              
+              {/* Option to switch to email OTP (if TOTP is enabled) */}
+              {totpEnabled && !useEmailOtp && (
+                <button 
+                  type="button" 
+                  onClick={handleRequestEmailOtp}
+                  disabled={requestingEmailOtp}
+                  className="text-[9px] font-black text-emerald-600 uppercase tracking-widest block w-full text-center hover:text-emerald-700"
+                >
+                  {requestingEmailOtp ? 'Sending...' : 'Use Email OTP Instead'}
+                </button>
+              )}
+              
+              {/* Option to switch back to TOTP (if currently using email fallback) */}
+              {totpEnabled && useEmailOtp && (
+                <button 
+                  type="button" 
+                  onClick={() => { setUseEmailOtp(false); setOtp(''); setError(''); }}
+                  className="text-[9px] font-black text-emerald-600 uppercase tracking-widest block w-full text-center hover:text-emerald-700"
+                >
+                  Use Authenticator App
+                </button>
+              )}
+              
               <button 
                 type="button" 
-                onClick={() => setShowOtp(false)} 
+                onClick={() => { setShowOtp(false); setOtp(''); setError(''); setUseEmailOtp(false); }} 
                 className="text-[9px] font-black text-slate-400 uppercase tracking-widest block w-full text-center hover:text-slate-600"
               >
                 Cancel

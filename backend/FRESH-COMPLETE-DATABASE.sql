@@ -72,6 +72,8 @@ CREATE TABLE teachers (
     allocated_sections JSONB DEFAULT '[]'::jsonb,
     otp_code TEXT,
     otp_expiry TIMESTAMP,
+    totp_secret TEXT,
+    totp_enabled BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     CONSTRAINT chk_email_format CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
@@ -90,6 +92,8 @@ CREATE TABLE students (
     media JSONB DEFAULT '{}'::jsonb,
     otp_code TEXT,
     otp_expiry TIMESTAMP,
+    totp_secret TEXT,
+    totp_enabled BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     CONSTRAINT chk_email_format CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),

@@ -476,7 +476,23 @@ const fetchTeacherProfile = useCallback(async () => {
             </button>
           ))}
         </nav>
-        <button onClick={() => navigate('/')} className="p-5 rounded-2xl bg-red-500/10 text-red-500 font-black uppercase text-[10px]">Logout</button>
+        <div className="space-y-3">
+          <button 
+            onClick={() => navigate('/setup-authenticator')} 
+            className="w-full p-5 rounded-2xl bg-emerald-500/10 text-emerald-500 font-black uppercase text-[10px] flex items-center gap-3"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            Security
+          </button>
+          <button 
+            onClick={() => { localStorage.removeItem('token'); localStorage.removeItem('user_role'); localStorage.removeItem('user_data'); navigate('/'); }} 
+            className="w-full p-5 rounded-2xl bg-red-500/10 text-red-500 font-black uppercase text-[10px]"
+          >
+            Logout
+          </button>
+        </div>
       </aside>
 
       {/* MAIN CONTENT */}

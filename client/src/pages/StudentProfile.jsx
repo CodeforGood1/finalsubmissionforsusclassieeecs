@@ -187,6 +187,28 @@ export default function StudentProfile() {
                 </div>
               </div>
             </section>
+            
+            {/* SECURITY SETTINGS */}
+            <section className="bg-white border border-slate-100 p-10 rounded-[3rem] shadow-sm">
+              <h2 className="text-xs font-black text-slate-900 uppercase tracking-[0.2em] mb-8 italic">Security Settings</h2>
+              <div className="space-y-6">
+                <div className="p-6 bg-emerald-50 rounded-2xl">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Two-Factor Authentication</label>
+                      <p className="text-sm font-bold text-slate-800">Microsoft/Google Authenticator</p>
+                      <p className="text-[10px] text-slate-500 mt-1">Works offline - no internet needed for login</p>
+                    </div>
+                    <button 
+                      onClick={() => navigate('/setup-authenticator')}
+                      className="px-4 py-2 bg-emerald-600 text-white text-[10px] font-black uppercase rounded-xl hover:bg-emerald-700 transition-colors"
+                    >
+                      Manage
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
 
         </div>

@@ -12,6 +12,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Server } = require('socket.io');
 const notificationService = require('./notificationService');
+const speakeasy = require('speakeasy');
+const QRCode = require('qrcode');
 
 // Local services for on-premise deployment
 const localStorageService = require('./localStorageService');
@@ -269,31 +271,51 @@ app.post('/api/login', async (req, res) => {
             const isMatch = await bcrypt.compare(password, user.password);
             
             if (isMatch) {
-                const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                // Use UTC timestamp for OTP expiry to match database NOW()
-                const otpExpiry = new Date(Date.now() + 5 * 60000).toISOString(); // 5 mins in UTC
+                // Check if user has TOTP enabled
+                const totpEnabled = user.totp_enabled || false;
 
-                await pool.query(
-                    `UPDATE ${table} SET otp_code = $1, otp_expiry = $2 WHERE id = $3`,
-                    [otp, otpExpiry, user.id]
-                );
+                if (totpEnabled) {
+                    // User has authenticator app - they can use TOTP or request email OTP
+                    res.json({ 
+                        success: true, 
+                        mfaRequired: true, 
+                        totpEnabled: true,
+                        email: user.email,
+                        message: "Enter code from your authenticator app, or request email OTP"
+                    });
+                } else {
+                    // No TOTP - send email OTP
+                    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+                    const otpExpiry = new Date(Date.now() + 5 * 60000).toISOString();
 
-                // SEND RESPONSE FIRST - don't wait for email
-                res.json({ success: true, mfaRequired: true, email: user.email });
+                    await pool.query(
+                        `UPDATE ${table} SET otp_code = $1, otp_expiry = $2 WHERE id = $3`,
+                        [otp, otpExpiry, user.id]
+                    );
 
-                // Then send email in background (non-blocking)
-                sendEmailAsync({
-                    to: email,
-                    subject: 'Your Portal Access Code',
-                    html: `
-                        <div style="font-family: sans-serif; text-align: center; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-                            <h2 style="color: #333;">Security Verification</h2>
-                            <p style="color: #666;">Use the code below to complete your login:</p>
-                            <h1 style="color: #10b981; font-size: 40px; letter-spacing: 5px;">${otp}</h1>
-                            <p style="color: #999; font-size: 12px;">This code expires in 5 minutes.</p>
-                        </div>
-                    `
-                });
+                    // SEND RESPONSE FIRST - don't wait for email
+                    res.json({ 
+                        success: true, 
+                        mfaRequired: true, 
+                        totpEnabled: false,
+                        email: user.email,
+                        message: "OTP sent to your email"
+                    });
+
+                    // Then send email in background (non-blocking)
+                    sendEmailAsync({
+                        to: email,
+                        subject: 'Your Portal Access Code',
+                        html: `
+                            <div style="font-family: sans-serif; text-align: center; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                                <h2 style="color: #333;">Security Verification</h2>
+                                <p style="color: #666;">Use the code below to complete your login:</p>
+                                <h1 style="color: #10b981; font-size: 40px; letter-spacing: 5px;">${otp}</h1>
+                                <p style="color: #999; font-size: 12px;">This code expires in 5 minutes.</p>
+                            </div>
+                        `
+                    });
+                }
             } else {
                 res.status(401).json({ success: false, message: "Incorrect Password" });
             }
@@ -305,6 +327,49 @@ app.post('/api/login', async (req, res) => {
         res.status(500).json({ error: "Database error" });
     }
 });
+
+// 2b. Request Email OTP (for users who have TOTP but want email fallback)
+app.post('/api/request-email-otp', async (req, res) => {
+    const { email, role } = req.body;
+    const table = role.toLowerCase() === 'student' ? 'students' : 'teachers';
+
+    try {
+        const result = await pool.query(`SELECT id, email FROM ${table} WHERE LOWER(email) = LOWER($1)`, [email]);
+        
+        if (result.rows.length > 0) {
+            const user = result.rows[0];
+            const otp = Math.floor(100000 + Math.random() * 900000).toString();
+            const otpExpiry = new Date(Date.now() + 5 * 60000).toISOString();
+
+            await pool.query(
+                `UPDATE ${table} SET otp_code = $1, otp_expiry = $2 WHERE id = $3`,
+                [otp, otpExpiry, user.id]
+            );
+
+            res.json({ success: true, message: "OTP sent to your email" });
+
+            // Send email in background
+            sendEmailAsync({
+                to: email,
+                subject: 'Your Portal Access Code',
+                html: `
+                    <div style="font-family: sans-serif; text-align: center; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                        <h2 style="color: #333;">Security Verification</h2>
+                        <p style="color: #666;">Use the code below to complete your login:</p>
+                        <h1 style="color: #10b981; font-size: 40px; letter-spacing: 5px;">${otp}</h1>
+                        <p style="color: #999; font-size: 12px;">This code expires in 5 minutes.</p>
+                    </div>
+                `
+            });
+        } else {
+            res.status(404).json({ error: "Account not found" });
+        }
+    } catch (err) {
+        console.error("Request OTP Error:", err);
+        res.status(500).json({ error: "Database error" });
+    }
+});
+
 // 3. Verify OTP - Step 2: The Final Authentication
 // 3. Verify OTP - Step 2: The Final Authentication
 // This must be a separate block from the login block!
@@ -349,6 +414,226 @@ app.post('/api/verify-otp', async (req, res) => {
         console.error("OTP Verification Error:", err);
         res.status(500).json({ error: "Database error during verification" });
     }
+});
+
+// --- TOTP (AUTHENTICATOR APP) SETUP ---
+// Setup TOTP for teacher/student - generates QR code for Microsoft/Google Authenticator
+
+// 4a. Setup Authenticator - Generate Secret and QR Code
+app.post('/api/setup-totp', authenticateToken, async (req, res) => {
+  const { role } = req.user;
+  const userId = req.user.id;
+  const table = role === 'student' ? 'students' : 'teachers';
+
+  try {
+    // Get user's email for QR code label
+    const userResult = await pool.query(`SELECT email, totp_enabled FROM ${table} WHERE id = $1`, [userId]);
+    
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user = userResult.rows[0];
+
+    // Generate new TOTP secret
+    const secret = speakeasy.generateSecret({
+      name: `Sustainable Classroom (${user.email})`,
+      issuer: 'Sustainable Classroom',
+      length: 20
+    });
+
+    // Store secret temporarily (not enabled until verified)
+    await pool.query(
+      `UPDATE ${table} SET totp_secret = $1 WHERE id = $2`,
+      [secret.base32, userId]
+    );
+
+    // Generate QR code as data URL
+    const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url);
+
+    res.json({
+      success: true,
+      secret: secret.base32,  // For manual entry
+      qrCode: qrCodeUrl,      // Base64 image for scanning
+      message: "Scan this QR code with Microsoft Authenticator or Google Authenticator"
+    });
+
+  } catch (err) {
+    console.error("TOTP Setup Error:", err);
+    res.status(500).json({ error: "Failed to setup authenticator" });
+  }
+});
+
+// 4b. Verify and Enable TOTP - Confirm setup with first code
+app.post('/api/verify-totp-setup', authenticateToken, async (req, res) => {
+  const { code } = req.body;
+  const { role } = req.user;
+  const userId = req.user.id;
+  const table = role === 'student' ? 'students' : 'teachers';
+
+  try {
+    // Get user's secret
+    const userResult = await pool.query(`SELECT totp_secret FROM ${table} WHERE id = $1`, [userId]);
+    
+    if (userResult.rows.length === 0 || !userResult.rows[0].totp_secret) {
+      return res.status(400).json({ error: "TOTP not set up. Call /api/setup-totp first." });
+    }
+
+    const secret = userResult.rows[0].totp_secret;
+
+    // Verify the code
+    const verified = speakeasy.totp.verify({
+      secret: secret,
+      encoding: 'base32',
+      token: code,
+      window: 2  // Allow 2 periods before/after for clock skew
+    });
+
+    if (verified) {
+      // Enable TOTP
+      await pool.query(
+        `UPDATE ${table} SET totp_enabled = TRUE WHERE id = $1`,
+        [userId]
+      );
+
+      res.json({
+        success: true,
+        message: "Authenticator enabled! Use your app code for future logins."
+      });
+    } else {
+      res.status(401).json({ error: "Invalid code. Please try again." });
+    }
+
+  } catch (err) {
+    console.error("TOTP Verify Setup Error:", err);
+    res.status(500).json({ error: "Failed to verify authenticator code" });
+  }
+});
+
+// 4c. Verify TOTP during Login (alternative to email OTP)
+app.post('/api/verify-totp', async (req, res) => {
+  const { email, code, role } = req.body;
+  const table = role.toLowerCase() === 'student' ? 'students' : 'teachers';
+
+  try {
+    const result = await pool.query(
+      `SELECT * FROM ${table} WHERE LOWER(email) = LOWER($1) AND totp_enabled = TRUE`,
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "User not found or authenticator not enabled" });
+    }
+
+    const user = result.rows[0];
+
+    // Verify TOTP code
+    const verified = speakeasy.totp.verify({
+      secret: user.totp_secret,
+      encoding: 'base32',
+      token: code,
+      window: 2
+    });
+
+    if (verified) {
+      // Generate JWT token
+      const token = jwt.sign(
+        { id: user.id, email: user.email, role: role.toLowerCase() },
+        JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+
+      delete user.password;
+      delete user.totp_secret;
+      delete user.otp_code;
+      delete user.otp_expiry;
+
+      res.json({
+        success: true,
+        token,
+        user: { ...user, role: role.toLowerCase() }
+      });
+    } else {
+      res.status(401).json({ error: "Invalid authenticator code" });
+    }
+
+  } catch (err) {
+    console.error("TOTP Login Error:", err);
+    res.status(500).json({ error: "Authentication failed" });
+  }
+});
+
+// 4d. Disable TOTP (fall back to email OTP)
+app.post('/api/disable-totp', authenticateToken, async (req, res) => {
+  const { role } = req.user;
+  const userId = req.user.id;
+  const table = role === 'student' ? 'students' : 'teachers';
+
+  try {
+    await pool.query(
+      `UPDATE ${table} SET totp_enabled = FALSE, totp_secret = NULL WHERE id = $1`,
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      message: "Authenticator disabled. You will receive OTP codes via email."
+    });
+
+  } catch (err) {
+    console.error("TOTP Disable Error:", err);
+    res.status(500).json({ error: "Failed to disable authenticator" });
+  }
+});
+
+// 4e. Check if user has TOTP enabled (for login flow or authenticated user)
+app.get('/api/check-totp', async (req, res) => {
+  try {
+    // Check for JWT auth header (authenticated user)
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.slice(7);
+      const decoded = jwt.verify(token, JWT_SECRET);
+      const table = decoded.role === 'student' ? 'students' : 'teachers';
+      
+      const result = await pool.query(
+        `SELECT totp_enabled FROM ${table} WHERE id = $1`,
+        [decoded.id]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      return res.json({
+        totpEnabled: result.rows[0].totp_enabled || false
+      });
+    }
+
+    // Fallback: Check via query params (for login flow)
+    const { email, role } = req.query;
+    if (!email || !role) {
+      return res.status(400).json({ error: "Email and role required" });
+    }
+
+    const table = role.toLowerCase() === 'student' ? 'students' : 'teachers';
+    const result = await pool.query(
+      `SELECT totp_enabled FROM ${table} WHERE LOWER(email) = LOWER($1)`,
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json({
+      totpEnabled: result.rows[0].totp_enabled || false
+    });
+
+  } catch (err) {
+    console.error("Check TOTP Error:", err);
+    res.status(500).json({ error: "Failed to check authenticator status" });
+  }
 });
 
 // --- PASSWORD RESET ---

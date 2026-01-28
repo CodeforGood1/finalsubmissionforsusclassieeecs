@@ -11,6 +11,7 @@ import AdminDashboard from './pages/AdminDashboard'
 import TeacherDashboard from './pages/TeacherDashboard'
 import CoursePlayer from './pages/CoursePlayer'
 import ModuleLearning from './pages/ModuleLearning'
+import TotpSetup from './pages/TotpSetup'
 
 // --- THE BOUNCER (Protected Route Logic) ---
 const ProtectedRoute = ({ children, allowedRole }) => {
@@ -51,6 +52,14 @@ function App() {
           <ProtectedRoute allowedRole="teacher">
             <TeacherDashboard />
           </ProtectedRoute>
+        } 
+      />
+      
+      {/* TOTP SETUP - For both teachers and students */}
+      <Route 
+        path="/setup-authenticator" 
+        element={
+          <TotpSetup />
         } 
       />
 
