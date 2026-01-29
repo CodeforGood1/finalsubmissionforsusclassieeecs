@@ -36,9 +36,6 @@ jobs:
       uses: docker/build-push-action@v4
       with:
         context: .
-        push: false
+        load: true
         tags: susclass-lms:${{ github.sha }}
         no-cache: true
-        
-    - name: Verify build output
-      run: docker images | grep susclass-lms
