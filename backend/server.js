@@ -52,9 +52,11 @@ app.use(helmet({
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       frameSrc: ["'self'", "https://meet.jit.si", "https://*.8x8.vc", "https://localhost:*"],
+      upgradeInsecureRequests: null,
     },
   },
   crossOriginEmbedderPolicy: false,
+  hsts: false,
 }));
 
 // Rate limiting - disabled in development for easier testing
