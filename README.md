@@ -54,109 +54,43 @@ Sustainable Classroom provides a complete e-learning platform that runs entirely
 
 ## Quick Start
 
+See [deploy.md](deploy.md) for detailed deployment instructions.
+
 ### Prerequisites
-- Docker and Docker Compose installed
+- Docker Engine 20.10+ and Docker Compose v2.0+
 - Git installed
 - 4GB RAM minimum, 8GB recommended
-- 10GB free disk space
+- 20GB free disk space
 
-### Local Deployment (All Services Run On-Premise)
+### Quick Deploy
 
-This system runs 100% locally without cloud dependencies. All components including database, cache, email server, and video conferencing are self-hosted.
-
-#### Step 1: Clone Repository
 ```bash
 git clone https://github.com/susclassglobal-oss/susclasssrefine.git
 cd susclasssrefine
-```
-
-#### Step 2: Configure Environment
-
-**Option A: Use default configuration (recommended for first-time setup)**
-
-```bash
-# Copy example configuration
 cp .env.example .env
+# Edit .env with your settings
+docker-compose up -d --build
 ```
 
-The default configuration uses **MailHog** (local email server - no internet required).
-All emails are captured at: http://localhost:8025
-
-**Option B: Configure Gmail (optional - for real email delivery)**
-
-See [EMAIL-SETUP.md](EMAIL-SETUP.md) for detailed Gmail configuration instructions.
-
-# Redis Cache (Local)
-REDIS_HOST=redis
-REDIS_PORT=6379
-
-# Jitsi Meet (Self-Hosted Video)
-JITSI_DOMAIN=localhost:8443
-ENABLE_LOCAL_JITSI=true
-
-# Application Settings
-NODE_ENV=production
-PORT=5000
-```
-
-#### Step 3: Deploy Services
-
-```powershell
-# Start all services
-docker-compose up -d
-
-# Wait for services to be healthy (30-60 seconds)
-Start-Sleep -Seconds 30
-
-# Verify all services are running
-docker-compose ps
-```
-
-Expected services:
-- lms-backend (Backend API + Frontend)
-- lms-database (PostgreSQL)
-- lms-cache (Redis)
-- lms-mailserver (MailHog)
-- lms-jitsi-* (Video conferencing)
-- lms-proxy (Nginx)
-
-#### Step 4: Access Application
-
-Open your browser and navigate to:
-
-**Main Application**: http://localhost:5000
-
-**Additional Services**:
-- **MailHog (View Emails)**: http://localhost:8025
-- **Jitsi Meet (Video)**: https://localhost:8443
+Access at: http://localhost
 
 ### Default Credentials
 
 | Role | Email | Password |
 |------|-------|----------|
-| Admin | admin@classroom.local | Admin@2026 |
+| Admin | admin@classroom.local | ChangeThisPassword |
 
-⚠️ **Change these credentials after first login in production!**
+⚠️ **Change these credentials after first login!**
 
 ---
 
 ## Email Configuration
 
-### Default: MailHog (No Internet Required)
-
-By default, the system uses **MailHog** - a local email server that captures all emails.
+The system uses **MailHog** by default - a local email server for testing (no internet required).
 
 **View all emails**: http://localhost:8025
 
-This includes:
-- Login OTP codes
-- Module completion notifications
-- Student-teacher communications
-- System alerts
-
-### Optional: Gmail (Real Email Delivery)
-
-To send emails to real email addresses, see: [EMAIL-SETUP.md](EMAIL-SETUP.md)
+For production Gmail setup, configure `GMAIL_USER` and `GMAIL_APP_PASSWORD` in `.env`.
 
 ---
 
@@ -170,21 +104,25 @@ Includes:
 - E:\ drive installation (not C:\)
 - Kubernetes deployment manifests
 - Kong API Gateway configuration
-- Varnish caching layer
-- JFrog/Harbor container registry
-- Prometheus + Grafana monitoring
-- Automated backup scripts
-- Security best practices
+- VArchitecture
 
----
+### System Components
+- **Frontend**: React 18 with Vite build system
+- **Backend**: Node.js/Express REST API
+- **Database**: PostgreSQL 15 with connection pooling
+- **Cache**: Redis 7 for session and API caching
+- **Video**: Self-hosted Jitsi Meet
+- **Email**: MailHog (dev) / Gmail (prod)
+- **Deployment**: Docker Compose with multi-stage builds
+- **CI/CD**: GitHub Actions with automated clean builds
 
-## Local Infrastructure Details
+### Build System
+The project uses **Vite** with automatic cache clearing to prevent build issues:
+- `npm run build` - Clean build (clears cache automatically)
+- `npm run build:fresh` - Full clean build with dependency reinstall
+- Docker builds use `--no-cache` to ensure fresh builds every time
 
-### Database (PostgreSQL 15)
-- Container: `lms-database`
-- Port: 5432
-- Volume: `postgres_data` (persistent)
-- User: `lms_admin`
+This prevents the build cache issues that can occur when changes don't appear in production builds.
 - Database: `sustainable_classroom`
 
 ### Cache (Redis 7)
@@ -376,27 +314,28 @@ The system can run indefinitely without internet after initial deployment.
 
 ```bash
 # Start services
+docker-compose up -d --build
+
+# Clean rebuild (prevents cache issues)
+docker-compose down
+cd client && npm run build:fresh && cd ..
+docker-compose build --no-cache backend
 docker-compose up -d
 
 # View logs
-docker-compose logs -f
+docker-compose logs -f backend
 
 # Stop services
 docker-compose down
-
-# Restart services
-docker-compose restart
 
 # View service status
 docker-compose ps
 
 # Access database
 docker exec -it lms-database psql -U lms_admin -d sustainable_classroom
-
-# Full reset (removes data)
-docker-compose down -v
-docker-compose up -d
 ```
+
+For detailed deployment steps, see [deploy.md](deploy.md).
 
 ---
 
