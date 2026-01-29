@@ -48,13 +48,13 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       imgSrc: ["'self'", "data:", "blob:"],
       mediaSrc: ["'self'", "blob:"],
-      connectSrc: ["'self'", "http://localhost:*", "ws://localhost:*", "https://emkc.org"],
+      connectSrc: ["'self'", "http://localhost:*", "ws://localhost:*", "http://*:5000", "ws://*:5000", "https://emkc.org"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       frameSrc: ["'self'", "https://meet.jit.si", "https://*.8x8.vc", "https://localhost:*"],
     },
   },
-  crossOriginEmbedderPolicy: false, // Required for video embedding
+  crossOriginEmbedderPolicy: false,
 }));
 
 // Rate limiting - disabled in development for easier testing
