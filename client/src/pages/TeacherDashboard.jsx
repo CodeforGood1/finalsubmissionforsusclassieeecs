@@ -44,6 +44,14 @@ function TeacherDashboard() {
     correct: 'A'
   });
   
+  // Multi-section selection for test creation
+  const [selectedSectionsForTest, setSelectedSectionsForTest] = useState([]);
+  
+  // Test section edit modal
+  const [showTestSectionModal, setShowTestSectionModal] = useState(false);
+  const [editingTestId, setEditingTestId] = useState(null);
+  const [selectedSectionsForTestEdit, setSelectedSectionsForTestEdit] = useState([]);
+  
   // Student progress modal
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [studentProgress, setStudentProgress] = useState(null);
@@ -353,7 +361,7 @@ const fetchTeacherProfile = useCallback(async () => {
     event.target.value = ''; // Reset input
   };
   
-  // Create test
+  // Create test - supports multi-section
   const handleCreateTest = async () => {
     if (!testForm.title.trim()) {
       alert("Please enter a test title");
@@ -375,8 +383,13 @@ const fetchTeacherProfile = useCallback(async () => {
       return;
     }
     
-    if (!selectedSection) {
-      alert("Please select a section for this test");
+    // Use multi-section selection or fallback to single selectedSection
+    const sectionsToUse = selectedSectionsForTest.length > 0 
+      ? selectedSectionsForTest 
+      : (selectedSection ? [selectedSection] : []);
+    
+    if (sectionsToUse.length === 0) {
+      alert("Please select at least one section for this test");
       return;
     }
     
@@ -385,7 +398,8 @@ const fetchTeacherProfile = useCallback(async () => {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({
-          section: selectedSection,
+          sections: sectionsToUse,
+          section: sectionsToUse[0], // Primary section for backwards compatibility
           title: testForm.title,
           description: testForm.description || '',
           questions: questions,
@@ -395,16 +409,75 @@ const fetchTeacherProfile = useCallback(async () => {
       });
       
       if (res.ok) {
-        alert(`Test "${testForm.title}" created successfully with ${questions.length} questions!`);
+        alert(`Test "${testForm.title}" created for ${sectionsToUse.length} section(s)!`);
         setShowCreateTest(false);
         setTestForm({ title: '', description: '', start_date: '', deadline: '' });
         setQuestions([]);
+        setSelectedSectionsForTest([]);
         setCurrentQuestion({ question: '', a: '', b: '', c: '', d: '', correct: 'A' });
         fetchTests();
       }
     } catch (err) {
       alert("Failed to create test");
       console.error(err);
+    }
+  };
+  
+  // Toggle section for test creation
+  const toggleSectionForTest = (section) => {
+    setSelectedSectionsForTest(prev => 
+      prev.includes(section) 
+        ? prev.filter(s => s !== section)
+        : [...prev, section]
+    );
+  };
+  
+  // Toggle section for test edit
+  const toggleSectionForTestEdit = (section) => {
+    setSelectedSectionsForTestEdit(prev => 
+      prev.includes(section) 
+        ? prev.filter(s => s !== section)
+        : [...prev, section]
+    );
+  };
+  
+  // Open test section modal
+  const openTestSectionModal = (test) => {
+    setEditingTestId(test.test_id);
+    // Parse sections from test
+    let sectionsArray = [];
+    if (test.sections) {
+      sectionsArray = typeof test.sections === 'string' ? JSON.parse(test.sections) : test.sections;
+    } else if (test.section) {
+      sectionsArray = [test.section];
+    }
+    setSelectedSectionsForTestEdit(sectionsArray);
+    setShowTestSectionModal(true);
+  };
+  
+  // Handle test section update
+  const handleTestSectionChange = async () => {
+    if (!editingTestId || selectedSectionsForTestEdit.length === 0) return;
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/teacher/test/${editingTestId}/section`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({ sections: selectedSectionsForTestEdit })
+      });
+      
+      if (res.ok) {
+        alert(`Test sections updated to: ${selectedSectionsForTestEdit.join(', ')}`);
+        setShowTestSectionModal(false);
+        setEditingTestId(null);
+        setSelectedSectionsForTestEdit([]);
+        fetchTests();
+      } else {
+        const data = await res.json();
+        alert("Error: " + (data.error || 'Failed to update sections'));
+      }
+    } catch (err) {
+      alert("Server error: " + err.message);
     }
   };
   
@@ -715,7 +788,16 @@ const fetchTeacherProfile = useCallback(async () => {
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {tests.map(test => (
+                      {tests.map(test => {
+                        // Parse sections for display
+                        let testSections = [];
+                        if (test.sections) {
+                          testSections = typeof test.sections === 'string' ? JSON.parse(test.sections) : test.sections;
+                        } else if (test.section) {
+                          testSections = [test.section];
+                        }
+                        
+                        return (
                         <div key={test.test_id} className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
                           <div className="flex justify-between items-start mb-4">
                             <div className="flex-1">
@@ -723,7 +805,16 @@ const fetchTeacherProfile = useCallback(async () => {
                               <p className="text-xs text-slate-500 mb-3">
                                 Created: {new Date(test.created_at).toLocaleDateString()}
                               </p>
-                              <div className="flex gap-2 text-xs">
+                              <div className="flex flex-wrap gap-2 text-xs mb-2">
+                                <button
+                                  onClick={() => openTestSectionModal(test)}
+                                  className="bg-blue-500 text-white px-3 py-1 rounded-full font-bold hover:bg-blue-600"
+                                  title="Edit sections"
+                                >
+                                  {testSections.length > 1 
+                                    ? `${testSections.length} Sections ✎`
+                                    : `${testSections[0] || 'No Section'} ✎`}
+                                </button>
                                 <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-full font-bold">
                                   {test.total_questions} Questions
                                 </span>
@@ -735,6 +826,15 @@ const fetchTeacherProfile = useCallback(async () => {
                                   {new Date(test.deadline) > new Date() ? 'Active' : 'Expired'}
                                 </span>
                               </div>
+                              {testSections.length > 1 && (
+                                <div className="flex flex-wrap gap-1">
+                                  {testSections.map(sec => (
+                                    <span key={sec} className="text-[8px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                                      {sec}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
                           
@@ -767,7 +867,8 @@ const fetchTeacherProfile = useCallback(async () => {
                             View Student Submissions
                           </button>
                         </div>
-                      ))}
+                      );
+                      })}
                     </div>
                   </div>
                 )}
@@ -789,6 +890,44 @@ const fetchTeacherProfile = useCallback(async () => {
                       <label className="text-xs font-bold text-slate-600 mb-2 block">Deadline (End Date & Time)</label>
                       <input type="datetime-local" className="w-full p-4 bg-slate-50 rounded-xl font-bold" value={testForm.deadline} onChange={e => setTestForm({...testForm, deadline: e.target.value})} />
                     </div>
+                  </div>
+                  
+                  {/* Multi-Section Selector for Test */}
+                  <div className="bg-emerald-50 p-6 rounded-2xl border-2 border-emerald-200">
+                    <label className="text-xs font-black text-emerald-700 uppercase mb-3 block">
+                      Target Sections (Select one or more)
+                    </label>
+                    {teacherInfo?.allocated_sections && teacherInfo.allocated_sections.length > 0 ? (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-40 overflow-y-auto">
+                        {teacherInfo.allocated_sections.map(sec => (
+                          <label 
+                            key={sec}
+                            className={`flex items-center p-3 rounded-xl cursor-pointer border-2 transition-all ${
+                              selectedSectionsForTest.includes(sec) 
+                                ? 'border-emerald-500 bg-emerald-100' 
+                                : 'border-slate-200 bg-white hover:bg-slate-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedSectionsForTest.includes(sec)}
+                              onChange={() => toggleSectionForTest(sec)}
+                              className="w-4 h-4 text-emerald-600 rounded border-slate-300"
+                            />
+                            <span className="ml-2 text-sm font-bold text-slate-700">{sec}</span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-amber-600 font-medium">No sections allocated yet. Contact admin.</p>
+                    )}
+                    {selectedSectionsForTest.length > 0 && (
+                      <div className="mt-3 p-2 bg-emerald-100 rounded-lg">
+                        <p className="text-xs font-bold text-emerald-700">
+                          Selected: {selectedSectionsForTest.join(', ')}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
                 
@@ -1283,6 +1422,60 @@ const fetchTeacherProfile = useCallback(async () => {
       
       {/* Chat Component */}
       {showChat && <Chat onClose={() => setShowChat(false)} />}
+      
+      {/* Test Section Edit Modal */}
+      {showTestSectionModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
+            <h3 className="text-lg font-black text-slate-800 mb-4">Allocate Test to Sections</h3>
+            <p className="text-sm text-slate-500 mb-4">Select one or more sections for this test:</p>
+            
+            <div className="max-h-60 overflow-y-auto space-y-2 mb-6">
+              {teacherInfo?.allocated_sections && teacherInfo.allocated_sections.map(sec => (
+                <label 
+                  key={sec} 
+                  className={`flex items-center p-4 rounded-xl cursor-pointer border-2 transition-all ${
+                    selectedSectionsForTestEdit.includes(sec) 
+                      ? 'border-emerald-500 bg-emerald-50' 
+                      : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedSectionsForTestEdit.includes(sec)}
+                    onChange={() => toggleSectionForTestEdit(sec)}
+                    className="w-5 h-5 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
+                  />
+                  <span className="ml-3 font-bold text-slate-700">{sec}</span>
+                </label>
+              ))}
+            </div>
+            
+            {selectedSectionsForTestEdit.length > 0 && (
+              <div className="bg-emerald-50 rounded-xl p-3 mb-4">
+                <p className="text-xs font-bold text-emerald-600 uppercase mb-1">Selected Sections ({selectedSectionsForTestEdit.length})</p>
+                <p className="text-sm text-emerald-800">{selectedSectionsForTestEdit.join(', ')}</p>
+              </div>
+            )}
+            
+            <div className="flex gap-3">
+              <button 
+                onClick={() => { setShowTestSectionModal(false); setEditingTestId(null); setSelectedSectionsForTestEdit([]); }}
+                className="flex-1 px-6 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleTestSectionChange}
+                disabled={selectedSectionsForTestEdit.length === 0}
+                className="flex-1 px-6 py-3 bg-emerald-500 text-white rounded-xl font-bold hover:bg-emerald-600 disabled:bg-slate-300"
+              >
+                Save ({selectedSectionsForTestEdit.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

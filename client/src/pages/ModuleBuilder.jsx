@@ -24,7 +24,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
   // Section editing modal state
   const [showSectionModal, setShowSectionModal] = useState(false);
   const [editingSectionModuleId, setEditingSectionModuleId] = useState(null);
-  const [newSectionValue, setNewSectionValue] = useState("");
+  const [selectedSectionsForEdit, setSelectedSectionsForEdit] = useState([]);
   
   const [textData, setTextData] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
@@ -280,22 +280,22 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
     }
   };
 
-  // Handle changing module section
+  // Handle changing module section(s) - supports multi-section
   const handleSectionChange = async () => {
-    if (!editingSectionModuleId || !newSectionValue) return;
+    if (!editingSectionModuleId || selectedSectionsForEdit.length === 0) return;
     
     try {
       const res = await fetch(`${API_BASE_URL}/api/teacher/module/${editingSectionModuleId}/section`, {
         method: 'PUT',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ section: newSectionValue })
+        body: JSON.stringify({ sections: selectedSectionsForEdit })
       });
       
       if (res.ok) {
-        alert("Section updated!");
+        alert(`Section${selectedSectionsForEdit.length > 1 ? 's' : ''} updated!`);
         setShowSectionModal(false);
         setEditingSectionModuleId(null);
-        setNewSectionValue("");
+        setSelectedSectionsForEdit([]);
         fetchModules();
       } else {
         const data = await res.json();
@@ -306,9 +306,21 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
     }
   };
 
-  const openSectionModal = (moduleId, currentSection) => {
+  const toggleSectionSelection = (section) => {
+    setSelectedSectionsForEdit(prev => 
+      prev.includes(section) 
+        ? prev.filter(s => s !== section)
+        : [...prev, section]
+    );
+  };
+
+  const openSectionModal = (moduleId, currentSections) => {
     setEditingSectionModuleId(moduleId);
-    setNewSectionValue(currentSection || '');
+    // currentSections could be a string or array
+    const sectionsArray = Array.isArray(currentSections) 
+      ? currentSections 
+      : (currentSections ? [currentSections] : []);
+    setSelectedSectionsForEdit(sectionsArray);
     setShowSectionModal(true);
   };
 
@@ -368,23 +380,33 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {existingModules.map(mod => (
+              {existingModules.map(mod => {
+                // Parse sections - could be a JSON string, array, or just the section field
+                let sectionsArray = [];
+                if (mod.sections) {
+                  sectionsArray = typeof mod.sections === 'string' ? JSON.parse(mod.sections) : mod.sections;
+                } else if (mod.section) {
+                  sectionsArray = [mod.section];
+                }
+                
+                return (
                 <div key={mod.id} className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
                   <p className="text-[10px] font-black text-emerald-500 uppercase">Module</p>
                   <h4 className="text-lg font-black text-slate-800 uppercase mb-2">{mod.topic_title}</h4>
                   <div className="flex flex-wrap gap-2 mb-2">
-                    {mod.section && (
+                    {sectionsArray.length > 0 ? (
                       <button 
-                        onClick={() => openSectionModal(mod.id, mod.section)}
+                        onClick={() => openSectionModal(mod.id, sectionsArray)}
                         className="text-[9px] font-bold text-white bg-blue-500 px-2 py-1 rounded-full hover:bg-blue-600 cursor-pointer"
-                        title="Click to change section"
+                        title="Click to change sections"
                       >
-                        {mod.section} ✎
+                        {sectionsArray.length > 1 
+                          ? `${sectionsArray.length} Sections ✎` 
+                          : `${sectionsArray[0]} ✎`}
                       </button>
-                    )}
-                    {!mod.section && (
+                    ) : (
                       <button 
-                        onClick={() => openSectionModal(mod.id, '')}
+                        onClick={() => openSectionModal(mod.id, [])}
                         className="text-[9px] font-bold text-white bg-amber-500 px-2 py-1 rounded-full hover:bg-amber-600 cursor-pointer"
                       >
                         + Add Section
@@ -392,6 +414,17 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                     )}
                     <span className="text-[9px] font-bold text-white bg-slate-400 px-2 py-1 rounded-full">{mod.step_count} STEPS</span>
                   </div>
+                  
+                  {/* Show all sections as tags if multiple */}
+                  {sectionsArray.length > 1 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {sectionsArray.map(sec => (
+                        <span key={sec} className="text-[8px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                          {sec}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   
                   <div className="flex gap-2 mt-4">
                     <button 
@@ -408,7 +441,8 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                     </button>
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </div>
@@ -803,37 +837,54 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
         </div>
       )}
       
-      {/* Section Edit Modal */}
+      {/* Section Edit Modal - Multi-Section Support */}
       {showSectionModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
-            <h3 className="text-lg font-black text-slate-800 mb-4">Change Module Section</h3>
-            <p className="text-sm text-slate-500 mb-4">Select a new section for this module:</p>
+            <h3 className="text-lg font-black text-slate-800 mb-4">Allocate Module to Sections</h3>
+            <p className="text-sm text-slate-500 mb-4">Select one or more sections for this module:</p>
             
-            <select 
-              className="w-full p-4 bg-slate-50 rounded-xl font-bold border-2 border-slate-200 focus:border-blue-500 outline-none mb-6"
-              value={newSectionValue}
-              onChange={e => setNewSectionValue(e.target.value)}
-            >
-              <option value="">-- Choose Section --</option>
+            <div className="max-h-60 overflow-y-auto space-y-2 mb-6">
               {allocatedSections && allocatedSections.map(sec => (
-                <option key={sec} value={sec}>{sec}</option>
+                <label 
+                  key={sec} 
+                  className={`flex items-center p-4 rounded-xl cursor-pointer border-2 transition-all ${
+                    selectedSectionsForEdit.includes(sec) 
+                      ? 'border-blue-500 bg-blue-50' 
+                      : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedSectionsForEdit.includes(sec)}
+                    onChange={() => toggleSectionSelection(sec)}
+                    className="w-5 h-5 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                  />
+                  <span className="ml-3 font-bold text-slate-700">{sec}</span>
+                </label>
               ))}
-            </select>
+            </div>
+            
+            {selectedSectionsForEdit.length > 0 && (
+              <div className="bg-blue-50 rounded-xl p-3 mb-4">
+                <p className="text-xs font-bold text-blue-600 uppercase mb-1">Selected Sections ({selectedSectionsForEdit.length})</p>
+                <p className="text-sm text-blue-800">{selectedSectionsForEdit.join(', ')}</p>
+              </div>
+            )}
             
             <div className="flex gap-3">
               <button 
-                onClick={() => { setShowSectionModal(false); setEditingSectionModuleId(null); }}
+                onClick={() => { setShowSectionModal(false); setEditingSectionModuleId(null); setSelectedSectionsForEdit([]); }}
                 className="flex-1 px-6 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200"
               >
                 Cancel
               </button>
               <button 
                 onClick={handleSectionChange}
-                disabled={!newSectionValue}
+                disabled={selectedSectionsForEdit.length === 0}
                 className="flex-1 px-6 py-3 bg-blue-500 text-white rounded-xl font-bold hover:bg-blue-600 disabled:bg-slate-300"
               >
-                Save
+                Save ({selectedSectionsForEdit.length})
               </button>
             </div>
           </div>
