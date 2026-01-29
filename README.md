@@ -47,8 +47,11 @@ Sustainable Classroom provides a complete e-learning platform that runs entirely
 | Cache | Redis 7 |
 | Video | Self-hosted Jitsi Meet |
 | Email | MailHog (local) / Gmail (production) |
+| Monitoring | Prometheus + Grafana |
+| Real-time | Socket.IO, WebSockets |
 | Container | Docker, Docker Compose |
 | CI/CD | GitHub Actions |
+| Reverse Proxy | Nginx |
 
 ---
 
@@ -74,11 +77,23 @@ docker-compose up -d --build
 
 Access at: http://localhost
 
+### Service Access URLs
+
+| Service | URL | Purpose |
+|---------|-----|----------|
+| Main Application | http://localhost | LMS Interface |
+| Backend API | http://localhost:5000 | REST API |
+| MailHog UI | http://localhost:8025 | Email Testing |
+| Jitsi Video | https://localhost:8443 | Video Conferencing |
+| Grafana (Optional) | http://localhost:3001 | Monitoring Dashboards |
+| Prometheus (Optional) | http://localhost:9090 | Metrics & Alerts |
+
 ### Default Credentials
 
-| Role | Email | Password |
-|------|-------|----------|
-| Admin | admin@classroom.local | ChangeThisPassword |
+| Service | Username/Email | Password |
+|---------|----------------|----------|
+| Admin Account | admin@classroom.local | ChangeThisPassword |
+| Grafana | admin | Admin@2026 |
 
 ⚠️ **Change these credentials after first login!**
 
@@ -145,6 +160,50 @@ This prevents the build cache issues that can occur when changes don't appear in
 - No external Jitsi servers required
 - Privacy-focused local video calls
 - Integrated into module live sessions
+- Components: Web UI, Prosody (XMPP), JVB (Video Bridge), Jicofo (Focus)
+
+### Monitoring Stack (Optional)
+**Prometheus** - Metrics Collection
+- Container: `lms-prometheus`
+- Port: 9090
+- Scrapes metrics from backend, database, Redis
+- 30-day retention period
+- Custom alerting rules
+
+**Grafana** - Visualization Dashboards
+- Container: `lms-grafana`
+- Port: 3001
+- Pre-configured LMS dashboard
+- Real-time system metrics
+- User analytics and performance graphs
+
+**Node Exporter** - System Metrics
+- CPU, memory, disk usage
+- Network statistics
+
+**Postgres Exporter** - Database Metrics
+- Query performance
+- Connection pool stats
+- Table sizes and indexes
+
+**To enable monitoring:**
+```bash
+docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+```
+
+### Real-time Communication
+- **Socket.IO** for WebSocket connections
+- Real-time chat between students and teachers
+- Live notification delivery
+- Automatic reconnection handling
+- Room-based message routing by section
+
+### Reverse Proxy (Nginx)
+- Container: `lms-proxy`
+- Handles SSL/TLS termination
+- Routes traffic to backend and static files
+- Compression and caching
+- Security headers
 
 ### JWT Authentication
 - Stateless authentication using JSON Web Tokens
@@ -163,23 +222,101 @@ This prevents the build cache issues that can occur when changes don't appear in
 ```
 susclasssrefine/
 ├── backend/                 # Node.js Express API
-│   ├── server.js           # Main server
+│   ├── server.js           # Main server (4200+ lines)
 │   ├── notificationService.js
-│   └── *.sql               # Database migrations
+│   ├── localStorageService.js
+│   ├── localEmailService.js
+│   ├── *.sql               # Database migrations
+│   ├── public/             # Static files (built frontend)
+│   └── uploads/            # User-uploaded files
 ├── client/                  # React frontend
 │   ├── src/
-│   │   ├── components/     # UI components
-│   │   └── pages/          # Page components
-│   └── vite.config.js
+│   │   ├── components/     # UI components (Chat, etc.)
+│   │   ├── pages/          # Page components (Dashboard, etc.)
+│   │   └── config/         # API configuration
+│   ├── vite.config.js      # Vite build config
+│   └── package.json        # With clean build scripts
+├── monitoring/
+│   ├── prometheus.yml      # Metrics collection config
+│   └── grafana-dashboard.json
+├── nginx/                   # Reverse proxy config
 ├── .github/
 │   └── workflows/          # GitHub Actions CI/CD
-├── docker-compose.yml       # Development stack
-├── docker-compose.prod.yml  # Production stack (pre-built images)
+│       └── build.yml       # Clean builds with no cache
+├── docker-compose.yml       # Main services stack
+├── docker-compose.monitoring.yml  # Optional monitoring
 ├── Dockerfile              # Multi-stage build
-├── deploy.sh               # Linux/Mac deploy script
-├── deploy.bat              # Windows deploy script
-└── README.md
+├── README.md               # This file
+├── deploy.md               # Deployment guide
+└── .env.example            # Environment template
 ```
+
+---
+
+## Container Architecture
+
+### Core Services (docker-compose.yml)
+
+**lms-backend** (Backend + Frontend)
+- Image: Built from Dockerfile (Node.js 20 Alpine)
+- Port: 5000
+- Serves React SPA and REST API
+- Multi-stage build: frontend build → backend runtime
+- Health check: HTTP GET /api/health
+- Restart: unless-stopped
+
+**lms-database** (PostgreSQL 15)
+- Image: postgres:15-alpine
+- Port: 5432
+- Volume: postgres_data (persistent)
+- Init scripts: 5 SQL migrations
+- Health check: pg_isready
+- Restart: unless-stopped
+
+**lms-cache** (Redis 7)
+- Image: redis:7-alpine
+- Port: 6379
+- Volume: redis_data (AOF persistence)
+- Health check: redis-cli ping
+- Restart: unless-stopped
+
+**lms-mailserver** (MailHog)
+- Image: mailhog/mailhog:latest
+- Ports: 1025 (SMTP), 8025 (Web UI)
+- No persistence needed
+- Catches all outbound emails
+- Restart: unless-stopped
+
+**lms-proxy** (Nginx)
+- Image: nginx:alpine
+- Ports: 80, 443
+- Routes traffic to backend
+- SSL/TLS termination
+- Restart: unless-stopped
+
+**Jitsi Meet Stack** (4 containers)
+- **lms-jitsi-web**: Web interface (port 8443)
+- **lms-jitsi-prosody**: XMPP server (internal)
+- **lms-jitsi-jicofo**: Focus component (internal)
+- **lms-jitsi-jvb**: Video bridge (port 10000/UDP)
+
+### Monitoring Services (docker-compose.monitoring.yml)
+
+**lms-prometheus** - Metrics collection (port 9090)  
+**lms-grafana** - Dashboards (port 3001)  
+**lms-node-exporter** - System metrics (port 9100)  
+**lms-postgres-exporter** - DB metrics (port 9187)
+
+### Network Configuration
+- **lms-network**: Bridge network for all containers
+- Internal DNS: Containers resolve by service name
+- Isolated: No external access except exposed ports
+
+### Volume Persistence
+- **postgres_data**: Database files
+- **redis_data**: Cache snapshots
+- **prometheus_data**: Metrics history
+- **grafana_data**: Dashboards and config
 
 ---
 
@@ -256,36 +393,84 @@ What is 2 + 2?,3,4,5,6,B
 
 ## Offline Capability
 
-The system operates 100% offline with zero internet dependency:
+The system operates **100% offline** with zero internet dependency:
 
 ### Fully Local Services
-- PostgreSQL database (all data stored locally)
-- Redis cache (in-memory, local)
-- Backend API (runs on host machine)
-- React frontend (served from host)
-- MailHog email server (catches emails locally)
-- Jitsi Meet video server (self-hosted)
-- File storage (local disk)
+- **PostgreSQL database** - All data stored locally with automatic backups
+- **Redis cache** - In-memory caching for performance
+- **Backend API** - Node.js/Express running on local server
+- **React frontend** - Served from local backend
+- **MailHog email server** - Catches all emails locally (http://localhost:8025)
+- **Jitsi Meet video server** - Self-hosted video conferencing (4 containers)
+- **Nginx reverse proxy** - Handles routing and SSL
+- **File storage** - Local disk storage for videos, PDFs, uploads
+- **Prometheus + Grafana** - Local monitoring and analytics
 
 ### Features Available Offline
-- All core learning features
-- Module creation and viewing
-- Video playback (uploaded videos)
-- PDF and text content
-- Coding workbench with test validation
-- MCQ assessments and grading
-- Live video sessions via local Jitsi
-- Real-time chat between users
-- Email notifications (viewable in MailHog)
-- Progress tracking and analytics
-- User authentication (JWT)
+✅ All core learning features  
+✅ Module creation and viewing  
+✅ Video playback (uploaded videos)  
+✅ PDF and text content  
+✅ Coding workbench with test validation  
+✅ MCQ assessments and grading  
+✅ Live video sessions via local Jitsi  
+✅ Real-time chat between users (Socket.IO)  
+✅ Email notifications (viewable in MailHog)  
+✅ Progress tracking and analytics  
+✅ User authentication (JWT)  
+✅ System monitoring (Prometheus/Grafana)  
 
 ### Optional Internet Features
 - Gmail email delivery (if configured)
 - External YouTube video URLs (if used in modules)
-- Docker image pulls (only during deployment)
+- Docker image pulls (only during initial deployment)
 
-The system can run indefinitely without internet after initial deployment.
+**The system runs indefinitely without internet after initial deployment.**
+
+---
+
+## Production Features
+
+### Performance Optimization
+- **Connection Pooling**: PostgreSQL max 20 connections
+- **Redis Caching**: 5-minute TTL for API responses
+- **Compression**: Gzip/Brotli for static assets
+- **Static Asset Caching**: Browser cache headers
+- **Database Indexing**: Optimized queries on user_id, module_id, section
+- **Lazy Loading**: Frontend components and routes
+
+### Scalability
+- **Containerized Architecture**: Easy horizontal scaling
+- **Stateless Backend**: JWT-based auth enables load balancing
+- **Microservices Ready**: Separate services for database, cache, video
+- **Volume Persistence**: Data survives container restarts
+- **Health Checks**: Automatic container restart on failure
+
+### Monitoring & Observability
+- **Prometheus**: Metrics collection with 30-day retention
+- **Grafana**: Real-time dashboards for system health
+- **Node Exporter**: CPU, memory, disk metrics
+- **Postgres Exporter**: Database performance metrics
+- **Custom Metrics**: API response times, user activity, error rates
+- **Alerting**: Configurable alerts for critical issues
+
+### Security
+- **JWT Authentication**: Secure token-based auth
+- **Password Hashing**: bcrypt with salt rounds
+- **SQL Injection Prevention**: Parameterized queries
+- **CORS Protection**: Configured allowed origins
+- **Helmet.js**: Security headers (CSP, XSS protection)
+- **Rate Limiting**: Prevent brute force attacks
+- **Environment Variables**: Secrets management
+- **HTTPS Support**: SSL/TLS via Nginx (production)
+
+### High Availability Features
+- **Docker Health Checks**: Auto-restart unhealthy containers
+- **Redis Persistence**: AOF (Append-Only File) mode
+- **Database Backups**: Automated pg_dump scripts
+- **Volume Mounts**: Persistent data storage
+- **Graceful Shutdown**: Proper signal handling
+- **Multi-container Stack**: Isolated service failures
 
 ---
 
@@ -312,9 +497,13 @@ The system can run indefinitely without internet after initial deployment.
 
 ## Commands Reference
 
+### Basic Operations
 ```bash
-# Start services
+# Start all services
 docker-compose up -d --build
+
+# Start with monitoring
+docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
 
 # Clean rebuild (prevents cache issues)
 docker-compose down
@@ -324,15 +513,40 @@ docker-compose up -d
 
 # View logs
 docker-compose logs -f backend
+docker-compose logs -f postgres
 
 # Stop services
 docker-compose down
 
+# Stop and remove volumes (data loss!)
+docker-compose down -v
+
 # View service status
 docker-compose ps
+```
 
+### Database Operations
+```bash
 # Access database
 docker exec -it lms-database psql -U lms_admin -d sustainable_classroom
+
+# Backup database
+docker exec lms-database pg_dump -U lms_admin sustainable_classroom > backup-$(date +%Y%m%d).sql
+
+# Restore database
+cat backup.sql | docker exec -i lms-database psql -U lms_admin -d sustainable_classroom
+```
+
+### Monitoring Commands
+```bash
+# View Prometheus metrics
+curl http://localhost:9090/metrics
+
+# Check system resources
+docker stats
+
+# View container health
+docker inspect lms-backend | grep -A 10 Health
 ```
 
 For detailed deployment steps, see [deploy.md](deploy.md).
