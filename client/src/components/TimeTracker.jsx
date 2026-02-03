@@ -7,7 +7,20 @@ const BREAK_INTERVAL_MS = 25 * 60 * 1000; // 25 minutes
 const BREAK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const SAVE_INTERVAL_MS = 30 * 1000; // Save to server every 30 seconds
-const STORAGE_KEY = 'timetracker_session';
+
+// Get user-specific storage key
+const getStorageKey = () => {
+  const user = localStorage.getItem('user');
+  if (user) {
+    try {
+      const userData = JSON.parse(user);
+      return `timetracker_session_${userData.id}`;
+    } catch (e) {
+      return 'timetracker_session';
+    }
+  }
+  return 'timetracker_session';
+};
 
 function TimeTracker() {
   const [sessionSeconds, setSessionSeconds] = useState(0);
@@ -43,7 +56,7 @@ function TimeTracker() {
   // Save session to localStorage (called every second)
   const saveToLocal = useCallback((seconds) => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      localStorage.setItem(getStorageKey(), JSON.stringify({
         date: getTodayKey(),
         seconds: seconds,
         ts: Date.now()
@@ -54,14 +67,14 @@ function TimeTracker() {
   // Load session from localStorage
   const loadFromLocal = useCallback(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(getStorageKey());
       if (!raw) return 0;
       const data = JSON.parse(raw);
       // Only restore if same day AND less than 2 hours ago (session still valid)
       if (data.date === getTodayKey() && (Date.now() - data.ts) < 7200000) {
         return data.seconds || 0;
       }
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(getStorageKey());
       return 0;
     } catch (e) {
       return 0;

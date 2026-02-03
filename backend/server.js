@@ -933,7 +933,8 @@ app.post('/api/admin/register-teacher', authenticateToken, adminOnly, async (req
   const { name, email, password, staff_id, dept, media } = req.body;
   
   // Validate required fields
-  if (!name || typeof name !== 'string' || name.trim().length < 2) {
+  const trimmedName = name ? name.trim() : '';
+  if (!trimmedName || trimmedName.length < 2) {
     return res.status(400).json({ error: "Name must be at least 2 characters long" });
   }
   if (!email || !password) {
@@ -951,7 +952,7 @@ app.post('/api/admin/register-teacher', authenticateToken, adminOnly, async (req
     // Note: We pass objects directly; pg driver handles JSON conversion for JSONB columns
     const query = `INSERT INTO teachers (name, email, password, staff_id, dept, media, allocated_sections) 
                    VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`;
-    const values = [name, email, hashed, staff_id, dept, media || {}, []];
+    const values = [trimmedName, email, hashed, staff_id, dept, media || {}, []];
     
     const result = await pool.query(query, values);
     const teacherId = result.rows[0].id;
