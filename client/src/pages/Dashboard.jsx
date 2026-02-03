@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import TimeTracker from '../components/TimeTracker';
 import NotificationBell from '../components/NotificationBell';
 import LiveSessionsCalendar from '../components/LiveSessionsCalendar';
 import Chat from '../components/Chat';
@@ -204,9 +203,6 @@ function Dashboard() {
           </button>
         </section>
       </main>
-      
-      {/* Time Tracker Widget */}
-      <TimeTracker />
       
       {/* Chat Component */}
       {showChat && <Chat onClose={() => setShowChat(false)} />}
