@@ -112,31 +112,36 @@ function TimeTracker() {
     if (!token) return;
 
     const init = async () => {
-      // 0. Clear any timer data from other users (clean start)
+      // 0. Get current user ID first
       const userData = localStorage.getItem('user_data');
       let currentUserId = null;
+      let currentStorageKey = 'timetracker_session_default';
+      
       try {
         if (userData) {
-          currentUserId = JSON.parse(userData).id;
-        }
-      } catch (e) { /* ignore */ }
-
-      // Clear all old timer keys except current user's
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('timetracker_session_')) {
-          const userIdInKey = key.replace('timetracker_session_', '');
-          if (userIdInKey !== String(currentUserId)) {
-            localStorage.removeItem(key);
-            console.log('[Timer] Cleared old timer data:', key);
+          const parsed = JSON.parse(userData);
+          currentUserId = parsed.id;
+          if (currentUserId) {
+            currentStorageKey = `timetracker_session_${currentUserId}`;
           }
+        }
+      } catch (e) {
+        console.warn('[Timer] Failed to parse user_data:', e);
+      }
+
+      // 1. Clear ALL timer keys to ensure fresh start (prevents cross-user persistence)
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('timetracker_session')) {
+          localStorage.removeItem(key);
+          console.log('[Timer] Cleared timer data:', key);
         }
       });
 
-      // 1. Restore session from localStorage immediately
-      const restored = loadFromLocal();
-      setSessionSeconds(restored);
-      lastSavedToServerRef.current = restored;
-      console.log('[Timer] Restored from localStorage:', restored, 'seconds');
+      // 2. Always start fresh - no restoration from localStorage
+      // (Server data is the source of truth)
+      setSessionSeconds(0);
+      lastSavedToServerRef.current = 0;
+      console.log('[Timer] Starting fresh session for user:', currentUserId);
 
       // 2. Fetch server daily total
       try {
