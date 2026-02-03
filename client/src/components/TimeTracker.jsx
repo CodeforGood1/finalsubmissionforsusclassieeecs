@@ -1,255 +1,195 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import API_BASE_URL from '../config/api';
 
-// Eye strain prevention: recommend break after 25 minutes (Pomodoro technique)
-const BREAK_INTERVAL_MINUTES = 25;
-const BREAK_DURATION_MINUTES = 5;
+// Constants
+const BREAK_INTERVAL_MS = 25 * 60 * 1000; // 25 minutes
+const BREAK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const SAVE_INTERVAL_MS = 30 * 1000; // Save to server every 30 seconds
+const STORAGE_KEY = 'timetracker_session';
 
 function TimeTracker() {
-  // Retrieve persisted session time from localStorage
-  const getPersistedSessionTime = () => {
-    const stored = localStorage.getItem('sessionStartTime');
-    const storedSessionTime = localStorage.getItem('currentSessionTime');
-    if (stored && storedSessionTime) {
-      const elapsed = Math.floor((Date.now() - parseInt(stored)) / 1000);
-      // If less than 30 minutes since last activity, restore session time
-      if (elapsed < 30 * 60) {
-        return parseInt(storedSessionTime) || 0;
-      }
-    }
-    return 0;
-  };
-
-  const [sessionTime, setSessionTime] = useState(getPersistedSessionTime); // seconds since session start
-  const [totalDailyTime, setTotalDailyTime] = useState(0); // seconds from database for today
+  const [sessionSeconds, setSessionSeconds] = useState(0);
+  const [serverDailySeconds, setServerDailySeconds] = useState(0);
   const [showBreakReminder, setShowBreakReminder] = useState(false);
   const [isOnBreak, setIsOnBreak] = useState(false);
-  const [breakTimeLeft, setBreakTimeLeft] = useState(0);
+  const [breakSecondsLeft, setBreakSecondsLeft] = useState(0);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
-  const [lastActivityTime, setLastActivityTime] = useState(Date.now());
-  const [isActive, setIsActive] = useState(true);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [isPaused, setIsPaused] = useState(false);
+  const [ready, setReady] = useState(false);
 
-  const navigate = useNavigate();
+  const lastActivityRef = useRef(Date.now());
+  const lastSavedToServerRef = useRef(0);
+
   const location = useLocation();
+  const token = localStorage.getItem('token');
+  const isVideoPage = location.pathname.includes('/learning/') || location.pathname.includes('/video');
 
-  // Check for token changes (logout/expiry) every second
-  useEffect(() => {
-    const tokenCheckInterval = setInterval(() => {
-      const currentToken = localStorage.getItem('token');
-      if (currentToken !== token) {
-        console.log('[TimeTracker] Token changed, updating state');
-        setToken(currentToken);
-        if (!currentToken) {
-          // Token was removed (logout) - reset all state
-          console.log('[TimeTracker] Token removed, resetting timer');
-          setSessionTime(0);
-          setTotalDailyTime(0);
-          setIsActive(false);
-          localStorage.removeItem('currentSessionTime');
-          localStorage.removeItem('sessionStartTime');
-        }
+  // Get today's date key
+  const getTodayKey = () => new Date().toISOString().split('T')[0];
+
+  // Format seconds to HH:MM:SS or MM:SS
+  const formatTime = (seconds) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) {
+      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  // Save session to localStorage (called every second)
+  const saveToLocal = useCallback((seconds) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        date: getTodayKey(),
+        seconds: seconds,
+        ts: Date.now()
+      }));
+    } catch (e) { /* ignore */ }
+  }, []);
+
+  // Load session from localStorage
+  const loadFromLocal = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return 0;
+      const data = JSON.parse(raw);
+      // Only restore if same day AND less than 2 hours ago (session still valid)
+      if (data.date === getTodayKey() && (Date.now() - data.ts) < 7200000) {
+        return data.seconds || 0;
       }
-    }, 1000);
+      localStorage.removeItem(STORAGE_KEY);
+      return 0;
+    } catch (e) {
+      return 0;
+    }
+  }, []);
 
-    return () => clearInterval(tokenCheckInterval);
-  }, [token]);
+  // Save time delta to server
+  const saveToServer = useCallback(async (currentSeconds) => {
+    if (!token) return;
+    const delta = currentSeconds - lastSavedToServerRef.current;
+    if (delta <= 0) return;
 
-  // Stop timer immediately if no token
-  useEffect(() => {
-    if (!token) {
-      setIsActive(false);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/student/update-time`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ seconds: delta })
+      });
+      if (res.ok) {
+        lastSavedToServerRef.current = currentSeconds;
+      }
+    } catch (err) {
+      console.error('[Timer] Server save error:', err);
     }
   }, [token]);
 
-  // Persist session time to localStorage whenever it changes
-  useEffect(() => {
-    if (sessionTime > 0 && token) {
-      localStorage.setItem('currentSessionTime', sessionTime.toString());
-      localStorage.setItem('sessionStartTime', (Date.now() - sessionTime * 1000).toString());
-    }
-  }, [sessionTime, token]);
-
-  // Check if on video page (exempt from auto-logout)
-  const isOnVideoPage = location.pathname.includes('/learning/') || 
-                        location.pathname.includes('/video');
-
-  // Handle user activity (mouse, keyboard, scroll)
-  useEffect(() => {
-    const updateActivity = () => {
-      setLastActivityTime(Date.now());
-      if (!isActive) {
-        setIsActive(true);
-      }
-    };
-
-    // Activity event listeners
-    window.addEventListener('mousemove', updateActivity);
-    window.addEventListener('keydown', updateActivity);
-    window.addEventListener('scroll', updateActivity);
-    window.addEventListener('click', updateActivity);
-    window.addEventListener('touchstart', updateActivity);
-
-    return () => {
-      window.removeEventListener('mousemove', updateActivity);
-      window.removeEventListener('keydown', updateActivity);
-      window.removeEventListener('scroll', updateActivity);
-      window.removeEventListener('click', updateActivity);
-      window.removeEventListener('touchstart', updateActivity);
-    };
-  }, [isActive]);
-
-  // Check for inactivity and auto-logout
-  useEffect(() => {
-    if (!token || isOnVideoPage) return; // Don't auto-logout on video page
-
-    const inactivityCheckInterval = setInterval(() => {
-      const timeSinceActivity = Date.now() - lastActivityTime;
-      
-      if (timeSinceActivity >= INACTIVITY_TIMEOUT_MS) {
-        // User inactive for 10 minutes - pause timer and logout
-        console.log('User inactive for 10 minutes - logging out');
-        setIsActive(false);
-        
-        // Save final time before logout
-        if (sessionTime > 0) {
-          fetch(`${API_BASE_URL}/api/student/update-time`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ seconds: sessionTime })
-          }).catch(err => console.error('Final time update error:', err));
-        }
-        
-        // Clear token and redirect to login
-        localStorage.removeItem('token');
-        localStorage.removeItem('userRole');
-        localStorage.removeItem('user_role');
-        localStorage.removeItem('user_data');
-        navigate('/', { state: { message: 'Logged out due to inactivity' } });
-      }
-    }, 30000); // Check every 30 seconds
-
-    return () => clearInterval(inactivityCheckInterval);
-  }, [token, lastActivityTime, sessionTime, navigate, isOnVideoPage]);
-
-  // Check for midnight reset
+  // INIT: Restore from localStorage, fetch server total
   useEffect(() => {
     if (!token) return;
 
-    const checkMidnightReset = () => {
-      const now = new Date();
-      const lastDate = localStorage.getItem('lastStudyDate');
-      const today = now.toDateString();
+    const init = async () => {
+      // 1. Restore session from localStorage immediately
+      const restored = loadFromLocal();
+      setSessionSeconds(restored);
+      lastSavedToServerRef.current = restored;
+      console.log('[Timer] Restored from localStorage:', restored, 'seconds');
 
-      if (lastDate && lastDate !== today) {
-        // New day detected - reset daily time
-        console.log('Midnight passed - resetting daily time');
-        setTotalDailyTime(0);
-        setSessionTime(0);
-        localStorage.setItem('lastStudyDate', today);
-        
-        // Reload today's time from database
-        fetch(`${API_BASE_URL}/api/student/daily-time`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        })
-        .then(res => res.json())
-        .then(data => setTotalDailyTime(data.total_seconds || 0))
-        .catch(err => console.error('Daily time reload error:', err));
-      } else if (!lastDate) {
-        localStorage.setItem('lastStudyDate', today);
-      }
-    };
-
-    // Check immediately
-    checkMidnightReset();
-
-    // Check every minute
-    const midnightInterval = setInterval(checkMidnightReset, 60000);
-
-    return () => clearInterval(midnightInterval);
-  }, [token]);
-
-  // Initialize session and load daily time on mount
-  useEffect(() => {
-    if (!token) return;
-    
-    const initSession = async () => {
+      // 2. Fetch server daily total
       try {
-        // Start new session
-        await fetch(`${API_BASE_URL}/api/student/start-session`, {
-          method: 'POST',
+        const res = await fetch(`${API_BASE_URL}/api/student/daily-time`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        
-        // Load today's total time
-        const timeRes = await fetch(`${API_BASE_URL}/api/student/daily-time`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        
-        if (timeRes.ok) {
-          const timeData = await timeRes.json();
-          setTotalDailyTime(timeData.total_seconds || 0);
+        if (res.ok) {
+          const data = await res.json();
+          setServerDailySeconds(data.total_seconds || 0);
+          console.log('[Timer] Server daily total:', data.total_seconds);
         }
       } catch (err) {
-        console.error('Session init error:', err);
+        console.error('[Timer] Fetch error:', err);
       }
-    };
-    
-    initSession();
-  }, [token]);
 
-  // Session timer with database sync (only runs when user is active)
+      setReady(true);
+    };
+
+    init();
+  }, [token, loadFromLocal]);
+
+  // TICK: Increment session every second, save to localStorage
   useEffect(() => {
-    if (isOnBreak || !token || !isActive) return;
-    
-    const interval = setInterval(async () => {
-      setSessionTime(prev => {
-        const newTime = prev + 1;
-        
-        // Check if break reminder should show (every 25 minutes)
-        if (newTime > 0 && newTime % (BREAK_INTERVAL_MINUTES * 60) === 0) {
-          setShowBreakReminder(true);
-        }
-        
-        return newTime;
+    if (!token || !ready || isPaused || isOnBreak) return;
+
+    const interval = setInterval(() => {
+      setSessionSeconds(prev => {
+        const next = prev + 1;
+        saveToLocal(next); // Persist every second
+        return next;
       });
-      
-      setTotalDailyTime(prev => prev + 1);
-      
-      // Update database every 30 seconds
-      const now = Date.now();
-      if (now - lastUpdateTime >= 30000) {
-        try {
-          await fetch(`${API_BASE_URL}/api/student/update-time`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ seconds: 30 })
-          });
-          setLastUpdateTime(now);
-        } catch (err) {
-          console.error('Time update error:', err);
-        }
-      }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isOnBreak, token, isActive]);
+  }, [token, ready, isPaused, isOnBreak, saveToLocal]);
 
-  // Break timer
+  // ACTIVITY TRACKING
   useEffect(() => {
-    if (!isOnBreak || breakTimeLeft <= 0) return;
-    
+    const handleActivity = () => {
+      lastActivityRef.current = Date.now();
+      if (isPaused) setIsPaused(false);
+    };
+
+    const events = ['mousemove', 'keydown', 'scroll', 'click', 'touchstart'];
+    events.forEach(e => window.addEventListener(e, handleActivity, { passive: true }));
+    return () => events.forEach(e => window.removeEventListener(e, handleActivity));
+  }, [isPaused]);
+
+  // INACTIVITY CHECK
+  useEffect(() => {
+    if (!token || !ready || isVideoPage) return;
+
+    const checkInterval = setInterval(() => {
+      if (Date.now() - lastActivityRef.current >= INACTIVITY_TIMEOUT_MS && !isPaused) {
+        setIsPaused(true);
+        saveToServer(sessionSeconds);
+      }
+    }, 30000);
+
+    return () => clearInterval(checkInterval);
+  }, [token, ready, isVideoPage, isPaused, sessionSeconds, saveToServer]);
+
+  // PERIODIC SERVER SAVE
+  useEffect(() => {
+    if (!token || !ready) return;
+
     const interval = setInterval(() => {
-      setBreakTimeLeft(prev => {
+      if (sessionSeconds > lastSavedToServerRef.current && !isPaused) {
+        saveToServer(sessionSeconds);
+      }
+    }, SAVE_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [token, ready, sessionSeconds, isPaused, saveToServer]);
+
+  // BREAK REMINDER
+  useEffect(() => {
+    const ms = sessionSeconds * 1000;
+    if (ms > 0 && ms % BREAK_INTERVAL_MS < 1000 && !isOnBreak && !showBreakReminder) {
+      setShowBreakReminder(true);
+    }
+  }, [sessionSeconds, isOnBreak, showBreakReminder]);
+
+  // BREAK COUNTDOWN
+  useEffect(() => {
+    if (!isOnBreak || breakSecondsLeft <= 0) return;
+
+    const interval = setInterval(() => {
+      setBreakSecondsLeft(prev => {
         if (prev <= 1) {
           setIsOnBreak(false);
           return 0;
@@ -259,192 +199,135 @@ function TimeTracker() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isOnBreak, breakTimeLeft]);
+  }, [isOnBreak, breakSecondsLeft]);
 
-  const formatTime = useCallback((seconds) => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    
-    if (hrs > 0) {
-      return `${hrs}h ${mins}m ${secs}s`;
-    }
-    return `${mins}m ${secs.toString().padStart(2, '0')}s`;
-  }, []);
-
-  const formatTimeCompact = useCallback((seconds) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    }
-    return `${minutes}m`;
-  }, []);
-  
-  // Save session data before window close
+  // SAVE ON PAGE UNLOAD
   useEffect(() => {
-    const handleBeforeUnload = async () => {
-      if (sessionTime > 0 && token) {
-        try {
-          await fetch(`${API_BASE_URL}/api/student/update-time`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ seconds: sessionTime })
-          });
-        } catch (err) {
-          console.error('Final time update error:', err);
-        }
+    const handleUnload = () => {
+      saveToLocal(sessionSeconds);
+      // Send remaining to server
+      if (sessionSeconds > lastSavedToServerRef.current && token) {
+        const delta = sessionSeconds - lastSavedToServerRef.current;
+        const blob = new Blob([JSON.stringify({ seconds: delta })], { type: 'application/json' });
+        navigator.sendBeacon(`${API_BASE_URL}/api/student/update-time`, blob);
       }
     };
-    
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [sessionTime, token]);
+
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, [sessionSeconds, token, saveToLocal]);
+
+  // Don't render until ready
+  if (!token || !ready) return null;
 
   const startBreak = () => {
     setShowBreakReminder(false);
     setIsOnBreak(true);
-    setBreakTimeLeft(BREAK_DURATION_MINUTES * 60);
+    setBreakSecondsLeft(BREAK_DURATION_MS / 1000);
   };
 
-  const skipBreak = () => {
-    setShowBreakReminder(false);
-  };
+  const skipBreak = () => setShowBreakReminder(false);
 
-  const endBreak = () => {
-    setIsOnBreak(false);
-    setBreakTimeLeft(0);
-  };
+  // Total = server daily (already saved) + current session
+  // But server daily includes previously saved parts of this session
+  // So: total = serverDaily + (session - lastSavedToServer)
+  // Actually simpler: server syncs, so just show serverDaily + session unsaved portion
+  // Even simpler: total = serverDaily + sessionSeconds (server subtracts duplicates)
+  // For display: session is what user sees ticking, daily is serverDaily + session
+  const displayTotal = serverDailySeconds + sessionSeconds;
 
+  // MINIMIZED
   if (isMinimized) {
     return (
-      <button 
+      <button
         onClick={() => setIsMinimized(false)}
-        className={`fixed bottom-4 right-4 z-40 ${!isActive ? 'bg-slate-400' : 'bg-slate-900'} text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-emerald-600 transition-colors`}
+        className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white px-4 py-2 rounded-full shadow-lg hover:bg-emerald-700 font-bold text-sm"
       >
-        {!isActive && '⏸ '}
-        {formatTimeCompact(totalDailyTime)}
+        ⏱ {formatTime(displayTotal)}
       </button>
     );
   }
 
-  return (
-    <>
-      {/* Time Tracker Widget */}
-      <div className={`fixed bottom-4 right-4 z-40 bg-white rounded-2xl shadow-xl border ${!isActive ? 'border-amber-300' : 'border-slate-100'} p-4 w-56`}>
-        <div className="flex justify-between items-center mb-3">
-          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-            {!isActive ? '⏸ Paused' : 'Study Time'}
-          </span>
-          <button 
-            onClick={() => setIsMinimized(true)}
-            className="text-slate-300 hover:text-slate-600 text-xs"
-          >
-            -
-          </button>
-        </div>
-        
-        {!isActive && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 mb-3">
-            <p className="text-[8px] text-amber-700 font-bold uppercase">Inactive</p>
-            <p className="text-[9px] text-amber-600 mt-1">Move mouse to resume tracking</p>
+  // BREAK REMINDER MODAL
+  if (showBreakReminder) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="bg-white rounded-3xl p-8 max-w-md mx-4 text-center shadow-2xl">
+          <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-3xl">☕</span>
           </div>
-        )}
-        
-        {isOnBreak ? (
-          <div className="text-center">
-            <p className="text-2xl font-black text-emerald-600">{formatTime(breakTimeLeft)}</p>
-            <p className="text-[10px] text-slate-500 uppercase font-bold mt-1">Break Time</p>
-            <p className="text-[9px] text-slate-400 mt-2">Rest your eyes, look away from screen</p>
-            <button 
-              onClick={endBreak}
-              className="mt-3 text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase"
-            >
-              End Break Early
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Time for a Break!</h2>
+          <p className="text-slate-500 mb-6">
+            You've been studying for {formatTime(sessionSeconds)}. Rest your eyes for 5 minutes.
+          </p>
+          <div className="flex gap-3">
+            <button onClick={startBreak} className="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700">
+              Take Break
+            </button>
+            <button onClick={skipBreak} className="flex-1 bg-slate-100 text-slate-600 py-3 rounded-xl font-bold hover:bg-slate-200">
+              Skip
             </button>
           </div>
-        ) : (
-          <>
-            <div className="text-center mb-3">
-              <p className="text-2xl font-black text-emerald-600">{formatTimeCompact(totalDailyTime)}</p>
-              <p className="text-[10px] text-slate-400 uppercase font-bold">Daily Study Time</p>
-            </div>
-            
-            <div className="border-t border-slate-100 pt-3">
-              <div className="flex justify-between items-center">
-                <span className="text-[9px] text-slate-400 uppercase font-bold">Session</span>
-                <span className="text-sm font-bold text-slate-600">{formatTime(sessionTime)}</span>
-              </div>
-            </div>
-            
-            {/* Progress to next break */}
-            <div className="mt-3">
-              <div className="flex justify-between text-[9px] text-slate-400 mb-1">
-                <span>Next break in</span>
-                <span>{Math.max(0, BREAK_INTERVAL_MINUTES - Math.floor((sessionTime % (BREAK_INTERVAL_MINUTES * 60)) / 60))} min</span>
-              </div>
-              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-emerald-500 transition-all duration-1000"
-                  style={{ width: `${Math.min(100, ((sessionTime % (BREAK_INTERVAL_MINUTES * 60)) / (BREAK_INTERVAL_MINUTES * 60)) * 100)}%` }}
-                ></div>
-              </div>
-            </div>
-          </>
-        )}
+        </div>
+      </div>
+    );
+  }
+
+  // ON BREAK
+  if (isOnBreak) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900">
+        <div className="text-center text-white">
+          <div className="w-24 h-24 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <span className="text-5xl">🌿</span>
+          </div>
+          <h2 className="text-3xl font-bold mb-2">Break Time</h2>
+          <p className="text-slate-400 mb-8">Look away from the screen, stretch, relax</p>
+          <p className="text-6xl font-black text-emerald-400 mb-8">{formatTime(breakSecondsLeft)}</p>
+          <button onClick={() => setIsOnBreak(false)} className="text-slate-400 hover:text-white text-sm">
+            End break early
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // NORMAL TIMER
+  return (
+    <div className="fixed bottom-6 right-6 z-50 bg-white rounded-2xl shadow-xl border border-slate-200 p-4 min-w-[200px]">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-bold text-slate-400 uppercase">Study Timer</span>
+        <button onClick={() => setIsMinimized(true)} className="text-slate-400 hover:text-slate-600 text-lg leading-none">
+          −
+        </button>
+      </div>
+      
+      <div className="text-3xl font-black text-emerald-600 mb-1">
+        {formatTime(sessionSeconds)}
+      </div>
+      
+      <div className="text-sm text-slate-500 mb-3">
+        Today: <span className="font-bold text-slate-700">{formatTime(displayTotal)}</span>
       </div>
 
-      {/* Break Reminder Modal */}
-      {showBreakReminder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md px-4">
-          <div className="w-full max-w-sm rounded-[2.5rem] bg-white p-10 shadow-2xl border border-slate-100 text-center">
-            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-            </div>
-            
-            <h3 className="text-xl font-black uppercase italic tracking-tighter mb-2">
-              Time for a <span className="text-emerald-500">Break</span>
-            </h3>
-            <p className="text-sm text-slate-500 mb-6">
-              You've been studying for {BREAK_INTERVAL_MINUTES} minutes. 
-              Take a {BREAK_DURATION_MINUTES}-minute break to rest your eyes.
-            </p>
-            
-            <div className="bg-slate-50 rounded-2xl p-4 mb-6 text-left">
-              <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Eye Care Tips</p>
-              <ul className="text-xs text-slate-600 space-y-1">
-                <li>- Look at something 20 feet away</li>
-                <li>- Blink frequently to moisturize eyes</li>
-                <li>- Stretch your neck and shoulders</li>
-                <li>- Get some water</li>
-              </ul>
-            </div>
-            
-            <div className="flex gap-3">
-              <button 
-                onClick={skipBreak}
-                className="flex-1 rounded-xl border border-slate-200 py-3 font-bold text-slate-500 text-[10px] uppercase tracking-widest hover:bg-slate-50 transition-all"
-              >
-                Skip
-              </button>
-              <button 
-                onClick={startBreak}
-                className="flex-1 rounded-xl bg-emerald-600 py-3 font-black text-white text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all"
-              >
-                Start Break
-              </button>
-            </div>
-          </div>
+      {isPaused && (
+        <div className="text-xs text-amber-600 font-bold mb-2">
+          ⏸ Paused (inactive)
         </div>
       )}
-    </>
+
+      <div className="pt-2 border-t border-slate-100">
+        <div className="w-full bg-slate-100 rounded-full h-1.5">
+          <div
+            className="bg-emerald-500 h-1.5 rounded-full transition-all"
+            style={{ width: `${Math.min((sessionSeconds / 1500) * 100, 100)}%` }}
+          />
+        </div>
+        <p className="text-[10px] text-slate-400 mt-1 text-center">
+          Break in {formatTime(Math.max(0, 1500 - (sessionSeconds % 1500)))}
+        </p>
+      </div>
+    </div>
   );
 }
 

@@ -51,7 +51,7 @@ app.use(helmet({
       connectSrc: ["'self'", "http://localhost:*", "ws://localhost:*", "http://*:5000", "ws://*:5000", "https://emkc.org"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
-      frameSrc: ["'self'", "https://meet.jit.si", "https://*.8x8.vc", "https://localhost:*"],
+      frameSrc: ["'self'", "https://localhost:8443", "https://localhost:*"],
       upgradeInsecureRequests: null,
     },
   },
@@ -1861,12 +1861,13 @@ app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
         for (const student of uniqueStudents) {
           await pool.query(`
             INSERT INTO in_app_notifications 
-            (recipient_type, recipient_id, type, title, message, metadata, created_at)
-            VALUES ('student', $1, 'module_published', $2, $3, $4, CURRENT_TIMESTAMP)
+            (recipient_type, recipient_id, type, title, message, link, metadata, created_at)
+            VALUES ('student', $1, 'module_published', $2, $3, $4, $5, CURRENT_TIMESTAMP)
           `, [
             student.id,
             'New Module Available',
             `${teacherName} published "${topic}". Start learning now!`,
+            `/learning/${moduleId}`,
             JSON.stringify({
               module_id: moduleId,
               module_title: topic,
@@ -2108,14 +2109,14 @@ app.get('/api/student/my-modules', authenticateToken, async (req, res) => {
     }
     
     // Fetch modules for this section - check both old 'section' column AND new 'sections' JSONB array
-    // Handle "CSE A", "CSE-A", "cse a", etc.
+    // Handle "CSE A", "CSE-A", "cse a", double spaces, etc.
     const modulesResult = await pool.query(
       `SELECT id, topic_title, section, sections, subject, teacher_name, step_count, created_at 
        FROM modules 
-       WHERE UPPER(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = $1
+       WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
           OR EXISTS (
             SELECT 1 FROM jsonb_array_elements_text(COALESCE(sections, '[]'::jsonb)) AS s 
-            WHERE UPPER(REGEXP_REPLACE(REGEXP_REPLACE(s, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = $1
+            WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
           )
        ORDER BY created_at DESC`,
       [fullSection]
@@ -2733,12 +2734,13 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
         for (const student of uniqueStudents) {
           await pool.query(`
             INSERT INTO in_app_notifications 
-            (recipient_type, recipient_id, type, title, message, metadata, created_at)
-            VALUES ('student', $1, 'test_assigned', $2, $3, $4, CURRENT_TIMESTAMP)
+            (recipient_type, recipient_id, type, title, message, link, metadata, created_at)
+            VALUES ('student', $1, 'test_assigned', $2, $3, $4, $5, CURRENT_TIMESTAMP)
           `, [
             student.id,
             'New Test Assigned',
             `Test "${title}" assigned by ${teacher_name}. Due: ${new Date(deadline).toLocaleDateString()}`,
+            `/test`,
             JSON.stringify({
               test_id: test.id,
               test_title: title,
@@ -2765,17 +2767,19 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
 });
 
 // 15. Teacher: Get All Tests for Section (supports sections array)
+// FIX: Only show tests created by THIS teacher (teacher isolation)
 app.get('/api/teacher/tests/:section', authenticateToken, async (req, res) => {
   try {
     const section = req.params.section;
+    const teacherId = req.user.id; // Only show tests by THIS teacher
     
     // Try to use v_test_statistics first, fallback to direct query if view doesn't have sections column
     try {
       const result = await pool.query(
         `SELECT * FROM v_test_statistics 
-         WHERE LOWER(section) = LOWER($1) 
+         WHERE LOWER(section) = LOWER($1) AND teacher_id = $2
          ORDER BY deadline DESC`,
-        [section]
+        [section, teacherId]
       );
       res.json(result.rows);
     } catch (viewErr) {
@@ -2786,9 +2790,9 @@ app.get('/api/teacher/tests/:section', authenticateToken, async (req, res) => {
           COALESCE((SELECT ROUND(AVG(percentage)::numeric, 2) FROM test_submissions WHERE test_id = t.id), 0) as average_score,
           COALESCE((SELECT COUNT(*) FROM test_submissions WHERE test_id = t.id AND percentage >= 50), 0) as passed_count
          FROM mcq_tests t
-         WHERE LOWER(t.section) = LOWER($1) OR t.sections @> $2::jsonb
+         WHERE (LOWER(t.section) = LOWER($1) OR t.sections @> $3::jsonb) AND t.teacher_id = $2
          ORDER BY t.deadline DESC`,
-        [section, JSON.stringify([section])]
+        [section, teacherId, JSON.stringify([section])]
       );
       res.json(result.rows);
     }
@@ -3025,10 +3029,10 @@ app.get('/api/student/tests', authenticateToken, async (req, res) => {
        LEFT JOIN test_submissions sub ON t.id = sub.test_id AND sub.student_id = $1
        WHERE t.is_active = true 
          AND (
-           UPPER(REGEXP_REPLACE(REGEXP_REPLACE(t.section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = $2
+           UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(t.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $2
            OR EXISTS (
              SELECT 1 FROM jsonb_array_elements_text(COALESCE(t.sections, '[]'::jsonb)) AS s 
-             WHERE UPPER(REGEXP_REPLACE(REGEXP_REPLACE(s, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = $2
+             WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $2
            )
          )
        ORDER BY t.deadline ASC`,
@@ -3254,7 +3258,14 @@ app.post('/api/student/test/submit', authenticateToken, async (req, res) => {
       console.error('Student grade notification error (non-blocking):', notifErr);
     }
     
-    res.json({ success: true, submission });
+    // Include total_questions in response for frontend display
+    res.json({ 
+      success: true, 
+      submission: {
+        ...submission,
+        total_questions: total_questions
+      }
+    });
   } catch (err) {
     console.error("Test Submission Error:", err);
     res.status(500).json({ error: "Failed to submit test: " + err.message });
@@ -3375,8 +3386,40 @@ app.get('/api/notifications/inbox', authenticateToken, async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const offset = parseInt(req.query.offset) || 0;
 
+    // First check if table exists
+    const tableCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'in_app_notifications'
+      );
+    `);
+    
+    if (!tableCheck.rows[0].exists) {
+      console.log('[NOTIFICATIONS] in_app_notifications table does not exist, creating...');
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS in_app_notifications (
+          id SERIAL PRIMARY KEY,
+          recipient_type VARCHAR(20) NOT NULL,
+          recipient_id INTEGER NOT NULL,
+          type VARCHAR(50) NOT NULL DEFAULT 'general',
+          title VARCHAR(255) NOT NULL,
+          message TEXT,
+          metadata JSONB DEFAULT '{}',
+          link VARCHAR(255),
+          action_url VARCHAR(255),
+          is_read BOOLEAN DEFAULT false,
+          read_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_inapp_recipient ON in_app_notifications(recipient_id, recipient_type);
+        CREATE INDEX IF NOT EXISTS idx_inapp_unread ON in_app_notifications(recipient_id, recipient_type, is_read);
+      `);
+    }
+
     const result = await pool.query(
-      `SELECT * FROM in_app_notifications 
+      `SELECT id, recipient_type, recipient_id, type as event_code, title, message, 
+              COALESCE(link, action_url) as link, is_read, created_at, metadata
+       FROM in_app_notifications 
        WHERE recipient_id = $1 AND recipient_type = $2
        ORDER BY created_at DESC
        LIMIT $3 OFFSET $4`,
@@ -3607,14 +3650,17 @@ app.get('/api/student/live-sessions', authenticateToken, async (req, res) => {
     
     const { class_dept, section } = studentResult.rows[0];
     const fullSection = `${class_dept} ${section}`;
+    // Normalize for matching
+    const normalizedSection = fullSection.toUpperCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
     
-    // Get modules with jitsi steps
+    // Get modules with jitsi steps - match multiple section formats
+    // FIX: Use flexible matching to handle "CSE A", "CSE-A", "cse a", double spaces, etc.
     const result = await pool.query(`
       SELECT m.id as module_id, m.topic_title, m.teacher_name, m.section, m.subject, m.steps
       FROM modules m
-      WHERE LOWER(m.section) = LOWER($1)
+      WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
       ORDER BY m.created_at DESC
-    `, [fullSection]);
+    `, [normalizedSection]);
     
     // Extract jitsi sessions from modules
     const sessions = [];
@@ -3624,7 +3670,7 @@ app.get('/api/student/live-sessions', authenticateToken, async (req, res) => {
           if (step.type === 'jitsi' && step.data) {
             const sessionData = typeof step.data === 'string' ? JSON.parse(step.data) : step.data;
             
-            // Use localhost Jitsi server for on-premise deployment
+            // Use local Jitsi server for offline mode
             const jitsiServerUrl = process.env.JITSI_SERVER_URL || 'https://localhost:8443';
             const meetingUrl = `${jitsiServerUrl}/${sessionData.roomName}`;
             
@@ -3676,7 +3722,7 @@ app.get('/api/teacher/live-sessions', authenticateToken, async (req, res) => {
         module.steps.forEach((step, index) => {
           if (step.type === 'jitsi' && step.data) {
             const sessionData = typeof step.data === 'string' ? JSON.parse(step.data) : step.data;
-            // Use localhost Jitsi server for on-premise deployment
+            // Use local Jitsi server for offline mode
             const jitsiServerUrl = process.env.JITSI_SERVER_URL || 'https://localhost:8443';
             const meetingUrl = `${jitsiServerUrl}/${sessionData.roomName}`;
             
@@ -3964,19 +4010,20 @@ app.get('/api/chat/available-users', authenticateToken, async (req, res) => {
       }
 
       const { class_dept, section } = studentData.rows[0];
-      // Normalize section format for matching (handles "CSE A", "CSE-A", "cse a", etc.)
+      // Normalize section format for matching (handles "CSE A", "CSE-A", "cse a", multiple spaces, etc.)
       const normalizedSection = `${class_dept} ${section}`.toUpperCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
       console.log('[Chat] Student looking for teachers, normalized section:', normalizedSection);
 
       // Find teachers from modules for this section OR directly allocated
+      // Using TRIM and REPLACE to normalize whitespace and handle various formats
       const teachers = await pool.query(`
         SELECT DISTINCT t.id, t.name, t.email, 
           COALESCE(m.subject, tsa.subject, 'Teacher') as subject
         FROM teachers t
         LEFT JOIN modules m ON t.id = m.teacher_id 
-          AND UPPER(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = $1
+          AND UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
         LEFT JOIN mcq_tests mt ON t.id = mt.teacher_id 
-          AND UPPER(REGEXP_REPLACE(REGEXP_REPLACE(mt.section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = $1
+          AND UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(mt.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
         LEFT JOIN teacher_student_allocations tsa ON t.id = tsa.teacher_id AND tsa.student_id = $2
         WHERE m.teacher_id IS NOT NULL OR mt.teacher_id IS NOT NULL OR tsa.teacher_id IS NOT NULL
       `, [normalizedSection, userId]);
@@ -3992,13 +4039,13 @@ app.get('/api/chat/available-users', authenticateToken, async (req, res) => {
       
       // Get sections from modules this teacher created
       const moduleSections = await pool.query(
-        `SELECT DISTINCT UPPER(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) as section 
+        `SELECT DISTINCT UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) as section 
          FROM modules WHERE teacher_id = $1`, [userId]
       );
 
       // Get sections from tests this teacher created
       const testSections = await pool.query(
-        `SELECT DISTINCT UPPER(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) as section 
+        `SELECT DISTINCT UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) as section 
          FROM mcq_tests WHERE teacher_id = $1`, [userId]
       );
 
@@ -4045,7 +4092,7 @@ app.get('/api/chat/available-users', authenticateToken, async (req, res) => {
         const result = await pool.query(`
           SELECT id, name, email, class_dept, section
           FROM students
-          WHERE UPPER(REGEXP_REPLACE(REGEXP_REPLACE(class_dept || ' ' || section, '[-_]', ' ', 'g'), '\\s+', ' ', 'g')) = ANY($1::text[])
+          WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(class_dept || ' ' || section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = ANY($1::text[])
           ORDER BY class_dept, section, name
         `, [sections]);
         sectionStudents = result.rows;

@@ -37,7 +37,15 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --dir /data
+      --dbfilename dump.rdb
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -130,7 +138,7 @@ services:
   # Full local Jitsi stack for offline video conferencing
   
   jitsi-web:
-    image: jitsi/web:stable-9823
+    image: jitsi/web:stable-8719
     container_name: lms-jitsi-web
     ports:
       - "8443:443"
@@ -149,9 +157,9 @@ services:
       - XMPP_MUC_DOMAIN=muc.meet.jitsi
       - XMPP_RECORDER_DOMAIN=recorder.meet.jitsi
     volumes:
-      - jitsi_web_config:/config:Z
-      - jitsi_web_certs:/config/keys:Z
-      - jitsi_transcripts:/usr/share/jitsi-meet/transcripts:Z
+      - jitsi_web_config:/config
+      - jitsi_web_certs:/config/keys
+      - jitsi_transcripts:/usr/share/jitsi-meet/transcripts
     depends_on:
       - jitsi-prosody
     networks:
@@ -161,7 +169,7 @@ services:
     restart: unless-stopped
 
   jitsi-prosody:
-    image: jitsi/prosody:stable-9823
+    image: jitsi/prosody:stable-8719
     container_name: lms-jitsi-prosody
     expose:
       - "5222"
@@ -191,8 +199,8 @@ services:
       - XMPP_MUC_MODULES=muc_meeting_id
       - XMPP_RECORDER_DOMAIN=recorder.meet.jitsi
     volumes:
-      - jitsi_prosody_config:/config:Z
-      - jitsi_prosody_plugins:/prosody-plugins-custom:Z
+      - jitsi_prosody_config:/config
+      - jitsi_prosody_plugins:/prosody-plugins-custom
     networks:
       lms-network:
         aliases:
@@ -200,7 +208,7 @@ services:
     restart: unless-stopped
 
   jitsi-jicofo:
-    image: jitsi/jicofo:stable-9823
+    image: jitsi/jicofo:stable-8719
     container_name: lms-jitsi-jicofo
     environment:
       - AUTH_TYPE=internal
@@ -219,13 +227,13 @@ services:
     depends_on:
       - jitsi-prosody
     volumes:
-      - jitsi_jicofo_config:/config:Z
+      - jitsi_jicofo_config:/config
     networks:
       - lms-network
     restart: unless-stopped
 
   jitsi-jvb:
-    image: jitsi/jvb:stable-9823
+    image: jitsi/jvb:stable-8719
     container_name: lms-jitsi-jvb
     ports:
       - "10000:10000/udp"
@@ -246,7 +254,7 @@ services:
     depends_on:
       - jitsi-prosody
     volumes:
-      - jitsi_jvb_config:/config:Z
+      - jitsi_jvb_config:/config
     networks:
       - lms-network
     restart: unless-stopped

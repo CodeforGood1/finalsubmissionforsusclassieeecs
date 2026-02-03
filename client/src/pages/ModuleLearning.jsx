@@ -366,15 +366,22 @@ function ModuleLearning() {
                       allowFullScreen
                     />
                   </div>
-                ) : currentStep.content?.includes('cloudinary') || currentStep.content?.endsWith('.mp4') ? (
-                  <video controls className="w-full rounded-2xl bg-slate-900">
-                    <source src={currentStep.content} type="video/mp4" />
+                ) : (
+                  /* Support ALL video URLs - local uploads, cloudinary, any .mp4/.webm/.ogg */
+                  <video 
+                    controls 
+                    className="w-full rounded-2xl bg-slate-900"
+                    style={{ maxHeight: '70vh' }}
+                  >
+                    <source 
+                      src={currentStep.content?.startsWith('http') ? currentStep.content : 
+                           currentStep.content?.startsWith('/') ? currentStep.content :
+                           `/uploads/videos/${currentStep.content}`} 
+                      type={currentStep.content?.endsWith('.webm') ? 'video/webm' : 
+                            currentStep.content?.endsWith('.ogg') ? 'video/ogg' : 'video/mp4'} 
+                    />
                     Your browser does not support video playback.
                   </video>
-                ) : (
-                  <div className="bg-slate-100 p-8 rounded-2xl text-center">
-                    <p className="text-slate-500">Video URL: {currentStep.content}</p>
-                  </div>
                 )}
               </div>
             )}

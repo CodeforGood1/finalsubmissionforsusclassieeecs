@@ -8,6 +8,8 @@ yarn-error.log*
 .env
 .env.local
 .env.*.local
+backend/.env
+client/.env
 
 # Build outputs
 dist/
@@ -53,3 +55,26 @@ setup-notifications.sh
 start-local.ps1
 *-sample.csv
 dsp-test-sample.csv
+
+# Docker volumes and data
+postgres-data/
+redis-data/
+jitsi*/
+logs/
+nginx/logs/
+nginx/ssl/
+
+# Certificates and keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Package lock files (optional - keep package-lock.json for reproducibility)
+# package-lock.json
+# yarn.lock

@@ -116,7 +116,7 @@ export default function TestKnowledge() {
           <div className="bg-white border border-slate-100 p-10 rounded-[2.5rem] shadow-sm">
             <p className="text-6xl font-black text-emerald-600 mb-2">{result.percentage}%</p>
             <p className="text-slate-500 mb-6">
-              You scored <span className="font-bold text-emerald-600">{result.score}</span> out of {currentTest?.total_questions || result.score}
+              You scored <span className="font-bold text-emerald-600">{result.score}</span> out of {result.total_questions || result.score}
             </p>
             <p className="text-sm text-slate-400">
               {result.status === 'late' ? 'Submitted after deadline' : 'Submitted on time'}
