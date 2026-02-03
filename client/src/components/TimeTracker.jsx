@@ -59,7 +59,9 @@ function TimeTracker() {
   // Save session to localStorage (called every second)
   const saveToLocal = useCallback((seconds) => {
     try {
-      localStorage.setItem(getStorageKey(), JSON.stringify({
+      // Get fresh key every time
+      const key = getStorageKey();
+      localStorage.setItem(key, JSON.stringify({
         date: getTodayKey(),
         seconds: seconds,
         ts: Date.now()
@@ -67,21 +69,10 @@ function TimeTracker() {
     } catch (e) { /* ignore */ }
   }, []);
 
-  // Load session from localStorage
+  // Load session from localStorage - NOT USED anymore (always start fresh)
   const loadFromLocal = useCallback(() => {
-    try {
-      const raw = localStorage.getItem(getStorageKey());
-      if (!raw) return 0;
-      const data = JSON.parse(raw);
-      // Only restore if same day AND less than 2 hours ago (session still valid)
-      if (data.date === getTodayKey() && (Date.now() - data.ts) < 7200000) {
-        return data.seconds || 0;
-      }
-      localStorage.removeItem(getStorageKey());
-      return 0;
-    } catch (e) {
-      return 0;
-    }
+    // Always return 0 - we want fresh start on every login
+    return 0;
   }, []);
 
   // Save time delta to server
