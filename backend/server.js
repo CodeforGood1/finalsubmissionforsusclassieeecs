@@ -1020,10 +1020,15 @@ app.post('/api/admin/register-student', authenticateToken, adminOnly, async (req
     console.log("Validation passed, hashing password...");
     const hashed = await bcrypt.hash(password, SALT_ROUNDS);
     
+    // Normalize class_dept and section to prevent duplicates (ECE A = ece a = ECE a)
+    const normalizedClass = class_dept ? class_dept.trim().toUpperCase() : null;
+    const normalizedSection = section ? section.trim().toUpperCase() : null;
+    
     console.log("Password hashed, inserting into database...");
+    console.log("Normalized Class:", normalizedClass, "Normalized Section:", normalizedSection);
     const query = `INSERT INTO students (name, email, password, reg_no, class_dept, section, media) 
                    VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`;
-    const values = [name, email, hashed, reg_no, class_dept, section, media || {}];
+    const values = [name, email, hashed, reg_no, normalizedClass, normalizedSection, media || {}];
     
     const result = await pool.query(query, values);
     const studentId = result.rows[0].id;
@@ -1126,9 +1131,13 @@ app.put('/api/admin/student/:id', authenticateToken, adminOnly, async (req, res)
   const { id } = req.params;
   const { name, email, reg_no, class_dept, section } = req.body;
   try {
+    // Normalize class_dept and section to prevent duplicates
+    const normalizedClass = class_dept ? class_dept.trim().toUpperCase() : null;
+    const normalizedSection = section ? section.trim().toUpperCase() : null;
+    
     await pool.query(
       'UPDATE students SET name = $1, email = $2, reg_no = $3, class_dept = $4, section = $5 WHERE id = $6',
-      [name, email, reg_no, class_dept, section, id]
+      [name, email, reg_no, normalizedClass, normalizedSection, id]
     );
     res.json({ success: true, message: "Student updated successfully" });
   } catch (err) {

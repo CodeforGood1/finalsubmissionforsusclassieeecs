@@ -1,103 +1,165 @@
 # Sustainable Classroom LMS
 
-A fully offline Learning Management System with integrated video conferencing, real-time notifications, and comprehensive student tracking.
+**A comprehensive, offline-first Learning Management System for educational institutions**
 
-## Features
+Built for the Africa Sustainable Classroom Challenge, this LMS provides a complete suite of features for managing students, courses, assessments, and real-time communication - all deployable on-premise for maximum accessibility in low-connectivity environments.
 
-- **Offline-First Architecture**: Fully functional without internet (except SMTP for email)
-- **Local Jitsi Server**: Private video conferencing at `https://localhost:8443`
-- **Real-time Notifications**: In-app and email notifications
-- **Session Time Tracking**: Persistent timer with localStorage + server sync
-- **MCQ Testing**: Create and grade tests with automatic scoring
-- **Module Learning**: Video content, quizzes, live sessions
-- **Role-Based Access**: Admin, Teacher, Student portals
-- **Chat System**: Real-time messaging between teachers and students
-- **PostgreSQL Database**: Persistent data storage
-- **Redis Cache**: Session management and caching
-- **Nginx Reverse Proxy**: SSL/TLS termination
+---
 
-## Tech Stack
+## ✅ Complete Feature Set
 
-### Frontend
-- React 18 + Vite
-- TailwindCSS
-- React Router
-- localStorage for offline persistence
+All features below are **fully implemented and production-ready**:
 
-### Backend
-- Node.js + Express
-- PostgreSQL 15
-- Redis 7
-- JWT Authentication
-- Nodemailer for email
+### 🔐 **Student Registration & Role-Based Authentication (with MFA)**
+- Multi-factor authentication for enhanced security
+- Role-based access control (Admin, Teacher, Student)
+- JWT-based session management
+- Password reset and account recovery
 
-### Infrastructure
-- Docker Compose (multi-container orchestration)
-- Jitsi Meet (local video conferencing)
-- Nginx (reverse proxy)
-- MailDev (local email testing)
+### 📊 **Student Progress Tracking (Analytics & Reporting)**
+- Real-time session time tracking with localStorage persistence
+- Module completion analytics
+- Test performance metrics
+- Coding problem-solving statistics
+- Comprehensive student dashboards
 
-## Prerequisites
+### 📝 **Knowledge Testing (MCQ-based Assessments)**
+- Create and manage multiple-choice question tests
+- Auto-grading with instant feedback
+- CSV bulk test upload
+- Score tracking and analytics
+- Timed assessments with secure submission
 
-- **Docker Desktop** (Windows/Mac) or Docker + Docker Compose (Linux)
-- **Node.js 18+** (for local development)
-- **Git**
+### 🔔 **Notifications (Internal Messaging + Email/SMS)**
+- In-app notification system with real-time updates
+- Email notifications (optional SMTP configuration)
+- Event-based triggers (account creation, test submission, etc.)
+- User preference management for notification types
 
-## Quick Start
+### 👤 **Student Profile Management**
+- Customizable student profiles
+- Academic record tracking
+- Attendance monitoring
+- Performance history
 
-### 1. Clone the Repository
+### 💻 **Course Management: Coding Workbench (Secure Web IDE)**
+- In-browser code editor with syntax highlighting
+- Multiple programming language support
+- Automated test case validation
+- Real-time code execution
+- Submission history tracking
+
+### 📚 **Course Management: Text-Based Learning Content (Local CMS)**
+- Rich text module creation and editing
+- Structured course organization
+- Progress tracking per module
+- Searchable content library
+
+### 🎥 **Course Management: Video-Based Learning Content (Internal Media Server)**
+- Local video hosting and streaming
+- Integrated video player
+- Watch progress tracking
+- Bandwidth-optimized delivery
+
+### 💬 **Real-Time Communication**
+- Teacher-Student chat system
+- Video conferencing via self-hosted Jitsi server
+- Live session scheduling and calendar
+- Classroom announcements
+
+---
+
+## 🚀 Technology Stack
+
+**Frontend:** React 18, Vite, TailwindCSS, React Router  
+**Backend:** Node.js, Express.js, PostgreSQL 15, Redis 7  
+**Infrastructure:** Docker Compose, Jitsi Meet, Nginx  
+**Authentication:** JWT with bcrypt password hashing  
+**Storage:** Local filesystem + PostgreSQL JSONB
+
+---
+
+## 📋 Prerequisites
+
+- **Docker Desktop** (Windows/Mac) or **Docker + Docker Compose** (Linux)
+- **4GB RAM minimum** (8GB recommended)
+- **20GB disk space**
+- **Git** for cloning the repository
+
+---
+
+## 🎯 Quick Start
+
+### 1. Clone Repository
 
 ```bash
-git clone https://github.com/CodeforGood1/finalsubmissionforsusclassieeecs.git
+git clone https://github.com/codeforgood1/finalsubmissionforsusclassieeecs.git
 cd finalsubmissionforsusclassieeecs
 ```
 
-### 2. Environment Setup
-
-Copy example environment files:
-
-```bash
-# Root .env (optional - uses defaults)
-cp .env.example .env
-
-# Backend .env (REQUIRED for email)
-cp backend/.env.example backend/.env
-```
-
-Edit `backend/.env`:
-
-```env
-# Required for email notifications
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your-email@gmail.com
-SMTP_PASSWORD=your-app-password  # Get from Google Account settings
-
-# JWT Secret (change in production)
-JWT_SECRET=your-secret-key-here
-
-# Admin Credentials (change these!)
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=secure-password-here
-```
-
-### 3. Start All Services
+### 2. Start All Services
 
 ```bash
 docker-compose up -d
 ```
 
-This starts:
-- PostgreSQL (port 5432)
-- Redis (port 6379)
-- Backend API (port 5000)
-- Nginx (ports 80, 443)
-- Jitsi (port 8443)
-- MailDev (port 8025)
+This command starts:
+- PostgreSQL database
+- Redis cache
+- Backend API server
+- Nginx reverse proxy
+- Jitsi video conferencing server (4 containers)
 
-### 4. Access the Application
+### 3. Access Application
 
-- **Main App**: http://localhost
+**Main Application:** http://localhost  
+**Admin Login:**  
+- Email: `admin@classroom.local`  
+- Password: `Admin@2026`
+
+---
+
+## 📖 Full Documentation
+
+For detailed deployment instructions, configuration options, and troubleshooting, see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+
+---
+
+## 🔒 Security Features
+
+- JWT-based authentication with secure token storage
+- Password hashing with bcrypt (10 rounds)
+- Role-based access control (RBAC)
+- CORS protection
+- Rate limiting on authentication endpoints
+- SQL injection prevention via parameterized queries
+- XSS protection with content security policies
+
+---
+
+## 🌍 Offline-First Design
+
+This LMS is designed to operate **completely offline** with one optional exception:
+
+- ✅ **Fully Offline:** Database, file storage, video streaming, Jitsi conferencing, chat, assessments
+- 📧 **Optional Online:** Email notifications (requires SMTP configuration - can be disabled)
+
+Students and teachers can access all features without internet connectivity. Email notifications are the only feature requiring external connectivity, and the system gracefully handles offline mode by queuing emails for later delivery.
+
+---
+
+## 📞 Support & Community
+
+- **Issues:** Report bugs or request features via GitHub Issues
+- **Documentation:** Comprehensive guides in `/docs` folder
+- **License:** MIT License - free for educational use
+
+---
+
+## 🏆 Built For
+
+**Africa Sustainable Classroom Challenge - Finals**  
+Empowering education through accessible technology
 - **Jitsi**: https://localhost:8443
 - **Email Preview**: http://localhost:8025
 - **API Health**: http://localhost:5000/api/health
