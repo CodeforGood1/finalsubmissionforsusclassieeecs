@@ -148,10 +148,143 @@ Students and teachers can access all features without internet connectivity. Ema
 
 ---
 
+## � Technical Implementation
+
+### Architecture Overview
+
+**Multi-Container Docker Setup:**
+- PostgreSQL 15 (primary data store)
+- Redis 7 (session cache)
+- Node.js/Express backend API
+- React 18/Vite frontend (SPA)
+- Nginx reverse proxy
+- Jitsi Meet stack (4 containers: web, prosody, jicofo, jvb)
+
+### Key Technical Features
+
+**Database Schema:**
+- Role-based tables: `admins`, `teachers`, `students`
+- Content management: `modules`, `mcq_tests`, `coding_problems`
+- Progress tracking: `test_submissions`, `student_submissions`, `module_completion`
+- Notifications: `in_app_notifications`, `notification_preferences`
+- Views for analytics: `v_teacher_students`, `v_student_coding_progress`
+
+**Authentication & Security:**
+- JWT tokens with 24-hour expiry
+- bcrypt password hashing (10 rounds)
+- Role-based middleware (`adminOnly`, `teacherOnly`, `studentOnly`)
+- CORS protection with origin whitelisting
+- SQL injection prevention via parameterized queries
+- XSS protection with CSP headers
+
+**Real-Time Features:**
+- localStorage for timer persistence (syncs every 30s)
+- Polling-based notifications (5-second intervals)
+- WebSocket-ready architecture for future enhancements
+
+**Offline Capabilities:**
+- localStorage session persistence
+- Email queuing system for offline scenarios
+- Graceful degradation when SMTP unavailable
+- Local file storage (no cloud dependencies)
+
+**Video Conferencing:**
+- Self-hosted Jitsi Meet at `https://localhost:8443`
+- No external API calls or cloud services
+- Peer-to-peer video streaming
+- Recording capability (local storage)
+
+**Data Normalization:**
+- Case-insensitive class/section handling (e.g., "ECE A" = "ece a")
+- Email format validation with regex
+- Automatic timezone handling
+- JSON validation for complex fields
+
+### API Endpoints
+
+**Authentication:**
+- `POST /api/auth/login` - User login (all roles)
+- `POST /api/auth/logout` - Session termination
+- `POST /api/auth/send-otp` - MFA email delivery
+- `POST /api/auth/verify-otp` - OTP validation
+
+**Admin Operations:**
+- `POST /api/admin/register-teacher` - Teacher account creation
+- `POST /api/admin/register-student` - Student registration with auto-notification
+- `PUT /api/admin/teacher/:id` - Update teacher details
+- `PUT /api/admin/student/:id` - Update student details
+
+**Teacher Operations:**
+- `POST /api/teacher/test/create` - MCQ test creation (multi-section)
+- `POST /api/teacher/module/create` - Learning module creation
+- `GET /api/teacher/tests/:section` - Section test listing
+- `GET /api/teacher/students/:section` - Student roster
+
+**Student Operations:**
+- `GET /api/student/tests` - Available tests listing
+- `POST /api/student/test/submit` - Test submission with auto-grading
+- `GET /api/student/modules` - Course modules access
+- `POST /api/student/update-time` - Session time tracking
+
+**Notifications:**
+- `GET /api/notifications` - In-app notifications (paginated)
+- `POST /api/notifications/mark-read` - Mark notification as read
+- `PUT /api/notifications/preferences` - Update notification settings
+
+### Deployment
+
+**Docker Compose Services:**
+```yaml
+services:
+  postgres:      # Port 5432 - Primary database
+  redis:         # Port 6379 - Session cache
+  backend:       # Port 5000 - API server
+  nginx:         # Ports 80/443 - Reverse proxy
+  jitsi-web:     # Port 8443 - Video conferencing UI
+  jitsi-prosody: # XMPP server
+  jitsi-jicofo:  # Conference focus
+  jitsi-jvb:     # Video bridge
+  mailhog:       # Port 8025 - Email testing
+```
+
+**Environment Variables:**
+- `DATABASE_URL` - PostgreSQL connection string
+- `JWT_SECRET` - Token signing key
+- `ADMIN_EMAIL` / `ADMIN_PASSWORD` - Default admin credentials
+- `SMTP_*` - Optional email configuration
+- `JITSI_SERVER_URL` - Local Jitsi instance URL
+
+**Build Process:**
+1. Frontend: `npm run build` (Vite production build)
+2. Deploy: Copy `client/dist` → `backend/public`
+3. Backend: Docker multi-stage build with bcrypt compilation
+4. Database: Auto-migration on container start
+
+### Performance Optimizations
+
+- **Caching:** Redis for session data, in-memory cache for teacher allocations
+- **Indexing:** Database indexes on email, reg_no, sections, timestamps
+- **Pagination:** All list endpoints support limit/offset
+- **Connection pooling:** PostgreSQL pool with 20 max connections
+- **Compression:** Gzip enabled on Nginx for static assets
+- **CDN-free:** All assets served locally (no external dependencies)
+
+### Security Considerations
+
+- Database credentials isolated in `.env` (gitignored)
+- JWT secrets must be rotated in production
+- HTTPS enforced for Jitsi (self-signed certs acceptable for local)
+- File upload validation (size limits, type checking)
+- Rate limiting on auth endpoints (100 req/15min)
+- SQL injection protected via parameterized queries
+- XSS protection with Content Security Policy headers
+
+---
+
 ## 📞 Support & Community
 
 - **Issues:** Report bugs or request features via GitHub Issues
-- **Documentation:** Comprehensive guides in `/docs` folder
+- **Documentation:** See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed setup
 - **License:** MIT License - free for educational use
 
 ---
@@ -159,46 +292,7 @@ Students and teachers can access all features without internet connectivity. Ema
 ## 🏆 Built For
 
 **Africa Sustainable Classroom Challenge - Finals**  
-Empowering education through accessible technology
-- **Jitsi**: https://localhost:8443
-- **Email Preview**: http://localhost:8025
-- **API Health**: http://localhost:5000/api/health
-
-### 5. Default Credentials
-
-After seeding, use these to login:
-
-**Teachers:**
-- Email: `a@b.com` | Password: `password123`
-
-**Students:**
-- Email: `a@b.com` | Password: `password123`
-
-**Admin:**
-- Email: Set in `backend/.env` (ADMIN_EMAIL)
-- Password: Set in `backend/.env` (ADMIN_PASSWORD)
-
-## Development
-
-### Frontend Development
-
-```bash
-cd client
-npm install
-npm run dev  # Starts dev server on port 5173
-```
-
-### Backend Development
-
-```bash
-cd backend
-npm install
-npm run dev  # Starts with nodemon
-```
-
-### Database Seeding
-
-```bash
+Empowering education through accessible technologybash
 docker exec -it lms-backend node /app/backend/seed.js
 ```
 
