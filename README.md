@@ -74,6 +74,8 @@ All features below are **fully implemented and production-ready**:
 **Frontend:** React 18, Vite, TailwindCSS, React Router  
 **Backend:** Node.js, Express.js, PostgreSQL 15, Redis 7  
 **Infrastructure:** Docker Compose, Jitsi Meet, Nginx  
+**Email:** MailHog (local email capture)  
+**Monitoring:** Prometheus + Grafana (optional)  
 **Authentication:** JWT with bcrypt password hashing  
 **Storage:** Local filesystem + PostgreSQL JSONB
 
@@ -108,11 +110,21 @@ This command starts:
 - Redis cache
 - Backend API server
 - Nginx reverse proxy
+- MailHog (email capture - view at http://localhost:8025)
 - Jitsi video conferencing server (4 containers)
+
+**Optional Monitoring Stack:**
+```bash
+docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+```
+Adds:
+- Prometheus (metrics - http://localhost:9090)
+- Grafana (dashboards - http://localhost:3001, admin/Admin@2026)
 
 ### 3. Access Application
 
 **Main Application:** http://localhost  
+**MailHog (Email Viewer):** http://localhost:8025  
 **Admin Login:**  
 - Email: `admin@classroom.local`  
 - Password: `Admin@2026`
