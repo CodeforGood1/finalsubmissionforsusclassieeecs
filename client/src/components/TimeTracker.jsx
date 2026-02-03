@@ -10,16 +10,19 @@ const SAVE_INTERVAL_MS = 30 * 1000; // Save to server every 30 seconds
 
 // Get user-specific storage key
 const getStorageKey = () => {
-  const user = localStorage.getItem('user');
+  const user = localStorage.getItem('user_data');
   if (user) {
     try {
       const userData = JSON.parse(user);
-      return `timetracker_session_${userData.id}`;
+      // Use student ID for storage key
+      if (userData.id) {
+        return `timetracker_session_${userData.id}`;
+      }
     } catch (e) {
-      return 'timetracker_session';
+      console.warn('[Timer] Failed to parse user data');
     }
   }
-  return 'timetracker_session';
+  return 'timetracker_session_default';
 };
 
 function TimeTracker() {
@@ -109,6 +112,26 @@ function TimeTracker() {
     if (!token) return;
 
     const init = async () => {
+      // 0. Clear any timer data from other users (clean start)
+      const userData = localStorage.getItem('user_data');
+      let currentUserId = null;
+      try {
+        if (userData) {
+          currentUserId = JSON.parse(userData).id;
+        }
+      } catch (e) { /* ignore */ }
+
+      // Clear all old timer keys except current user's
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('timetracker_session_')) {
+          const userIdInKey = key.replace('timetracker_session_', '');
+          if (userIdInKey !== String(currentUserId)) {
+            localStorage.removeItem(key);
+            console.log('[Timer] Cleared old timer data:', key);
+          }
+        }
+      });
+
       // 1. Restore session from localStorage immediately
       const restored = loadFromLocal();
       setSessionSeconds(restored);
