@@ -101,6 +101,8 @@ services:
       REDIS_ENABLED: "true"
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      # Code Execution (Local Piston)
+      PISTON_URL: http://piston:2000
     depends_on:
       postgres:
         condition: service_healthy

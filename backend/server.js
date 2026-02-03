@@ -18,6 +18,7 @@ const QRCode = require('qrcode');
 // Local services for on-premise deployment
 const localStorageService = require('./localStorageService');
 const localEmailService = require('./localEmailService');
+const { executeCode } = require('./local-code-executor');
 
 // Initialize local storage directories
 localStorageService.ensureUploadDirs();
@@ -2592,24 +2593,15 @@ app.get('/api/teacher/module/:moduleId/coding-submissions', authenticateToken, a
 app.post('/api/student/execute-code', authenticateToken, async (req, res) => {
     try {
         const { code, language, stdin } = req.body;
-
-        const response = await fetch("https://emkc.org/api/v2/piston/execute", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                language: language || 'python',
-                version: "*",
-                files: [{ content: code }],
-                stdin: stdin || '',
-            }),
-        });
-
-        const result = await response.json();
+        
+        // Use local code executor (works completely offline)
+        const result = await executeCode(code, language || 'python', stdin || '');
+        
         res.json({
-            success: true,
-            output: result.run?.stdout || result.run?.output || '',
-            stderr: result.run?.stderr || '',
-            error: result.run?.stderr ? true : false
+            success: !result.error,
+            output: result.stdout || '',
+            stderr: result.stderr || '',
+            error: result.error
         });
 
     } catch (err) {
@@ -2632,19 +2624,9 @@ app.post('/api/student/submit-code', authenticateToken, async (req, res) => {
 
         // --- EVALUATION LOOP ---
         for (const tc of testCases) {
-            const response = await fetch("https://emkc.org/api/v2/piston/execute", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    language: language,
-                    version: "*",
-                    files: [{ content: code }],
-                    stdin: tc.input,
-                }),
-            });
-
-            const result = await response.json();
-            const actualOutput = (result.run.stdout || "").trim();
+            // Use local code executor
+            const result = await executeCode(code, language, tc.input);
+            const actualOutput = (result.stdout || "").trim();
             
             // Compare output with expected result
             if (actualOutput === tc.expected.trim()) {

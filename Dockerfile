@@ -20,10 +20,15 @@ FROM node:20-alpine
 
 WORKDIR /app/backend
 
-# Only need postgresql-client and curl for runtime
+# Install PostgreSQL client, curl, and language runtimes for code execution
 RUN apk add --no-cache \
     postgresql-client \
-    curl
+    curl \
+    python3 \
+    py3-pip \
+    openjdk17 \
+    g++ \
+    make
 
 COPY backend/package*.json ./
 
