@@ -82,10 +82,14 @@ function AdminDashboard() {
 
   // Logout handler
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('role');
-    navigate('/login');
+    // Clear all timer data
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('timetracker_session')) {
+        localStorage.removeItem(key);
+      }
+    });
+    localStorage.clear();
+    window.location.href = '/login';
   };
 
   const toggleSectionSelection = (section) => {
