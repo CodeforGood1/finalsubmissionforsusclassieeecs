@@ -2588,6 +2588,36 @@ app.get('/api/teacher/module/:moduleId/coding-submissions', authenticateToken, a
   }
 });
 
+// NEW ENDPOINT: Execute code without saving (for "Run" button)
+app.post('/api/student/execute-code', authenticateToken, async (req, res) => {
+    try {
+        const { code, language, stdin } = req.body;
+
+        const response = await fetch("https://emkc.org/api/v2/piston/execute", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                language: language || 'python',
+                version: "*",
+                files: [{ content: code }],
+                stdin: stdin || '',
+            }),
+        });
+
+        const result = await response.json();
+        res.json({
+            success: true,
+            output: result.run?.stdout || result.run?.output || '',
+            stderr: result.run?.stderr || '',
+            error: result.run?.stderr ? true : false
+        });
+
+    } catch (err) {
+        console.error("CODE EXECUTION ERROR:", err.message);
+        res.status(500).json({ error: "Execution failed: " + err.message });
+    }
+});
+
 app.post('/api/student/submit-code', authenticateToken, async (req, res) => {
     try {
         const { moduleId, code, language, testCases } = req.body;

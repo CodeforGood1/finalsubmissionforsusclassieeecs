@@ -115,18 +115,24 @@ function ModuleLearning() {
     setIsProcessing(true);
     setOutput('> Compiling...');
     try {
-      const res = await fetch("https://emkc.org/api/v2/piston/execute", {
+      const res = await fetch(`${API_BASE_URL}/api/student/execute-code`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
+          code: code,
           language: langMap[language]?.name || 'python',
-          version: langMap[language]?.version || '3.10.0',
-          files: [{ content: code }],
           stdin: customInput
         }),
       });
       const data = await res.json();
-      setOutput(data.run?.output || data.run?.stderr || "No output.");
+      if (data.error) {
+        setOutput(data.stderr || "Execution error");
+      } else {
+        setOutput(data.output || data.stderr || "No output.");
+      }
     } catch (err) {
       setOutput("Execution failed: " + err.message);
     } finally {
@@ -155,19 +161,21 @@ function ModuleLearning() {
         const tc = testCases[i];
         setOutput(`> Running test case ${i + 1} of ${testCases.length}...`);
         
-        const res = await fetch("https://emkc.org/api/v2/piston/execute", {
+        const res = await fetch(`${API_BASE_URL}/api/student/execute-code`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
           body: JSON.stringify({
+            code: code,
             language: langMap[language]?.name || 'python',
-            version: langMap[language]?.version || '3.10.0',
-            files: [{ content: code }],
             stdin: tc.input || ''
           }),
         });
         
         const data = await res.json();
-        const actualOutput = (data.run?.stdout || data.run?.output || '').trim();
+        const actualOutput = (data.output || '').trim();
         const expectedOutput = (tc.expected || '').trim();
         const passed = actualOutput === expectedOutput;
         
@@ -552,7 +560,7 @@ function ModuleLearning() {
                   <div className={`p-4 rounded-xl ${codeResults.passedCount === codeResults.total ? 'bg-emerald-50' : 'bg-amber-50'}`}>
                     <div className="flex items-center justify-between mb-4">
                       <p className="font-bold text-lg">
-                        {codeResults.passedCount === codeResults.total ? '🎉 All Tests Passed!' : `⚠️ ${codeResults.passedCount}/${codeResults.total} Tests Passed`}
+                        {codeResults.passedCount === codeResults.total ? 'All Tests Passed!' : `${codeResults.passedCount}/${codeResults.total} Tests Passed`}
                       </p>
                       <span className={`px-3 py-1 rounded-full text-sm font-bold ${
                         parseInt(codeResults.score) >= 70 ? 'bg-emerald-500 text-white' : 
@@ -565,8 +573,8 @@ function ModuleLearning() {
                       {codeResults.results.map((r, idx) => (
                         <div key={idx} className={`p-3 rounded-lg ${r.passed ? 'bg-emerald-100' : 'bg-red-100'}`}>
                           <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-lg ${r.passed ? 'text-emerald-600' : 'text-red-600'}`}>
-                              {r.passed ? '✓' : '✗'}
+                            <span className={`text-lg font-bold ${r.passed ? 'text-emerald-600' : 'text-red-600'}`}>
+                              {r.passed ? 'PASS' : 'FAIL'}
                             </span>
                             <span className="font-medium">Test Case {r.testCase}</span>
                             {r.isHidden && <span className="text-xs bg-slate-300 px-2 py-0.5 rounded">Hidden</span>}

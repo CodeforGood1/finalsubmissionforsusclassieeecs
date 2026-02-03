@@ -6,62 +6,62 @@ Built for the Africa Sustainable Classroom Challenge, this LMS provides a comple
 
 ---
 
-## ✅ Complete Feature Set
+## Complete Feature Set
 
 All features below are **fully implemented and production-ready**:
 
-### 🔐 **Student Registration & Role-Based Authentication (with MFA)**
+### Student Registration & Role-Based Authentication (with MFA)
 - Multi-factor authentication for enhanced security
 - Role-based access control (Admin, Teacher, Student)
 - JWT-based session management
 - Password reset and account recovery
 
-### 📊 **Student Progress Tracking (Analytics & Reporting)**
+### Student Progress Tracking (Analytics & Reporting)
 - Real-time session time tracking with localStorage persistence
 - Module completion analytics
 - Test performance metrics
 - Coding problem-solving statistics
 - Comprehensive student dashboards
 
-### 📝 **Knowledge Testing (MCQ-based Assessments)**
+### Knowledge Testing (MCQ-based Assessments)
 - Create and manage multiple-choice question tests
 - Auto-grading with instant feedback
 - CSV bulk test upload
 - Score tracking and analytics
 - Timed assessments with secure submission
 
-### 🔔 **Notifications (Internal Messaging + Email/SMS)**
+### Notifications (Internal Messaging + Email/SMS)
 - In-app notification system with real-time updates
 - Email notifications (optional SMTP configuration)
 - Event-based triggers (account creation, test submission, etc.)
 - User preference management for notification types
 
-### 👤 **Student Profile Management**
+### Student Profile Management
 - Customizable student profiles
 - Academic record tracking
 - Attendance monitoring
 - Performance history
 
-### 💻 **Course Management: Coding Workbench (Secure Web IDE)**
+### Course Management: Coding Workbench (Secure Web IDE)
 - In-browser code editor with syntax highlighting
 - Multiple programming language support
 - Automated test case validation
 - Real-time code execution
 - Submission history tracking
 
-### 📚 **Course Management: Text-Based Learning Content (Local CMS)**
+### Course Management: Text-Based Learning Content (Local CMS)
 - Rich text module creation and editing
 - Structured course organization
 - Progress tracking per module
 - Searchable content library
 
-### 🎥 **Course Management: Video-Based Learning Content (Internal Media Server)**
+### Course Management: Video-Based Learning Content (Internal Media Server)
 - Local video hosting and streaming
 - Integrated video player
 - Watch progress tracking
 - Bandwidth-optimized delivery
 
-### 💬 **Real-Time Communication**
+### Real-Time Communication
 - Teacher-Student chat system
 - Video conferencing via self-hosted Jitsi server
 - Live session scheduling and calendar
@@ -69,7 +69,7 @@ All features below are **fully implemented and production-ready**:
 
 ---
 
-## 🚀 Technology Stack
+## Technology Stack
 
 **Frontend:** React 18, Vite, TailwindCSS, React Router  
 **Backend:** Node.js, Express.js, PostgreSQL 15, Redis 7  
@@ -79,7 +79,7 @@ All features below are **fully implemented and production-ready**:
 
 ---
 
-## 📋 Prerequisites
+## Prerequisites
 
 - **Docker Desktop** (Windows/Mac) or **Docker + Docker Compose** (Linux)
 - **4GB RAM minimum** (8GB recommended)
@@ -88,7 +88,7 @@ All features below are **fully implemented and production-ready**:
 
 ---
 
-## 🎯 Quick Start
+## Quick Start
 
 ### 1. Clone Repository
 
@@ -119,13 +119,13 @@ This command starts:
 
 ---
 
-## 📖 Full Documentation
+## Full Documentation
 
 For detailed deployment instructions, configuration options, and troubleshooting, see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
 
 ---
 
-## 🔒 Security Features
+## Security Features
 
 - JWT-based authentication with secure token storage
 - Password hashing with bcrypt (10 rounds)
@@ -137,12 +137,12 @@ For detailed deployment instructions, configuration options, and troubleshooting
 
 ---
 
-## 🌍 Offline-First Design
+## Offline-First Design
 
 This LMS is designed to operate **completely offline** with one optional exception:
 
-- ✅ **Fully Offline:** Database, file storage, video streaming, Jitsi conferencing, chat, assessments
-- 📧 **Optional Online:** Email notifications (requires SMTP configuration - can be disabled)
+- **Fully Offline:** Database, file storage, video streaming, Jitsi conferencing, chat, assessments
+- **Optional Online:** Email notifications (requires SMTP configuration - can be disabled)
 
 Students and teachers can access all features without internet connectivity. Email notifications are the only feature requiring external connectivity, and the system gracefully handles offline mode by queuing emails for later delivery.
 
@@ -281,7 +281,7 @@ services:
 
 ---
 
-## 📞 Support & Community
+## Support & Community
 
 - **Issues:** Report bugs or request features via GitHub Issues
 - **Documentation:** See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed setup
@@ -289,7 +289,7 @@ services:
 
 ---
 
-## 🏆 Built For
+## Built For
 
 **Africa Sustainable Classroom Challenge - Finals**  
 Empowering education through accessible technologybash

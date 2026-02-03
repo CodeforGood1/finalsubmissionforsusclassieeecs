@@ -124,13 +124,13 @@ function NotificationBell() {
   // Get icon based on type
   const getIcon = (type) => {
     switch (type) {
-      case 'module': return '📚';
-      case 'test': return '📝';
-      case 'grade': return '🎓';
-      case 'deadline': return '⏰';
-      case 'submission': return '✅';
-      case 'announcement': return '📢';
-      default: return '🔔';
+      case 'module': return '[M]';
+      case 'test': return '[T]';
+      case 'grade': return '[G]';
+      case 'deadline': return '[D]';
+      case 'submission': return '[S]';
+      case 'announcement': return '[A]';
+      default: return '[N]';
     }
   };
 
@@ -175,7 +175,6 @@ function NotificationBell() {
               </div>
             ) : notifications.length === 0 ? (
               <div className="p-8 text-center text-slate-400">
-                <span className="text-4xl block mb-2">🔔</span>
                 <p className="text-sm">No notifications yet</p>
               </div>
             ) : (

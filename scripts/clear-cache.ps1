@@ -129,7 +129,7 @@ Write-Host ""
 Write-Host "=== Cleanup Summary ===" -ForegroundColor Cyan
 Write-Host "Total space freed: ${totalFreed}MB (~$([math]::Round($totalFreed / 1024, 2))GB)" -ForegroundColor Green
 Write-Host ""
-Write-Host "💡 Tips:" -ForegroundColor Yellow
+Write-Host "Tips:" -ForegroundColor Yellow
 Write-Host "   - Restart Docker Desktop to apply changes"
 Write-Host "   - Run 'docker system df' to check Docker disk usage"
 Write-Host "   - Run 'docker system prune --all --volumes -f' for deep clean (removes everything)"

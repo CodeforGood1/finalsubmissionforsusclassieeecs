@@ -432,7 +432,7 @@ const Chat = ({ onClose }) => {
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {messages.length === 0 ? (
                   <div className="text-center text-slate-400 py-8">
-                    <p>No messages yet. Say hello! 👋</p>
+                    <p>No messages yet. Say hello!</p>
                   </div>
                 ) : (
                   messages.map((msg, index) => {

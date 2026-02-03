@@ -608,4 +608,4 @@ MIT License - Free for educational use
 
 ---
 
-**Congratulations!** Your Sustainable Classroom LMS is now deployed and ready to use. 🎉
+**Congratulations!** Your Sustainable Classroom LMS is now deployed and ready to use.

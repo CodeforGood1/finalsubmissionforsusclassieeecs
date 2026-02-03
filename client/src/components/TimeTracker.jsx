@@ -311,7 +311,7 @@ function TimeTracker() {
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900">
         <div className="text-center text-white">
           <div className="w-24 h-24 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-            <span className="text-5xl">🌿</span>
+            <span className="text-3xl font-bold">BREAK</span>
           </div>
           <h2 className="text-3xl font-bold mb-2">Break Time</h2>
           <p className="text-slate-400 mb-8">Look away from the screen, stretch, relax</p>
@@ -344,7 +344,7 @@ function TimeTracker() {
 
       {isPaused && (
         <div className="text-xs text-amber-600 font-bold mb-2">
-          ⏸ Paused (inactive)
+          PAUSED (inactive)
         </div>
       )}
 
