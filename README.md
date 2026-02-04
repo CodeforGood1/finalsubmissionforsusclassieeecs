@@ -2,7 +2,7 @@
 
 **A comprehensive, offline-first Learning Management System for educational institutions**
 
-Built for the Africa Sustainable Classroom Challenge, this LMS provides a complete suite of features for managing students, courses, assessments, and real-time communication - all deployable on-premise for maximum accessibility in low-connectivity environments.
+Built for the Africa Sustainable Classroom Challenge, this LMS provides a complete suite of features for managing students, courses, assessments, and real-time communication all of which are deployable on-premise for maximum accessibility in low-connectivity environments.
 
 ---
 
@@ -160,7 +160,7 @@ Students and teachers can access all features without internet connectivity. Ema
 
 ---
 
-## � Technical Implementation
+## Technical Implementation
 
 ### Architecture Overview
 
@@ -412,22 +412,15 @@ docker ps | grep postgres
 docker logs lms-database
 ```
 
-### Timer Not Persisting
-
-Timer saves to localStorage every second and syncs to server every 30 seconds. If it resets:
-1. Check browser localStorage is enabled
-2. Verify `/api/student/update-time` endpoint works
-3. Check server logs: `docker logs lms-backend`
 
 ## Security Notes
 
-⚠️ **IMPORTANT FOR PRODUCTION:**
+ **IMPORTANT FOR PRODUCTION:**
 
 1. Change all default passwords in `.env`
 2. Use strong JWT_SECRET
 3. Enable HTTPS (certificates in `nginx/ssl/`)
 4. Update CORS origins in `server.js`
-5. Never commit `.env` files to Git
 
 ## Folder Structure
 
@@ -457,4 +450,4 @@ For issues or questions, open an issue on GitHub.
 
 ---
 
-**Built with ❤️ for CodeforGood**
+**Built with ❤️ for IEEE CS Africa Sustainable Classroom Contest**
