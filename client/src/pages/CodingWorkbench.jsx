@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import API_BASE_URL from '../config/api';
 
 function CodingWorkbench() {
 
@@ -35,32 +36,31 @@ public class Solution {
 
   // 3. EXECUTION LOGIC
   const executeCode = async () => {
-    // Prevent execution if input box is empty to avoid Scanner errors
-    if (!userInput.trim()) {
-      setOutput("> ERROR: Input required. Please type a value in the STDIN box below.");
-      return;
-    }
-
     setIsRunning(true);
     setOutput("> Executing...");
 
     try {
-      const response = await fetch("https://emkc.org/api/v2/piston/execute", {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/api/student/execute-code`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
+          code: code,
           language: languageSpecs[language].name,
-          version: languageSpecs[language].version,
-          files: [{ content: code }],
-          stdin: userInput, 
+          stdin: userInput,
         }),
       });
 
       const data = await response.json();
       
-      // Prioritize error output to help debugging
-      const finalOutput = data.run.stderr || data.run.stdout || data.run.output || "> No output returned.";
-      setOutput(finalOutput);
+      if (data.error) {
+        setOutput(data.stderr || data.output || "> Execution error.");
+      } else {
+        setOutput(data.output || data.stderr || "> No output returned.");
+      }
     } catch (error) {
       setOutput(`> Connection Error: ${error.message}`);
     } finally {
@@ -123,10 +123,9 @@ public class Solution {
             </div>
 
             {/* STDIN BOX */}
-            <div className={`h-36 bg-white rounded-[1.5rem] shadow-lg border-2 transition-colors overflow-hidden flex flex-col ${!userInput.trim() ? 'border-amber-100' : 'border-emerald-100'}`}>
+            <div className={`h-36 bg-white rounded-[1.5rem] shadow-lg border-2 transition-colors overflow-hidden flex flex-col border-slate-100`}>
               <div className="px-5 py-2 border-b bg-slate-50/50 flex justify-between">
                 <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Program Input (stdin)</span>
-                {!userInput.trim() && <span className="text-[8px] font-bold text-amber-500 uppercase">Input Required</span>}
               </div>
               <textarea
                 value={userInput}

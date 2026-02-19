@@ -38,7 +38,7 @@ async function executeCode(code, language, stdin = '') {
       case 'python':
         sourceFile = path.join(tempDir, 'main.py');
         fs.writeFileSync(sourceFile, code);
-        command = `python "${sourceFile}"`;
+        command = `python3 "${sourceFile}"`;
         break;
 
       case 'javascript':
@@ -60,7 +60,7 @@ async function executeCode(code, language, stdin = '') {
       case 'cpp':
       case 'c++':
         sourceFile = path.join(tempDir, 'main.cpp');
-        const executable = path.join(tempDir, 'main.exe');
+        const executable = path.join(tempDir, 'main');
         fs.writeFileSync(sourceFile, code);
         command = `g++ "${sourceFile}" -o "${executable}" && "${executable}"`;
         break;

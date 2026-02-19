@@ -49,14 +49,15 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       imgSrc: ["'self'", "data:", "blob:"],
       mediaSrc: ["'self'", "blob:"],
-      connectSrc: ["'self'", "http://localhost:*", "ws://localhost:*", "http://*:5000", "ws://*:5000", "https://emkc.org"],
+      connectSrc: ["'self'", "http://localhost:*", "ws://localhost:*", "http://*:5000", "ws://*:5000"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
-      frameSrc: ["'self'", "https://localhost:8443", "https://localhost:*"],
+      frameSrc: ["'self'", "https://www.youtube.com", "https://youtube.com", "https://localhost:8443", "https://localhost:*"],
       upgradeInsecureRequests: null,
     },
   },
   crossOriginEmbedderPolicy: false,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   hsts: false,
 }));
 
@@ -814,17 +815,28 @@ app.post('/api/password-reset/request', async (req, res) => {
       [otp, expiry, user.id]
     );
     
-    // Send email via Mailjet
+    // Send OTP email via nodemailer
     console.log('[PASSWORD RESET] Sending OTP to:', email);
     
-    if (mailjet) {
+    const gmailUser = process.env.GOOGLE_EMAIL;
+    const gmailPass = process.env.GOOGLE_APP_PASSWORD;
+    
+    if (gmailUser && gmailPass) {
       try {
-        await mailjet.post('send', { version: 'v3.1' }).request({
-          Messages: [{
-            From: { Email: 'susclass.global@gmail.com', Name: 'SusClass' },
-            To: [{ Email: email }],
-            Subject: 'Password Reset Code',
-            HTMLPart: `
+        const nodemailer = require('nodemailer');
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST || 'smtp.gmail.com',
+          port: parseInt(process.env.SMTP_PORT || '587', 10),
+          secure: process.env.SMTP_SECURE === 'true',
+          auth: { user: gmailUser, pass: gmailPass },
+        });
+        const fromName = process.env.EMAIL_FROM_NAME || 'SusClass';
+        const fromAddr = process.env.EMAIL_FROM_ADDRESS || gmailUser;
+        await transporter.sendMail({
+          from: `"${fromName}" <${fromAddr}>`,
+          to: email,
+          subject: 'Password Reset Code',
+          html: `
               <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
                 <div style="background-color: #ffffff; padding: 30px; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.06);">
                   <h2 style="color: #111827; margin-bottom: 16px; font-weight: 700;">Password Reset Request</h2>
@@ -838,7 +850,6 @@ app.post('/api/password-reset/request', async (req, res) => {
                 </div>
               </div>
             `
-          }]
         });
         console.log('[PASSWORD RESET] Email sent successfully');
       } catch (emailErr) {
@@ -846,7 +857,7 @@ app.post('/api/password-reset/request', async (req, res) => {
         console.log('[PASSWORD RESET] OTP for testing:', otp);
       }
     } else {
-      console.log('[PASSWORD RESET] No Mailjet - OTP:', otp);
+      console.log('[PASSWORD RESET] No SMTP config - OTP:', otp);
     }
     
     res.json({ success: true, message: "Reset code sent to email" });
@@ -1842,21 +1853,44 @@ app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
     const moduleId = result.rows[0].id;
     
     // NOTIFICATION: Send to all students in ALL target sections
+    // Step 1: Create in-app notifications first (independent of email)
     try {
-      let allStudents = [];
-      for (const sec of targetSections) {
-        const sectionStudents = await notificationService.getStudentsInSection(sec, 'MODULE_PUBLISHED');
-        allStudents = [...allStudents, ...sectionStudents];
+      const sectionPlaceholders = targetSections.map((_, i) => `$${i + 1}`).join(', ');
+      const sectionStudentsResult = await pool.query(
+        `SELECT DISTINCT id, name, email FROM students 
+         WHERE LOWER(class_dept || ' ' || section) IN (${sectionPlaceholders})`,
+        targetSections.map(s => s.toLowerCase())
+      );
+      const uniqueStudents = sectionStudentsResult.rows;
+
+      for (const student of uniqueStudents) {
+        await pool.query(`
+          INSERT INTO in_app_notifications 
+          (recipient_type, recipient_id, type, title, message, link, metadata, created_at)
+          VALUES ('student', $1, 'module_published', $2, $3, $4, $5, CURRENT_TIMESTAMP)
+        `, [
+          student.id,
+          'New Module Available',
+          `${teacherName} published "${topic}". Start learning now!`,
+          `/learning/${moduleId}`,
+          JSON.stringify({
+            module_id: moduleId,
+            module_title: topic,
+            teacher_name: teacherName,
+            sections: targetSections,
+            subject: subject,
+            step_count: steps.length
+          })
+        ]);
       }
-      
-      // Deduplicate students by id
-      const uniqueStudents = [...new Map(allStudents.map(s => [s.id, s])).values()];
-      
-      if (uniqueStudents.length > 0) {
-        // Send email notifications
+      console.log(`Created in-app notifications for ${uniqueStudents.length} students across ${targetSections.length} sections`);
+
+      // Step 2: Try email notifications separately (non-blocking)
+      try {
+        const emailStudents = uniqueStudents.map(s => ({ id: s.id, type: 'student', email: s.email, name: s.name }));
         await notificationService.sendBatchEmails(
           'MODULE_PUBLISHED',
-          uniqueStudents,
+          emailStudents,
           (student) => ({
             student_name: student.name,
             section: targetSections.join(', '),
@@ -1867,30 +1901,8 @@ app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
           }),
           { module_id: moduleId, teacher_id: teacherId }
         );
-        
-        // Create in-app notifications for each student
-        for (const student of uniqueStudents) {
-          await pool.query(`
-            INSERT INTO in_app_notifications 
-            (recipient_type, recipient_id, type, title, message, link, metadata, created_at)
-            VALUES ('student', $1, 'module_published', $2, $3, $4, $5, CURRENT_TIMESTAMP)
-          `, [
-            student.id,
-            'New Module Available',
-            `${teacherName} published "${topic}". Start learning now!`,
-            `/learning/${moduleId}`,
-            JSON.stringify({
-              module_id: moduleId,
-              module_title: topic,
-              teacher_name: teacherName,
-              sections: targetSections,
-              subject: subject,
-              step_count: steps.length
-            })
-          ]);
-        }
-        
-        console.log(`Sent MODULE_PUBLISHED notifications to ${uniqueStudents.length} students across ${targetSections.length} sections`);
+      } catch (emailErr) {
+        console.error('Email notification error (non-blocking):', emailErr.message);
       }
     } catch (notifErr) {
       console.error('Notification error (non-blocking):', notifErr);
@@ -2244,64 +2256,65 @@ app.post('/api/student/module/:moduleId/complete', authenticateToken, async (req
             const module = moduleInfo.rows[0];
             const student = studentInfo.rows[0];
             
-            // Get teacher info
-            const teacher = await notificationService.getTeacherById(module.teacher_id);
+            // Create in-app notification for teacher first
+            await pool.query(`
+              INSERT INTO in_app_notifications 
+              (recipient_type, recipient_id, type, title, message, metadata, created_at)
+              VALUES ('teacher', $1, 'module_completion', $2, $3, $4, CURRENT_TIMESTAMP)
+            `, [
+              module.teacher_id,
+              'Student Completed Module',
+              `${student.name} has completed the module "${module.topic_title}" with all ${module.step_count} steps.`,
+              JSON.stringify({
+                student_id: studentId,
+                student_name: student.name,
+                module_id: moduleId,
+                module_title: module.topic_title,
+                section: module.section
+              })
+            ]);
+
+            // Also create achievement notification for the student
+            await pool.query(`
+              INSERT INTO in_app_notifications 
+              (recipient_type, recipient_id, type, title, message, metadata, created_at)
+              VALUES ('student', $1, 'module_achievement', $2, $3, $4, CURRENT_TIMESTAMP)
+            `, [
+              studentId,
+              'Module Completed!',
+              `Congratulations! You completed "${module.topic_title}" with all ${module.step_count} steps.`,
+              JSON.stringify({
+                module_id: moduleId,
+                module_title: module.topic_title,
+                section: module.section,
+                completion_time: new Date().toISOString(),
+                steps_completed: module.step_count
+              })
+            ]);
             
-            if (teacher) {
-              // Send email notification to teacher
-              await notificationService.sendEmail(
-                teacher.email,
-                'MODULE_COMPLETED_BY_STUDENT',
-                {
-                  teacher_name: teacher.name,
-                  student_name: student.name,
-                  student_reg_no: student.reg_no,
-                  module_title: module.topic_title,
-                  section: module.section,
-                  total_steps: module.step_count,
-                  completion_time: new Date().toLocaleString()
-                }
-              );
-              
-              // Create in-app notification for teacher
-              await pool.query(`
-                INSERT INTO in_app_notifications 
-                (recipient_type, recipient_id, type, title, message, metadata, created_at)
-                VALUES ('teacher', $1, 'module_completion', $2, $3, $4, CURRENT_TIMESTAMP)
-              `, [
-                module.teacher_id,
-                'Student Completed Module',
-                `${student.name} has completed the module "${module.topic_title}" with all ${module.step_count} steps.`,
-                JSON.stringify({
-                  student_id: studentId,
-                  student_name: student.name,
-                  module_id: moduleId,
-                  module_title: module.topic_title,
-                  section: module.section
-                })
-              ]);
-              
-              console.log(`[OK] Sent module completion notification to teacher ${teacher.name}`);
+            // Try email separately (non-blocking)
+            try {
+              const teacher = await notificationService.getTeacherById(module.teacher_id);
+              if (teacher) {
+                await notificationService.sendEmail(
+                  'MODULE_COMPLETED_BY_STUDENT',
+                  teacher,
+                  {
+                    teacher_name: teacher.name,
+                    student_name: student.name,
+                    student_reg_no: student.reg_no,
+                    module_title: module.topic_title,
+                    section: module.section,
+                    total_steps: module.step_count,
+                    completion_time: new Date().toLocaleString()
+                  }
+                );
+                console.log(`[OK] Sent module completion notification to teacher ${teacher.name}`);
+              }
+            } catch (emailErr) {
+              console.error('Module completion email error (non-blocking):', emailErr.message);
             }
           }
-          
-          // Also create achievement notification for the student
-          await pool.query(`
-            INSERT INTO in_app_notifications 
-            (recipient_type, recipient_id, type, title, message, metadata, created_at)
-            VALUES ('student', $1, 'module_achievement', $2, $3, $4, CURRENT_TIMESTAMP)
-          `, [
-            studentId,
-            'Module Completed!',
-            `Congratulations! You completed "${module.topic_title}" with all ${module.step_count} steps.`,
-            JSON.stringify({
-              module_id: moduleId,
-              module_title: module.topic_title,
-              section: module.section,
-              completion_time: new Date().toISOString(),
-              steps_completed: module.step_count
-            })
-          ]);
         } catch (notifErr) {
           console.error('Failed to send teacher notification:', notifErr);
           // Don't fail the completion if notification fails
@@ -2332,64 +2345,65 @@ app.post('/api/student/module/:moduleId/complete', authenticateToken, async (req
           const module = moduleInfo.rows[0];
           const student = studentInfo.rows[0];
           
-          // Get teacher info
-          const teacher = await notificationService.getTeacherById(module.teacher_id);
-          
-          if (teacher) {
-            // Send email notification to teacher
-            await notificationService.sendEmail(
-              teacher.email,
-              'MODULE_COMPLETED_BY_STUDENT',
-              {
-                teacher_name: teacher.name,
-                student_name: student.name,
-                student_reg_no: student.reg_no,
-                module_title: module.topic_title,
-                section: module.section,
-                total_steps: module.step_count,
-                completion_time: new Date().toLocaleString()
-              }
-            );
+          // Create in-app notification for teacher first
+          await pool.query(`
+            INSERT INTO in_app_notifications 
+            (recipient_type, recipient_id, type, title, message, metadata, created_at)
+            VALUES ('teacher', $1, 'module_completion', $2, $3, $4, CURRENT_TIMESTAMP)
+          `, [
+            module.teacher_id,
+            'Student Completed Module',
+            `${student.name} has completed the module "${module.topic_title}" with all ${module.step_count} steps.`,
+            JSON.stringify({
+              student_id: studentId,
+              student_name: student.name,
+              module_id: moduleId,
+              module_title: module.topic_title,
+              section: module.section
+            })
+          ]);
+
+          // Also create achievement notification for the student
+          await pool.query(`
+            INSERT INTO in_app_notifications 
+            (recipient_type, recipient_id, type, title, message, metadata, created_at)
+            VALUES ('student', $1, 'module_achievement', $2, $3, $4, CURRENT_TIMESTAMP)
+          `, [
+            studentId,
+            'Module Completed!',
+            `Congratulations! You completed "${module.topic_title}" with all ${module.step_count} steps.`,
+            JSON.stringify({
+              module_id: moduleId,
+              module_title: module.topic_title,
+              section: module.section,
+              completion_time: new Date().toISOString(),
+              steps_completed: module.step_count
+            })
+          ]);
             
-            // Create in-app notification for teacher
-            await pool.query(`
-              INSERT INTO in_app_notifications 
-              (recipient_type, recipient_id, type, title, message, metadata, created_at)
-              VALUES ('teacher', $1, 'module_completion', $2, $3, $4, CURRENT_TIMESTAMP)
-            `, [
-              module.teacher_id,
-              'Student Completed Module',
-              `${student.name} has completed the module "${module.topic_title}" with all ${module.step_count} steps.`,
-              JSON.stringify({
-                student_id: studentId,
-                student_name: student.name,
-                module_id: moduleId,
-                module_title: module.topic_title,
-                section: module.section
-              })
-            ]);
-            
-            console.log(`[OK] Sent module completion notification to teacher ${teacher.name}`);
+          // Try email separately (non-blocking)
+          try {
+            const teacher = await notificationService.getTeacherById(module.teacher_id);
+            if (teacher) {
+              await notificationService.sendEmail(
+                'MODULE_COMPLETED_BY_STUDENT',
+                teacher,
+                {
+                  teacher_name: teacher.name,
+                  student_name: student.name,
+                  student_reg_no: student.reg_no,
+                  module_title: module.topic_title,
+                  section: module.section,
+                  total_steps: module.step_count,
+                  completion_time: new Date().toLocaleString()
+                }
+              );
+              console.log(`[OK] Sent module completion notification to teacher ${teacher.name}`);
+            }
+          } catch (emailErr) {
+            console.error('Module completion email error (non-blocking):', emailErr.message);
           }
         }
-        
-        // Also create achievement notification for the student
-        await pool.query(`
-          INSERT INTO in_app_notifications 
-          (recipient_type, recipient_id, type, title, message, metadata, created_at)
-          VALUES ('student', $1, 'module_achievement', $2, $3, $4, CURRENT_TIMESTAMP)
-        `, [
-          studentId,
-          'Module Completed!',
-          `Congratulations! You completed "${module.topic_title}" with all ${module.step_count} steps.`,
-          JSON.stringify({
-            module_id: moduleId,
-            module_title: module.topic_title,
-            section: module.section,
-            completion_time: new Date().toISOString(),
-            steps_completed: module.step_count
-          })
-        ]);
       } catch (notifErr) {
         console.error('Failed to send teacher notification:', notifErr);
         // Don't fail the completion if notification fails
@@ -2725,21 +2739,45 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
     const test = result.rows[0];
     
     // NOTIFICATION: Send to all students in ALL target sections
+    // Step 1: Create in-app notifications first (independent of email)
     try {
-      let allStudents = [];
-      for (const sec of targetSections) {
-        const sectionStudents = await notificationService.getStudentsInSection(sec, 'TEST_ASSIGNED');
-        allStudents = [...allStudents, ...sectionStudents];
+      const sectionPlaceholders = targetSections.map((_, i) => `$${i + 1}`).join(', ');
+      const sectionStudentsResult = await pool.query(
+        `SELECT DISTINCT id, name, email FROM students 
+         WHERE LOWER(class_dept || ' ' || section) IN (${sectionPlaceholders})`,
+        targetSections.map(s => s.toLowerCase())
+      );
+      const uniqueStudents = sectionStudentsResult.rows;
+
+      for (const student of uniqueStudents) {
+        await pool.query(`
+          INSERT INTO in_app_notifications 
+          (recipient_type, recipient_id, type, title, message, link, metadata, created_at)
+          VALUES ('student', $1, 'test_assigned', $2, $3, $4, $5, CURRENT_TIMESTAMP)
+        `, [
+          student.id,
+          'New Test Assigned',
+          `Test "${title}" assigned by ${teacher_name}. Due: ${new Date(deadline).toLocaleDateString()}`,
+          `/test`,
+          JSON.stringify({
+            test_id: test.id,
+            test_title: title,
+            teacher_name: teacher_name,
+            sections: targetSections,
+            start_date: start_date,
+            deadline: deadline,
+            total_questions: questions.length
+          })
+        ]);
       }
-      
-      // Deduplicate students by id
-      const uniqueStudents = [...new Map(allStudents.map(s => [s.id, s])).values()];
-      
-      if (uniqueStudents.length > 0) {
-        // Send email notifications
+      console.log(`[OK] Created in-app TEST_ASSIGNED notifications for ${uniqueStudents.length} students`);
+
+      // Step 2: Try email notifications separately (non-blocking)
+      try {
+        const emailStudents = uniqueStudents.map(s => ({ id: s.id, type: 'student', email: s.email, name: s.name }));
         await notificationService.sendBatchEmails(
           'TEST_ASSIGNED',
-          uniqueStudents,
+          emailStudents,
           (student) => ({
             student_name: student.name,
             section: targetSections.join(', '),
@@ -2751,31 +2789,8 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
           }),
           { test_id: test.id, teacher_id: teacher_id }
         );
-        
-        // Create in-app notifications for each student
-        for (const student of uniqueStudents) {
-          await pool.query(`
-            INSERT INTO in_app_notifications 
-            (recipient_type, recipient_id, type, title, message, link, metadata, created_at)
-            VALUES ('student', $1, 'test_assigned', $2, $3, $4, $5, CURRENT_TIMESTAMP)
-          `, [
-            student.id,
-            'New Test Assigned',
-            `Test "${title}" assigned by ${teacher_name}. Due: ${new Date(deadline).toLocaleDateString()}`,
-            `/test`,
-            JSON.stringify({
-              test_id: test.id,
-              test_title: title,
-              teacher_name: teacher_name,
-              sections: targetSections,
-              start_date: start_date,
-              deadline: deadline,
-              total_questions: questions.length
-            })
-          ]);
-        }
-        
-        console.log(`[OK] Sent TEST_ASSIGNED notifications to ${uniqueStudents.length} students across ${targetSections.length} sections`);
+      } catch (emailErr) {
+        console.error('Email notification error (non-blocking):', emailErr.message);
       }
     } catch (notifErr) {
       console.error('Notification error (non-blocking):', notifErr);
@@ -3233,28 +3248,7 @@ app.post('/api/student/test/submit', authenticateToken, async (req, res) => {
       );
       
       if (studentInfo.rows.length > 0 && testInfo.rows.length > 0) {
-        const student = {
-          id: student_id,
-          type: 'student',
-          email: studentInfo.rows[0].email,
-          name: name
-        };
-        
-        await notificationService.sendEmail(
-          'GRADE_POSTED',
-          student,
-          {
-            student_name: name,
-            test_title: testInfo.rows[0].title,
-            score: score,
-            total_questions: total_questions,
-            percentage: percentage,
-            status: status
-          },
-          { test_id, submission_id: submission.id }
-        );
-        
-        // Create in-app notification for student
+        // Create in-app notification first (always works)
         await pool.query(`
           INSERT INTO in_app_notifications 
           (recipient_type, recipient_id, type, title, message, metadata, created_at)
@@ -3275,6 +3269,31 @@ app.post('/api/student/test/submit', authenticateToken, async (req, res) => {
         ]);
         
         console.log(`Sent GRADE_POSTED notification to student ${name}`);
+
+        // Try email separately (non-blocking)
+        try {
+          const student = {
+            id: student_id,
+            type: 'student',
+            email: studentInfo.rows[0].email,
+            name: name
+          };
+          await notificationService.sendEmail(
+            'GRADE_POSTED',
+            student,
+            {
+              student_name: name,
+              test_title: testInfo.rows[0].title,
+              score: score,
+              total_questions: total_questions,
+              percentage: percentage,
+              status: status
+            },
+            { test_id, submission_id: submission.id }
+          );
+        } catch (emailErr) {
+          console.error('Grade email notification error (non-blocking):', emailErr.message);
+        }
       }
     } catch (notifErr) {
       console.error('Student grade notification error (non-blocking):', notifErr);
@@ -4037,9 +4056,9 @@ app.get('/api/chat/available-users', authenticateToken, async (req, res) => {
       console.log('[Chat] Student looking for teachers, normalized section:', normalizedSection);
 
       // Find teachers from modules for this section OR directly allocated
-      // Using TRIM and REPLACE to normalize whitespace and handle various formats
+      // Using DISTINCT ON to avoid duplicate teachers when they have multiple modules
       const teachers = await pool.query(`
-        SELECT DISTINCT t.id, t.name, t.email, 
+        SELECT DISTINCT ON (t.id) t.id, t.name, t.email, 
           COALESCE(m.subject, tsa.subject, 'Teacher') as subject
         FROM teachers t
         LEFT JOIN modules m ON t.id = m.teacher_id 
@@ -4048,6 +4067,7 @@ app.get('/api/chat/available-users', authenticateToken, async (req, res) => {
           AND UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(mt.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
         LEFT JOIN teacher_student_allocations tsa ON t.id = tsa.teacher_id AND tsa.student_id = $2
         WHERE m.teacher_id IS NOT NULL OR mt.teacher_id IS NOT NULL OR tsa.teacher_id IS NOT NULL
+        ORDER BY t.id, m.created_at DESC NULLS LAST
       `, [normalizedSection, userId]);
 
       console.log('[Chat] Found teachers for student:', teachers.rows.length);

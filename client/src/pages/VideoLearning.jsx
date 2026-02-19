@@ -2,6 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API_BASE_URL from '../config/api';
 
+// Extract YouTube video ID and return a clean embed URL
+const getYouTubeEmbedUrl = (url) => {
+  if (!url) return '';
+  const match = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  return match ? `https://www.youtube.com/embed/${match[1]}?rel=0&modestbranding=1` : url;
+};
+
 function VideoLearning() {
   const navigate = useNavigate();
   const videoRef = useRef(null);
@@ -76,8 +83,8 @@ function VideoLearning() {
   const progressPercent = videos.length > 0 ? ((currentIndex + 1) / videos.length) * 100 : 0;
 
   // Handle video source - support both local and external videos
-  const isExternalVideo = current?.url?.includes('youtube.com') || current?.url?.includes('vimeo.com');
-  const videoUrl = current?.url || '';
+  const isExternalVideo = current?.url?.includes('youtube.com') || current?.url?.includes('youtu.be') || current?.url?.includes('vimeo.com');
+  const videoUrl = isExternalVideo ? getYouTubeEmbedUrl(current?.url || '') : (current?.url || '');
 
   return (
     <div className="min-h-screen bg-[#fdfdfd] font-sans text-slate-800 p-8 lg:p-12">
@@ -125,7 +132,8 @@ function VideoLearning() {
                   src={videoUrl}
                   title={current?.title}
                   frameBorder="0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerPolicy="origin"
                   allowFullScreen
                 ></iframe>
               ) : (

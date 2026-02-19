@@ -104,6 +104,7 @@ CREATE TABLE students (
 CREATE TABLE modules (
     id SERIAL PRIMARY KEY,
     section TEXT NOT NULL,
+    sections JSONB DEFAULT '[]'::jsonb,
     topic_title TEXT NOT NULL,
     subject VARCHAR(255),
     teacher_id INTEGER NOT NULL,
@@ -137,6 +138,7 @@ CREATE TABLE mcq_tests (
     teacher_id INTEGER NOT NULL,
     teacher_name TEXT NOT NULL,
     section TEXT NOT NULL,
+    sections JSONB DEFAULT '[]'::jsonb,
     title TEXT NOT NULL,
     description TEXT,
     questions JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -870,15 +872,15 @@ CREATE TABLE IF NOT EXISTS in_app_notifications (
     recipient_type TEXT NOT NULL, -- 'student', 'teacher', 'admin'
     title TEXT NOT NULL,
     message TEXT NOT NULL,
-    type TEXT NOT NULL, -- 'module', 'test', 'submission', 'deadline', 'grade', 'announcement', 'system'
-    action_url TEXT, -- URL to navigate when clicking notification
-    metadata JSONB DEFAULT '{}'::jsonb, -- Additional data (module_id, test_id, etc.)
+    type TEXT NOT NULL,
+    link TEXT,
+    action_url TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
     is_read BOOLEAN DEFAULT false,
     read_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
-    CONSTRAINT chk_recipient_type CHECK (recipient_type IN ('student', 'teacher', 'admin')),
-    CONSTRAINT chk_notification_type CHECK (type IN ('module', 'test', 'submission', 'deadline', 'grade', 'announcement', 'system'))
+    CONSTRAINT chk_recipient_type CHECK (recipient_type IN ('student', 'teacher', 'admin'))
 );
 
 -- Create indexes for faster notification queries

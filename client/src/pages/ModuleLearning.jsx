@@ -3,6 +3,13 @@ import { useNavigate, useParams } from 'react-router-dom';
 import API_BASE_URL from '../config/api';
 import JitsiMeet from '../components/JitsiMeet';
 
+// Extract YouTube video ID and return a clean embed URL
+const getYouTubeEmbedUrl = (url) => {
+  if (!url) return '';
+  const match = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  return match ? `https://www.youtube.com/embed/${match[1]}?rel=0&modestbranding=1` : url;
+};
+
 function ModuleLearning() {
   const { moduleId } = useParams();
   const navigate = useNavigate();
@@ -367,10 +374,11 @@ function ModuleLearning() {
                   <div className="aspect-video bg-slate-900 rounded-2xl overflow-hidden">
                     <iframe
                       className="w-full h-full"
-                      src={currentStep.content?.replace('watch?v=', 'embed/').replace('youtu.be/', 'www.youtube.com/embed/')}
+                      src={getYouTubeEmbedUrl(currentStep.content)}
                       title="Video"
                       frameBorder="0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      referrerPolicy="origin"
                       allowFullScreen
                     />
                   </div>

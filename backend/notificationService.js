@@ -1,28 +1,40 @@
-// Email Notification Service - Mailjet integration
+// Email Notification Service - Google SMTP via nodemailer
 
 const { Pool } = require('pg');
+const nodemailer = require('nodemailer');
 
 let dbPool;
+let smtpTransporter = null;
 
 const initializeNotificationService = (pool) => {
   dbPool = pool;
 };
 
-const createMailjetClient = () => {
-  const mjApiKeyPublic = process.env.MJ_APIKEY_PUBLIC;
-  const mjApiKeyPrivate = process.env.MJ_APIKEY_PRIVATE;
-  
-  if (mjApiKeyPublic && mjApiKeyPrivate) {
-    const Mailjet = require('node-mailjet');
-    return Mailjet.apiConnect(mjApiKeyPublic, mjApiKeyPrivate);
+const getTransporter = () => {
+  if (smtpTransporter) return smtpTransporter;
+
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const port = parseInt(process.env.SMTP_PORT || '587', 10);
+  const secure = process.env.SMTP_SECURE === 'true';
+  const user = process.env.GOOGLE_EMAIL;
+  const pass = process.env.GOOGLE_APP_PASSWORD;
+
+  if (!user || !pass) {
+    console.warn('[WARNING] GOOGLE_EMAIL / GOOGLE_APP_PASSWORD not set - emails will be logged only');
+    return null;
   }
-  
-  console.warn('[WARNING] Mailjet API keys not set - emails will be logged only');
-  return null;
+
+  smtpTransporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: { user, pass },
+  });
+
+  return smtpTransporter;
 };
 
 // Resolve frontend base URL at runtime
-// Priority: FRONTEND_URL (manual override) -> RENDER_EXTERNAL_URL (Render default) -> localhost
 const FRONTEND_BASE = process.env.FRONTEND_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:5173';
 
 // ============================================================
@@ -371,51 +383,35 @@ const sendEmail = async (eventCode, recipient, data, metadata = {}) => {
 
     const { subject, html } = template(data);
 
-    // Create Mailjet client
-    const mailjet = createMailjetClient();
+    // Get SMTP transporter
+    const transporter = getTransporter();
     
-    if (!mailjet) {
+    if (!transporter) {
       console.log(`[EMAIL MOCK] ${eventCode} → ${recipient.email}: ${subject}`);
-      return { success: false, reason: 'no_mailjet_config' };
+      return { success: false, reason: 'no_smtp_config' };
     }
 
-    // Send email via Mailjet
-    const result = await mailjet
-      .post('send', { version: 'v3.1' })
-      .request({
-        Messages: [
-          {
-            From: {
-              Email: 'susclass.global@gmail.com',
-              Name: 'SusClass'
-            },
-            To: [
-              {
-                Email: recipient.email
-              }
-            ],
-            Subject: subject,
-            HTMLPart: html
-          }
-        ]
-      });
+    const fromAddress = process.env.EMAIL_FROM_ADDRESS || process.env.GOOGLE_EMAIL;
+    const fromName = process.env.EMAIL_FROM_NAME || 'SusClass';
 
-    const status = result.body.Messages[0].Status;
-    
-    if (status === 'success') {
-      // Log success
-      await dbPool.query(
-        `INSERT INTO notification_logs 
-         (event_code, recipient_id, recipient_type, recipient_email, channel, status, subject, message, metadata, sent_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)`,
-        [eventCode, recipient.id, recipient.type, recipient.email, 'email', 'sent', subject, html, JSON.stringify(metadata)]
-      );
+    // Send email via nodemailer
+    const info = await transporter.sendMail({
+      from: `"${fromName}" <${fromAddress}>`,
+      to: recipient.email,
+      subject,
+      html,
+    });
 
-      console.log(`[OK] Email sent via Mailjet to ${recipient.email} (${eventCode})`);
-      return { success: true, messageId: result.body.Messages[0].To[0].MessageUUID };
-    } else {
-      throw new Error(`Mailjet status: ${status}`);
-    }
+    // Log success
+    await dbPool.query(
+      `INSERT INTO notification_logs 
+       (event_code, recipient_id, recipient_type, recipient_email, channel, status, subject, message, metadata, sent_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)`,
+      [eventCode, recipient.id, recipient.type, recipient.email, 'email', 'sent', subject, html, JSON.stringify(metadata)]
+    );
+
+    console.log(`[OK] Email sent to ${recipient.email} (${eventCode}) messageId=${info.messageId}`);
+    return { success: true, messageId: info.messageId };
 
   } catch (error) {
     console.error(`[ERROR] Email send failed for ${recipient.email} (${eventCode}):`, error.message);

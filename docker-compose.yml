@@ -20,6 +20,8 @@ services:
       - ./backend/add-coding-submissions.sql:/docker-entrypoint-initdb.d/03-coding.sql
       - ./backend/add-inapp-notifications-table.sql:/docker-entrypoint-initdb.d/04-notifications.sql
       - ./backend/add-chat-tables.sql:/docker-entrypoint-initdb.d/05-chat.sql
+      - ./backend/v2.2.6-multi-section.sql:/docker-entrypoint-initdb.d/06-multi-section.sql
+      - ./backend/notification-system.sql:/docker-entrypoint-initdb.d/07-notification-system.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lms_admin -d sustainable_classroom"]
       interval: 10s
@@ -85,12 +87,14 @@ services:
       JWT_SECRET: ${JWT_SECRET:-OnPremiseSecureKey2026AfricaChallenge}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@classroom.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@2026}
-      # Local Email (MailHog)
-      SMTP_HOST: mailhog
-      SMTP_PORT: 1025
+      # Google SMTP
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: 587
       SMTP_SECURE: "false"
+      GOOGLE_EMAIL: ${GOOGLE_EMAIL:-susclass.global@gmail.com}
+      GOOGLE_APP_PASSWORD: ${GOOGLE_APP_PASSWORD:-}
       EMAIL_FROM_NAME: Sustainable Classroom
-      EMAIL_FROM_ADDRESS: noreply@classroom.local
+      EMAIL_FROM_ADDRESS: ${GOOGLE_EMAIL:-susclass.global@gmail.com}
       # Frontend URL
       FRONTEND_URL: http://localhost:5000
       # Jitsi Meet URL (Local)
