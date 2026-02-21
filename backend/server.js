@@ -34,7 +34,7 @@ const app = express();
 // Trust proxy for rate limiting behind nginx/docker
 app.set('trust proxy', 1);
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(cors());
 
 // Security Middleware
@@ -239,8 +239,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your_new_secure_secret_key';
 // On-premise: Connect to local PostgreSQL server with optimized pool settings
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // Pool optimization for on-premise deployment
-  max: 20,                         // Maximum connections in pool
+  // Pool optimization for on-premise deployment (1000+ concurrent users)
+  max: 50,                         // Maximum connections in pool
   idleTimeoutMillis: 30000,        // Close idle connections after 30s
   connectionTimeoutMillis: 10000,  // Connection timeout
   // SSL only if explicitly enabled for on-premise deployment
@@ -373,6 +373,10 @@ console.log('[EMAIL] SMTP Host:', process.env.SMTP_HOST || 'localhost');
 console.log('[EMAIL] SMTP Port:', process.env.SMTP_PORT || 1025);
 console.log('[EMAIL] Dev Mode:', process.env.EMAIL_DEV_MODE || 'auto');
 
+// OTP Configuration - set EMAIL_OTP_REQUIRED=false for offline deployments where mailhog is exposed
+const EMAIL_OTP_REQUIRED = process.env.EMAIL_OTP_REQUIRED !== 'false'; // defaults to true
+console.log('[AUTH] Email OTP Required:', EMAIL_OTP_REQUIRED);
+
 // Send email using local SMTP service
 const sendEmailAsync = async (mailOptions) => {
   return localEmailService.sendEmail(mailOptions);
@@ -417,6 +421,23 @@ app.post('/api/login', async (req, res) => {
             if (isMatch) {
                 // Check if user has TOTP enabled
                 const totpEnabled = user.totp_enabled || false;
+
+                // If EMAIL_OTP_REQUIRED is false and user has no TOTP, skip OTP entirely
+                if (!EMAIL_OTP_REQUIRED && !totpEnabled) {
+                    // Direct login - no OTP needed (offline/local deployment)
+                    const token = jwt.sign(
+                        { id: user.id, email: user.email, role: activeRole },
+                        JWT_SECRET,
+                        { expiresIn: '24h' }
+                    );
+                    delete user.password;
+                    return res.json({
+                        success: true,
+                        mfaRequired: false,
+                        token,
+                        user: { ...user, role: activeRole }
+                    });
+                }
 
                 if (totpEnabled) {
                     // User has authenticator app - they can use TOTP or request email OTP
@@ -818,20 +839,18 @@ app.post('/api/password-reset/request', async (req, res) => {
     // Send OTP email via nodemailer
     console.log('[PASSWORD RESET] Sending OTP to:', email);
     
-    const gmailUser = process.env.GOOGLE_EMAIL;
-    const gmailPass = process.env.GOOGLE_APP_PASSWORD;
-    
-    if (gmailUser && gmailPass) {
+    if (process.env.SMTP_HOST) {
       try {
         const nodemailer = require('nodemailer');
-        const transporter = nodemailer.createTransport({
-          host: process.env.SMTP_HOST || 'smtp.gmail.com',
-          port: parseInt(process.env.SMTP_PORT || '587', 10),
+        const transportConfig = {
+          host: process.env.SMTP_HOST || 'localhost',
+          port: parseInt(process.env.SMTP_PORT || '1025', 10),
           secure: process.env.SMTP_SECURE === 'true',
-          auth: { user: gmailUser, pass: gmailPass },
-        });
+          ignoreTLS: process.env.SMTP_IGNORE_TLS !== 'false',
+        };
+        const transporter = nodemailer.createTransport(transportConfig);
         const fromName = process.env.EMAIL_FROM_NAME || 'SusClass';
-        const fromAddr = process.env.EMAIL_FROM_ADDRESS || gmailUser;
+        const fromAddr = process.env.EMAIL_FROM_ADDRESS || 'noreply@classroom.local';
         await transporter.sendMail({
           from: `"${fromName}" <${fromAddr}>`,
           to: email,
@@ -857,7 +876,7 @@ app.post('/api/password-reset/request', async (req, res) => {
         console.log('[PASSWORD RESET] OTP for testing:', otp);
       }
     } else {
-      console.log('[PASSWORD RESET] No SMTP config - OTP:', otp);
+      console.log('[PASSWORD RESET] No SMTP_HOST configured - OTP:', otp);
     }
     
     res.json({ success: true, message: "Reset code sent to email" });
@@ -915,6 +934,14 @@ app.post('/api/admin/reset-password', authenticateToken, adminOnly, async (req, 
   
   if (!userId || !userType || !newPassword) {
     return res.status(400).json({ error: "userId, userType, and newPassword required" });
+  }
+  
+  if (!['teacher', 'student'].includes(userType.toLowerCase())) {
+    return res.status(400).json({ error: "userType must be 'teacher' or 'student'" });
+  }
+  
+  if (newPassword.length < 4) {
+    return res.status(400).json({ error: "Password must be at least 4 characters" });
   }
   
   const table = userType.toLowerCase() === 'teacher' ? 'teachers' : 'students';
@@ -1091,6 +1118,145 @@ app.post('/api/admin/register-student', authenticateToken, adminOnly, async (req
   }
 });
 
+// 4b. Bulk Upload Students via CSV
+app.post('/api/admin/bulk-upload-students', authenticateToken, adminOnly, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No CSV file uploaded" });
+    
+    const text = fs.readFileSync(req.file.path, 'utf-8');
+    const lines = text.split('\n').filter(line => line.trim());
+    if (lines.length < 2) return res.status(400).json({ error: "CSV must have a header row and at least one data row" });
+    
+    // Parse header
+    const header = lines[0].toLowerCase().replace(/\r/g, '');
+    const hasHeader = header.includes('name') || header.includes('email');
+    const startIndex = hasHeader ? 1 : 0;
+    
+    const results = { success: 0, failed: 0, errors: [] };
+    
+    for (let i = startIndex; i < lines.length; i++) {
+      const line = lines[i].replace(/\r/g, '').trim();
+      if (!line) continue;
+      
+      // Parse CSV (handle quoted commas)
+      const values = line.match(/(".*?"|[^,]+)(?=\s*,|\s*$)/g);
+      if (!values || values.length < 6) {
+        results.failed++;
+        results.errors.push(`Row ${i + 1}: Expected 6 columns (name,email,password,reg_no,class_dept,section)`);
+        continue;
+      }
+      
+      const [name, email, password, reg_no, class_dept, section] = values.map(v => v.replace(/^"|"$/g, '').trim());
+      
+      if (!name || !email || !password || !reg_no || !class_dept || !section) {
+        results.failed++;
+        results.errors.push(`Row ${i + 1}: Missing required fields`);
+        continue;
+      }
+      
+      const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+      if (!emailRegex.test(email)) {
+        results.failed++;
+        results.errors.push(`Row ${i + 1}: Invalid email "${email}"`);
+        continue;
+      }
+      
+      try {
+        const hashed = await bcrypt.hash(password, SALT_ROUNDS);
+        await pool.query(
+          `INSERT INTO students (name, email, password, reg_no, class_dept, section, media) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [name.trim(), email, hashed, reg_no, class_dept.trim().toUpperCase(), section.trim().toUpperCase(), {}]
+        );
+        results.success++;
+      } catch (dbErr) {
+        results.failed++;
+        results.errors.push(`Row ${i + 1} (${email}): ${dbErr.code === '23505' ? 'Email already exists' : dbErr.message}`);
+      }
+    }
+    
+    // Clean up uploaded file
+    try { fs.unlinkSync(req.file.path); } catch (e) {}
+    
+    res.json({ 
+      success: true, 
+      message: `${results.success} students registered, ${results.failed} failed`,
+      ...results 
+    });
+  } catch (err) {
+    console.error("Bulk Upload Students Error:", err);
+    res.status(500).json({ error: "Bulk upload failed: " + err.message });
+  }
+});
+
+// 4c. Bulk Upload Teachers via CSV
+app.post('/api/admin/bulk-upload-teachers', authenticateToken, adminOnly, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No CSV file uploaded" });
+    
+    const text = fs.readFileSync(req.file.path, 'utf-8');
+    const lines = text.split('\n').filter(line => line.trim());
+    if (lines.length < 2) return res.status(400).json({ error: "CSV must have a header row and at least one data row" });
+    
+    const header = lines[0].toLowerCase().replace(/\r/g, '');
+    const hasHeader = header.includes('name') || header.includes('email');
+    const startIndex = hasHeader ? 1 : 0;
+    
+    const results = { success: 0, failed: 0, errors: [] };
+    
+    for (let i = startIndex; i < lines.length; i++) {
+      const line = lines[i].replace(/\r/g, '').trim();
+      if (!line) continue;
+      
+      const values = line.match(/(".*?"|[^,]+)(?=\s*,|\s*$)/g);
+      if (!values || values.length < 5) {
+        results.failed++;
+        results.errors.push(`Row ${i + 1}: Expected 5 columns (name,email,password,staff_id,dept)`);
+        continue;
+      }
+      
+      const [name, email, password, staff_id, dept] = values.map(v => v.replace(/^"|"$/g, '').trim());
+      
+      if (!name || !email || !password) {
+        results.failed++;
+        results.errors.push(`Row ${i + 1}: Missing required fields (name, email, password)`);
+        continue;
+      }
+      
+      const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+      if (!emailRegex.test(email)) {
+        results.failed++;
+        results.errors.push(`Row ${i + 1}: Invalid email "${email}"`);
+        continue;
+      }
+      
+      try {
+        const hashed = await bcrypt.hash(password, SALT_ROUNDS);
+        await pool.query(
+          `INSERT INTO teachers (name, email, password, staff_id, dept, media, allocated_sections) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [name.trim(), email, hashed, staff_id || '', dept || '', {}, []]
+        );
+        results.success++;
+      } catch (dbErr) {
+        results.failed++;
+        results.errors.push(`Row ${i + 1} (${email}): ${dbErr.code === '23505' ? 'Email already exists' : dbErr.message}`);
+      }
+    }
+    
+    try { fs.unlinkSync(req.file.path); } catch (e) {}
+    
+    res.json({ 
+      success: true, 
+      message: `${results.success} teachers registered, ${results.failed} failed`,
+      ...results 
+    });
+  } catch (err) {
+    console.error("Bulk Upload Teachers Error:", err);
+    res.status(500).json({ error: "Bulk upload failed: " + err.message });
+  }
+});
+
 // 5. Teacher List (For Allocation)
 app.get('/api/teachers', authenticateToken, adminOnly, async (req, res) => {
   try {
@@ -1116,12 +1282,19 @@ app.put('/api/teachers/:id/allocate', authenticateToken, adminOnly, async (req, 
 // 7a. Admin: Update Teacher
 app.put('/api/admin/teacher/:id', authenticateToken, adminOnly, async (req, res) => {
   const { id } = req.params;
-  const { name, email, staff_id, dept } = req.body;
+  const { name, email, staff_id, dept, media } = req.body;
   try {
-    await pool.query(
-      'UPDATE teachers SET name = $1, email = $2, staff_id = $3, dept = $4 WHERE id = $5',
-      [name, email, staff_id, dept, id]
-    );
+    if (media) {
+      await pool.query(
+        'UPDATE teachers SET name = $1, email = $2, staff_id = $3, dept = $4, media = $5 WHERE id = $6',
+        [name, email, staff_id, dept, media, id]
+      );
+    } else {
+      await pool.query(
+        'UPDATE teachers SET name = $1, email = $2, staff_id = $3, dept = $4 WHERE id = $5',
+        [name, email, staff_id, dept, id]
+      );
+    }
     res.json({ success: true, message: "Teacher updated successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1142,16 +1315,22 @@ app.delete('/api/admin/teacher/:id', authenticateToken, adminOnly, async (req, r
 // 7c. Admin: Update Student
 app.put('/api/admin/student/:id', authenticateToken, adminOnly, async (req, res) => {
   const { id } = req.params;
-  const { name, email, reg_no, class_dept, section } = req.body;
+  const { name, email, reg_no, class_dept, section, media } = req.body;
   try {
-    // Normalize class_dept and section to prevent duplicates
     const normalizedClass = class_dept ? class_dept.trim().toUpperCase() : null;
     const normalizedSection = section ? section.trim().toUpperCase() : null;
     
-    await pool.query(
-      'UPDATE students SET name = $1, email = $2, reg_no = $3, class_dept = $4, section = $5 WHERE id = $6',
-      [name, email, reg_no, normalizedClass, normalizedSection, id]
-    );
+    if (media) {
+      await pool.query(
+        'UPDATE students SET name = $1, email = $2, reg_no = $3, class_dept = $4, section = $5, media = $6 WHERE id = $7',
+        [name, email, reg_no, normalizedClass, normalizedSection, media, id]
+      );
+    } else {
+      await pool.query(
+        'UPDATE students SET name = $1, email = $2, reg_no = $3, class_dept = $4, section = $5 WHERE id = $6',
+        [name, email, reg_no, normalizedClass, normalizedSection, id]
+      );
+    }
     res.json({ success: true, message: "Student updated successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1173,7 +1352,7 @@ app.delete('/api/admin/student/:id', authenticateToken, adminOnly, async (req, r
 app.get('/api/admin/students', authenticateToken, adminOnly, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, name, email, reg_no, class_dept, section, created_at FROM students ORDER BY created_at DESC'
+      'SELECT id, name, email, reg_no, class_dept, section, media, created_at FROM students ORDER BY created_at DESC'
     );
     res.json(result.rows);
   } catch (err) {
@@ -1185,7 +1364,7 @@ app.get('/api/admin/students', authenticateToken, adminOnly, async (req, res) =>
 app.get('/api/admin/teachers', authenticateToken, adminOnly, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, name, email, staff_id, dept, allocated_sections, created_at FROM teachers ORDER BY created_at DESC'
+      'SELECT id, name, email, staff_id, dept, allocated_sections, media, created_at FROM teachers ORDER BY created_at DESC'
     );
     res.json(result.rows);
   } catch (err) {
@@ -1720,13 +1899,18 @@ app.get('/api/student/recent-modules', authenticateToken, async (req, res) => {
     
     // Get modules for student's section with accurate progress
     const modulesResult = await pool.query(`
-      SELECT m.id, m.topic_title, m.section, m.created_at, m.step_count,
+      SELECT m.id, m.topic_title, m.section, m.subject, m.created_at, m.step_count,
         COALESCE(
           (SELECT COUNT(*) * 100.0 / NULLIF(m.step_count, 0) 
            FROM module_completion mc 
            WHERE mc.module_id = m.id AND mc.student_id = $1 AND mc.is_completed = true), 
           0
-        ) as progress
+        ) as progress,
+        COALESCE(
+          (SELECT MAX(mc.step_index) FROM module_completion mc 
+           WHERE mc.module_id = m.id AND mc.student_id = $1), 
+          -1
+        )::int as last_step_index
       FROM modules m 
       WHERE LOWER(m.section) = LOWER($2)
       ORDER BY m.created_at DESC 
@@ -2133,23 +2317,32 @@ app.get('/api/student/my-modules', authenticateToken, async (req, res) => {
     
     // Fetch modules for this section - check both old 'section' column AND new 'sections' JSONB array
     // Handle "CSE A", "CSE-A", "cse a", double spaces, etc.
+    // Also include per-module completion progress for the current student
     const modulesResult = await pool.query(
-      `SELECT id, topic_title, section, sections, subject, teacher_name, step_count, created_at 
-       FROM modules 
-       WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
+      `SELECT m.id, m.topic_title, m.section, m.sections, m.subject, m.teacher_name, m.step_count, m.created_at,
+        COALESCE(
+          (SELECT COUNT(*) FROM module_completion mc 
+           WHERE mc.module_id = m.id AND mc.student_id = $2 AND mc.is_completed = true), 
+          0
+        )::int as completed_steps,
+        COALESCE(
+          (SELECT MAX(mc.step_index) FROM module_completion mc 
+           WHERE mc.module_id = m.id AND mc.student_id = $2), 
+          -1
+        )::int as last_step_index
+       FROM modules m
+       WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
           OR EXISTS (
-            SELECT 1 FROM jsonb_array_elements_text(COALESCE(sections, '[]'::jsonb)) AS s 
+            SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.sections, '[]'::jsonb)) AS s 
             WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
           )
-       ORDER BY created_at DESC`,
-      [fullSection]
+       ORDER BY m.created_at DESC`,
+      [fullSection, studentId]
     );
     
     console.log('[Student Modules] Found modules:', modulesResult.rows.length);
     
-    // Cache for 1 minute
-    cache.set(cacheKey, modulesResult.rows, 60 * 1000);
-    
+    // Don't cache since results include per-student progress
     res.json(modulesResult.rows);
   } catch (err) {
     console.error("Student Modules Error:", err);
@@ -2803,36 +2996,26 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
   }
 });
 
-// 15. Teacher: Get All Tests for Section (supports sections array)
+// 15. Teacher: Get All Tests for Section (supports sections JSONB array)
 // FIX: Only show tests created by THIS teacher (teacher isolation)
 app.get('/api/teacher/tests/:section', authenticateToken, async (req, res) => {
   try {
     const section = req.params.section;
-    const teacherId = req.user.id; // Only show tests by THIS teacher
+    const teacherId = req.user.id;
     
-    // Try to use v_test_statistics first, fallback to direct query if view doesn't have sections column
-    try {
-      const result = await pool.query(
-        `SELECT * FROM v_test_statistics 
-         WHERE LOWER(section) = LOWER($1) AND teacher_id = $2
-         ORDER BY deadline DESC`,
-        [section, teacherId]
-      );
-      res.json(result.rows);
-    } catch (viewErr) {
-      // Fallback: query directly from mcq_tests table
-      const result = await pool.query(
-        `SELECT t.*, 
-          COALESCE((SELECT COUNT(*) FROM test_submissions WHERE test_id = t.id), 0) as total_submissions,
-          COALESCE((SELECT ROUND(AVG(percentage)::numeric, 2) FROM test_submissions WHERE test_id = t.id), 0) as average_score,
-          COALESCE((SELECT COUNT(*) FROM test_submissions WHERE test_id = t.id AND percentage >= 50), 0) as passed_count
-         FROM mcq_tests t
-         WHERE (LOWER(t.section) = LOWER($1) OR t.sections @> $3::jsonb) AND t.teacher_id = $2
-         ORDER BY t.deadline DESC`,
-        [section, teacherId, JSON.stringify([section])]
-      );
-      res.json(result.rows);
-    }
+    // Direct query that handles both single section column and sections JSONB array
+    const result = await pool.query(
+      `SELECT t.id as test_id, t.title, t.section, t.sections, t.teacher_id, t.teacher_name,
+        t.total_questions, t.start_date, t.deadline, t.created_at, t.is_active,
+        COALESCE((SELECT COUNT(*) FROM test_submissions WHERE test_id = t.id), 0)::int as total_submissions,
+        COALESCE((SELECT ROUND(AVG(percentage)::numeric, 2) FROM test_submissions WHERE test_id = t.id), 0) as average_score,
+        COALESCE((SELECT COUNT(*) FROM test_submissions WHERE test_id = t.id AND percentage >= 50), 0)::int as passed_count
+       FROM mcq_tests t
+       WHERE (LOWER(t.section) = LOWER($1) OR t.sections @> $3::jsonb) AND t.teacher_id = $2
+       ORDER BY t.deadline DESC`,
+      [section, teacherId, JSON.stringify([section])]
+    );
+    res.json(result.rows);
   } catch (err) {
     console.error("Fetch Tests Error:", err);
     res.status(500).json({ error: "Failed to load tests" });

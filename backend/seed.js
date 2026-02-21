@@ -320,7 +320,7 @@ async function seed() {
     console.log('╔════════════════════════════════════════════════════════════════╗');
     console.log('║                   SEEDING COMPLETED!                          ║');
     console.log('╠════════════════════════════════════════════════════════════════╣');
-    console.log('║  LOGIN CREDENTIALS (all emails go to susclass.global@gmail.com)║');
+    console.log('║  LOGIN CREDENTIALS (emails viewable at http://localhost:8025)  ║');
     console.log('║                                                                ║');
     console.log('║  TEACHERS (password: password123):                             ║');
     console.log('║    • susclass.global+sarah.teacher@gmail.com                   ║');

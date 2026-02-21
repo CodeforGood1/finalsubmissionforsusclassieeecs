@@ -150,9 +150,10 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
     } else if (contentType === 'coding') {
       // Validate coding problem
       if (!codingProblem.description) return alert("Please add a problem description");
-      if (codingProblem.testCases.length === 0) return alert("Please add at least one test case");
-      if (codingProblem.testCases.some(tc => !tc.input || !tc.expected)) {
-        return alert("All test cases must have input and expected output");
+      // Test cases are optional - if provided, expected output is required
+      const filledTestCases = codingProblem.testCases.filter(tc => tc.input || tc.expected);
+      if (filledTestCases.length > 0 && filledTestCases.some(tc => !tc.expected)) {
+        return alert("Test cases with input must have an expected output");
       }
       stepData = codingProblem;
     } else if (contentType === 'code') {

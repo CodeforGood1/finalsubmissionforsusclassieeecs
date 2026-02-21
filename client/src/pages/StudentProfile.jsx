@@ -57,7 +57,14 @@ export default function StudentProfile() {
     </div>
   );
 
-  if (!student) return <div className="p-10 text-red-500">Error: Please log in again.</div>;
+  if (!student) return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="text-center bg-white p-12 rounded-3xl shadow-lg">
+        <p className="text-red-500 font-bold mb-4">Could not load profile</p>
+        <button onClick={() => navigate('/dashboard')} className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold">Return to Dashboard</button>
+      </div>
+    </div>
+  );
 
   // Calculate Progress Percentage for the UI
   const testsCompleted = progress?.tests_completed || 0;
@@ -156,13 +163,13 @@ export default function StudentProfile() {
                   <img src={student.profilePic} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full bg-emerald-100 flex items-center justify-center text-6xl text-emerald-600 font-black">
-                    {student.name.charAt(0)}
+                    {(student.name || '?').charAt(0)}
                   </div>
                 )}
               </div>
-              <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">{student.name}</h1>
+              <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">{student.name || 'Student'}</h1>
               <p className="text-emerald-600 font-black text-[10px] uppercase tracking-[0.2em] mt-2">
-                {student.class_dept} — Section {student.section}
+                {student.class_dept || ''} — Section {student.section || ''}
               </p>
             </div>
 

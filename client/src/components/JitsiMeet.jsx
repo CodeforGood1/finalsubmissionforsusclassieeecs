@@ -150,7 +150,8 @@ function JitsiMeet({ roomName, displayName, onClose, isTeacher = false }) {
             </div>
             <p className="text-white font-bold text-xl mb-2">Connection Failed</p>
             <p className="text-slate-400 mb-4">{errorMsg}</p>
-            <p className="text-slate-500 text-sm mb-6">Make sure the Jitsi server is running at {JITSI_URL}</p>
+            <p className="text-slate-500 text-sm mb-4">Make sure the Jitsi server is running at {JITSI_URL}</p>
+            <p className="text-amber-400 text-xs mb-6">If using self-signed SSL, first visit <a href={JITSI_URL} target="_blank" rel="noopener noreferrer" className="underline">{JITSI_URL}</a> and accept the certificate, then try again.</p>
             <div className="flex gap-3 justify-center">
               <a
                 href={`${JITSI_URL}/${cleanRoom}`}

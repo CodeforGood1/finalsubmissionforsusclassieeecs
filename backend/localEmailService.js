@@ -18,45 +18,27 @@ const ensureDataDir = () => {
 
 // Create transporter based on environment
 const createTransporter = () => {
-  // Check if we're using Gmail
-  const isGmail = process.env.SMTP_HOST === 'smtp.gmail.com' || 
-                  process.env.EMAIL_SERVICE === 'gmail';
+  // MailHog / generic SMTP configuration (no Gmail)
+  const config = {
+    host: process.env.SMTP_HOST || 'localhost',
+    port: parseInt(process.env.SMTP_PORT) || 1025,
+    secure: process.env.SMTP_SECURE === 'true',
+    ignoreTLS: process.env.SMTP_IGNORE_TLS !== 'false',
+  };
   
-  let config;
-  
-  if (isGmail) {
-    // Gmail configuration
-    config = {
-      service: 'gmail',
-      auth: {
-        user: process.env.SMTP_USER || process.env.GMAIL_USER,
-        pass: process.env.SMTP_PASSWORD || process.env.GMAIL_APP_PASSWORD
-      }
+  // Add auth only if explicit credentials are provided (not needed for MailHog)
+  if (process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
+    config.auth = {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASSWORD
     };
-    console.log('[EMAIL] Using Gmail SMTP');
-  } else {
-    // Generic SMTP configuration
-    config = {
-      host: process.env.SMTP_HOST || 'localhost',
-      port: parseInt(process.env.SMTP_PORT) || 1025,
-      secure: process.env.SMTP_SECURE === 'true',
-      ignoreTLS: process.env.SMTP_IGNORE_TLS !== 'false',
-    };
-    
-    // Add auth if credentials are provided
-    if (process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
-      config.auth = {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASSWORD
-      };
-    }
   }
   
   console.log('[EMAIL] SMTP Configuration:');
-  console.log(`  Host: ${config.host || 'Gmail Service'}`);
-  console.log(`  Port: ${config.port || '587 (Gmail)'}`);
-  console.log(`  Secure: ${config.secure ?? 'auto'}`);
-  console.log(`  Auth: ${config.auth ? 'Configured' : 'None (dev mode)'}`);
+  console.log(`  Host: ${config.host}`);
+  console.log(`  Port: ${config.port}`);
+  console.log(`  Secure: ${config.secure}`);
+  console.log(`  Auth: ${config.auth ? 'Configured' : 'None (MailHog/dev)'}`);
   
   return nodemailer.createTransport(config);
 };
@@ -115,8 +97,8 @@ const sendEmail = async (mailOptions) => {
   // hasRealSMTP = true if:
   // 1. Gmail/authenticated SMTP (has user + password), OR
   // 2. MailHog/local SMTP (has host configured, even without auth)
-  const hasAuthSMTP = process.env.SMTP_USER && process.env.SMTP_PASSWORD;
-  const hasLocalSMTP = process.env.SMTP_HOST && !process.env.EMAIL_DEV_MODE;
+  const hasAuthSMTP = (process.env.SMTP_USER && process.env.SMTP_PASSWORD);
+  const hasLocalSMTP = process.env.SMTP_HOST && process.env.EMAIL_DEV_MODE !== 'true';
   const shouldSendEmail = hasAuthSMTP || hasLocalSMTP;
   
   // Pure development mode - just log to console (no SMTP configured)

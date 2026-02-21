@@ -34,6 +34,18 @@ function AdminDashboard() {
   
   const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
+  
+  // CSV bulk upload states
+  const [csvUploading, setCsvUploading] = useState(false);
+  const [csvResults, setCsvResults] = useState(null);
+  
+  // Change password modal states
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordTarget, setPasswordTarget] = useState(null); // { id, name, type: 'student'|'teacher' }
+  const [newPassword, setNewPassword] = useState('');
+  
+  // Profile pic upload states
+  const [profilePicUploading, setProfilePicUploading] = useState(false);
 
   const token = localStorage.getItem('token');
   const authHeaders = { 'Authorization': `Bearer ${token}` };
@@ -351,6 +363,142 @@ function AdminDashboard() {
     }
   };
 
+  // CSV Bulk Upload handler
+  const handleCSVUpload = async (type) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      setCsvUploading(true);
+      setCsvResults(null);
+      
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const res = await fetch(`${API_BASE_URL}/api/admin/bulk-upload-${type}s`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        });
+        
+        const data = await res.json();
+        setCsvResults(data);
+        
+        if (data.success > 0) {
+          if (type === 'student') fetchStudents();
+          else fetchTeachers();
+        }
+      } catch (err) {
+        alert("CSV upload failed: " + err.message);
+      } finally {
+        setCsvUploading(false);
+      }
+    };
+    input.click();
+  };
+
+  // Change Password handler
+  const handleChangePassword = async () => {
+    if (!passwordTarget || !newPassword) return;
+    
+    if (newPassword.length < 4) {
+      alert("Password must be at least 4 characters");
+      return;
+    }
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ 
+          userId: passwordTarget.id, 
+          userType: passwordTarget.type, 
+          newPassword 
+        })
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        alert(`Password changed for ${passwordTarget.name}`);
+        setShowPasswordModal(false);
+        setPasswordTarget(null);
+        setNewPassword('');
+      } else {
+        alert("Failed: " + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert("Error changing password: " + err.message);
+    }
+  };
+
+  // Profile pic upload handler
+  const handleProfilePicUpload = async (userId, userType) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      if (file.size > 5 * 1024 * 1024) {
+        alert("Image must be less than 5MB");
+        return;
+      }
+      
+      setProfilePicUploading(true);
+      
+      try {
+        // Upload the file first
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const upRes = await fetch(`${API_BASE_URL}/api/upload`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        });
+        
+        if (!upRes.ok) throw new Error("Upload failed");
+        const cloudData = await upRes.json();
+        
+        const mediaInfo = { url: cloudData.url, public_id: cloudData.public_id, type: cloudData.type };
+        
+        // Get current user data to preserve fields
+        const userList = userType === 'teacher' ? teachers : students;
+        const user = userList.find(u => u.id === userId);
+        if (!user) throw new Error("User not found");
+        
+        // Update user with new profile pic
+        const updateBody = userType === 'teacher' 
+          ? { name: user.name, email: user.email, staff_id: user.staff_id, dept: user.dept, media: mediaInfo }
+          : { name: user.name, email: user.email, reg_no: user.reg_no, class_dept: user.class_dept, section: user.section, media: mediaInfo };
+        
+        const res = await fetch(`${API_BASE_URL}/api/admin/${userType}/${userId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify(updateBody)
+        });
+        
+        if (res.ok) {
+          alert("Profile picture updated!");
+          if (userType === 'teacher') fetchTeachers();
+          else fetchStudents();
+        } else {
+          alert("Failed to update profile picture");
+        }
+      } catch (err) {
+        alert("Error: " + err.message);
+      } finally {
+        setProfilePicUploading(false);
+      }
+    };
+    input.click();
+  };
+
   const toggleStudentSelection = (studentId) => {
     if (selectedStudents.includes(studentId)) {
       setSelectedStudents(selectedStudents.filter(id => id !== studentId));
@@ -393,12 +541,46 @@ function AdminDashboard() {
       <div className="flex-1 p-12">
         {activeTab === 'manage-students' ? (
           <div className="max-w-7xl">
-            <h1 className="text-3xl font-black text-slate-800 uppercase mb-8 italic">Manage <span className="text-emerald-600">Students</span></h1>
+            <div className="flex items-center justify-between mb-8">
+              <h1 className="text-3xl font-black text-slate-800 uppercase italic">Manage <span className="text-emerald-600">Students</span></h1>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => handleCSVUpload('student')} 
+                  disabled={csvUploading}
+                  className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-xs uppercase hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {csvUploading ? 'Uploading...' : 'CSV Bulk Upload'}
+                </button>
+              </div>
+            </div>
+            
+            {/* CSV Format Help */}
+            <div className="mb-4 p-4 bg-blue-50 rounded-xl border border-blue-200">
+              <p className="text-xs font-bold text-blue-800 mb-1">CSV Format: name,email,password,reg_no,class_dept,section</p>
+              <p className="text-xs text-blue-600">Example: John Doe,john@email.com,pass123,REG001,CSE,A</p>
+            </div>
+            
+            {/* CSV Upload Results */}
+            {csvResults && (
+              <div className={`mb-4 p-4 rounded-xl border ${csvResults.failed > 0 ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                <p className="font-bold text-sm mb-1">{csvResults.message}</p>
+                {csvResults.errors && csvResults.errors.length > 0 && (
+                  <div className="mt-2 max-h-32 overflow-y-auto">
+                    {csvResults.errors.map((err, i) => (
+                      <p key={i} className="text-xs text-red-600">{err}</p>
+                    ))}
+                  </div>
+                )}
+                <button onClick={() => setCsvResults(null)} className="text-xs text-slate-500 mt-2 hover:underline">Dismiss</button>
+              </div>
+            )}
+            
             <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-slate-900 text-white">
                     <tr>
+                      <th className="p-4 text-left text-xs font-black uppercase">Photo</th>
                       <th className="p-4 text-left text-xs font-black uppercase">Name</th>
                       <th className="p-4 text-left text-xs font-black uppercase">Reg No</th>
                       <th className="p-4 text-left text-xs font-black uppercase">Email</th>
@@ -410,6 +592,20 @@ function AdminDashboard() {
                   <tbody>
                     {students.map((student, idx) => (
                       <tr key={student.id} className={idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}>
+                        <td className="p-4">
+                          {student.media?.url ? (
+                            <img src={student.media.url} alt="" className="w-10 h-10 rounded-full object-cover" />
+                          ) : (
+                            <button 
+                              onClick={() => handleProfilePicUpload(student.id, 'student')}
+                              disabled={profilePicUploading}
+                              className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400 hover:bg-emerald-100 hover:text-emerald-600 transition-colors"
+                              title="Upload profile picture"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                            </button>
+                          )}
+                        </td>
                         <td className="p-4 font-bold">{student.name}</td>
                         <td className="p-4 text-sm text-slate-600">{student.reg_no}</td>
                         <td className="p-4 text-sm text-slate-600">{student.email}</td>
@@ -417,8 +613,9 @@ function AdminDashboard() {
                         <td className="p-4 text-sm font-bold">{student.section}</td>
                         <td className="p-4">
                           <div className="flex gap-2 justify-center">
-                            <button onClick={() => handleUpdateStudent(student)} className="bg-blue-100 text-blue-600 px-4 py-2 rounded-lg text-xs font-black uppercase hover:bg-blue-200">Edit</button>
-                            <button onClick={() => handleDeleteStudent(student.id)} className="bg-red-100 text-red-600 px-4 py-2 rounded-lg text-xs font-black uppercase hover:bg-red-200">Delete</button>
+                            <button onClick={() => handleUpdateStudent(student)} className="bg-blue-100 text-blue-600 px-3 py-2 rounded-lg text-xs font-black uppercase hover:bg-blue-200">Edit</button>
+                            <button onClick={() => { setPasswordTarget({ id: student.id, name: student.name, type: 'student' }); setShowPasswordModal(true); setNewPassword(''); }} className="bg-purple-100 text-purple-600 px-3 py-2 rounded-lg text-xs font-black uppercase hover:bg-purple-200">Password</button>
+                            <button onClick={() => handleDeleteStudent(student.id)} className="bg-red-100 text-red-600 px-3 py-2 rounded-lg text-xs font-black uppercase hover:bg-red-200">Delete</button>
                           </div>
                         </td>
                       </tr>
@@ -430,12 +627,46 @@ function AdminDashboard() {
           </div>
         ) : activeTab === 'manage-teachers' ? (
           <div className="max-w-7xl">
-            <h1 className="text-3xl font-black text-slate-800 uppercase mb-8 italic">Manage <span className="text-emerald-600">Teachers</span></h1>
+            <div className="flex items-center justify-between mb-8">
+              <h1 className="text-3xl font-black text-slate-800 uppercase italic">Manage <span className="text-emerald-600">Teachers</span></h1>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => handleCSVUpload('teacher')} 
+                  disabled={csvUploading}
+                  className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-xs uppercase hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {csvUploading ? 'Uploading...' : 'CSV Bulk Upload'}
+                </button>
+              </div>
+            </div>
+            
+            {/* CSV Format Help */}
+            <div className="mb-4 p-4 bg-blue-50 rounded-xl border border-blue-200">
+              <p className="text-xs font-bold text-blue-800 mb-1">CSV Format: name,email,password,staff_id,dept</p>
+              <p className="text-xs text-blue-600">Example: Jane Smith,jane@email.com,pass123,STAFF001,Science</p>
+            </div>
+            
+            {/* CSV Upload Results */}
+            {csvResults && (
+              <div className={`mb-4 p-4 rounded-xl border ${csvResults.failed > 0 ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                <p className="font-bold text-sm mb-1">{csvResults.message}</p>
+                {csvResults.errors && csvResults.errors.length > 0 && (
+                  <div className="mt-2 max-h-32 overflow-y-auto">
+                    {csvResults.errors.map((err, i) => (
+                      <p key={i} className="text-xs text-red-600">{err}</p>
+                    ))}
+                  </div>
+                )}
+                <button onClick={() => setCsvResults(null)} className="text-xs text-slate-500 mt-2 hover:underline">Dismiss</button>
+              </div>
+            )}
+            
             <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-slate-900 text-white">
                     <tr>
+                      <th className="p-4 text-left text-xs font-black uppercase">Photo</th>
                       <th className="p-4 text-left text-xs font-black uppercase">Name</th>
                       <th className="p-4 text-left text-xs font-black uppercase">Staff ID</th>
                       <th className="p-4 text-left text-xs font-black uppercase">Email</th>
@@ -446,14 +677,29 @@ function AdminDashboard() {
                   <tbody>
                     {teachers.map((teacher, idx) => (
                       <tr key={teacher.id} className={idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}>
+                        <td className="p-4">
+                          {teacher.media?.url ? (
+                            <img src={teacher.media.url} alt="" className="w-10 h-10 rounded-full object-cover" />
+                          ) : (
+                            <button 
+                              onClick={() => handleProfilePicUpload(teacher.id, 'teacher')}
+                              disabled={profilePicUploading}
+                              className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-400 hover:bg-emerald-100 hover:text-emerald-600 transition-colors"
+                              title="Upload profile picture"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                            </button>
+                          )}
+                        </td>
                         <td className="p-4 font-bold">{teacher.name}</td>
                         <td className="p-4 text-sm text-slate-600">{teacher.staff_id}</td>
                         <td className="p-4 text-sm text-slate-600">{teacher.email}</td>
                         <td className="p-4 text-sm font-bold">{teacher.dept}</td>
                         <td className="p-4">
                           <div className="flex gap-2 justify-center">
-                            <button onClick={() => handleUpdateTeacher(teacher)} className="bg-blue-100 text-blue-600 px-4 py-2 rounded-lg text-xs font-black uppercase hover:bg-blue-200">Edit</button>
-                            <button onClick={() => handleDeleteTeacher(teacher.id)} className="bg-red-100 text-red-600 px-4 py-2 rounded-lg text-xs font-black uppercase hover:bg-red-200">Delete</button>
+                            <button onClick={() => handleUpdateTeacher(teacher)} className="bg-blue-100 text-blue-600 px-3 py-2 rounded-lg text-xs font-black uppercase hover:bg-blue-200">Edit</button>
+                            <button onClick={() => { setPasswordTarget({ id: teacher.id, name: teacher.name, type: 'teacher' }); setShowPasswordModal(true); setNewPassword(''); }} className="bg-purple-100 text-purple-600 px-3 py-2 rounded-lg text-xs font-black uppercase hover:bg-purple-200">Password</button>
+                            <button onClick={() => handleDeleteTeacher(teacher.id)} className="bg-red-100 text-red-600 px-3 py-2 rounded-lg text-xs font-black uppercase hover:bg-red-200">Delete</button>
                           </div>
                         </td>
                       </tr>
@@ -585,18 +831,20 @@ function AdminDashboard() {
               <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 space-y-4">
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Identity</h3>
                 <input type="text" placeholder="Full Name" required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" 
+                  value={activeTab === 'student' ? studentData.name : teacherData.name}
                   onChange={e => activeTab === 'student' ? setStudentData({...studentData, name: e.target.value}) : setTeacherData({...teacherData, name: e.target.value})} />
                 
                 {activeTab === 'student' ? (
                   <>
-                    <input type="text" placeholder="Reg No" required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" onChange={e => setStudentData({...studentData, reg_no: e.target.value})} />
-                    <input type="text" placeholder="Section (e.g. ECE A)" required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none border-2 border-emerald-100" onChange={e => setStudentData({...studentData, section: e.target.value})} />
+                    <input type="text" placeholder="Reg No" required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" value={studentData.reg_no} onChange={e => setStudentData({...studentData, reg_no: e.target.value})} />
+                    <input type="text" placeholder="Section (e.g. ECE A)" required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none border-2 border-emerald-100" value={studentData.section} onChange={e => setStudentData({...studentData, section: e.target.value})} />
                   </>
                 ) : (
-                  <input type="text" placeholder="Staff ID" required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" onChange={e => setTeacherData({...teacherData, staff_id: e.target.value})} />
+                  <input type="text" placeholder="Staff ID" required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" value={teacherData.staff_id} onChange={e => setTeacherData({...teacherData, staff_id: e.target.value})} />
                 )}
                 
                 <input type="password" placeholder="Password" required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" 
+                  value={activeTab === 'student' ? studentData.password : teacherData.password}
                   onChange={e => activeTab === 'student' ? setStudentData({...studentData, password: e.target.value}) : setTeacherData({...teacherData, password: e.target.value})} />
               </div>
 
@@ -604,9 +852,11 @@ function AdminDashboard() {
               <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 space-y-4">
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Contact & Dept</h3>
                 <input type="email" placeholder="Email" required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" 
+                  value={activeTab === 'student' ? studentData.email : teacherData.email}
                   onChange={e => activeTab === 'student' ? setStudentData({...studentData, email: e.target.value}) : setTeacherData({...teacherData, email: e.target.value})} />
                 
                 <input type="text" placeholder={activeTab === 'student' ? "Class/Department" : "Department"} required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" 
+                  value={activeTab === 'student' ? studentData.class_dept : teacherData.dept}
                   onChange={e => activeTab === 'student' ? setStudentData({...studentData, class_dept: e.target.value}) : setTeacherData({...teacherData, dept: e.target.value})} />
               </div>
 
@@ -698,6 +948,42 @@ function AdminDashboard() {
                 className="flex-1 px-6 py-3 bg-blue-500 text-white rounded-xl font-bold hover:bg-blue-600"
               >
                 Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Change Password Modal */}
+      {showPasswordModal && passwordTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
+            <h3 className="text-lg font-black text-slate-800 mb-2">Change Password</h3>
+            <p className="text-sm text-slate-500 mb-6">
+              {passwordTarget.type === 'student' ? 'Student' : 'Teacher'}: <strong>{passwordTarget.name}</strong>
+            </p>
+            
+            <input 
+              type="password" 
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Enter new password" 
+              className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none border-2 border-slate-100 focus:border-purple-500 mb-6"
+            />
+            
+            <div className="flex gap-3">
+              <button 
+                onClick={() => { setShowPasswordModal(false); setPasswordTarget(null); setNewPassword(''); }}
+                className="flex-1 px-6 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleChangePassword}
+                disabled={!newPassword || newPassword.length < 4}
+                className="flex-1 px-6 py-3 bg-purple-500 text-white rounded-xl font-bold hover:bg-purple-600 disabled:bg-slate-300"
+              >
+                Change Password
               </button>
             </div>
           </div>

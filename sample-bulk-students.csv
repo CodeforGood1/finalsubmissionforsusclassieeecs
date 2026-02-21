@@ -1,0 +1,11 @@
+name,email,password,reg_no,class_dept,section
+Amara Diallo,amara.diallo@student.local,Student@2026,REG001,CSE,A
+Kofi Mensah,kofi.mensah@student.local,Student@2026,REG002,CSE,A
+Fatima Nkosi,fatima.nkosi@student.local,Student@2026,REG003,CSE,B
+Kwame Asante,kwame.asante@student.local,Student@2026,REG004,ECE,A
+Nia Osei,nia.osei@student.local,Student@2026,REG005,ECE,B
+Seun Adeyemi,seun.adeyemi@student.local,Student@2026,REG006,MECH,A
+Aisha Kamara,aisha.kamara@student.local,Student@2026,REG007,MECH,B
+Emeka Okafor,emeka.okafor@student.local,Student@2026,REG008,CIVIL,A
+Zara Bangura,zara.bangura@student.local,Student@2026,REG009,CIVIL,B
+Chidi Nwosu,chidi.nwosu@student.local,Student@2026,REG010,CSE,C

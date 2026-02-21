@@ -176,7 +176,10 @@ function Dashboard() {
                     <p className="text-xs md:text-sm text-slate-500">{module.subject} - {module.section}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className="text-xs md:text-sm text-slate-400">{module.progress || 0}% complete</div>
+                    <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.round(module.progress || 0)}%` }}></div>
+                    </div>
+                    <div className="text-xs md:text-sm text-slate-400">{Math.round(module.progress || 0)}%</div>
                     <svg className="w-4 h-4 md:w-5 md:h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>

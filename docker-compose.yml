@@ -87,14 +87,15 @@ services:
       JWT_SECRET: ${JWT_SECRET:-OnPremiseSecureKey2026AfricaChallenge}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@classroom.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@2026}
-      # Google SMTP
-      SMTP_HOST: smtp.gmail.com
-      SMTP_PORT: 587
+      # Set to "false" for offline deployments where mailhog is exposed to all users
+      EMAIL_OTP_REQUIRED: ${EMAIL_OTP_REQUIRED:-false}
+      # MailHog local SMTP
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
       SMTP_SECURE: "false"
-      GOOGLE_EMAIL: ${GOOGLE_EMAIL:-susclass.global@gmail.com}
-      GOOGLE_APP_PASSWORD: ${GOOGLE_APP_PASSWORD:-}
+      SMTP_IGNORE_TLS: "true"
       EMAIL_FROM_NAME: Sustainable Classroom
-      EMAIL_FROM_ADDRESS: ${GOOGLE_EMAIL:-susclass.global@gmail.com}
+      EMAIL_FROM_ADDRESS: noreply@classroom.local
       # Frontend URL
       FRONTEND_URL: http://localhost:5000
       # Jitsi Meet URL (Local)

@@ -1,0 +1,6 @@
+name,email,password,staff_id,dept
+Sarah Johnson,sarah.johnson@classroom.local,Teacher@2026,STAFF001,Computer Science
+Michael Owusu,michael.owusu@classroom.local,Teacher@2026,STAFF002,Electronics
+Grace Achieng,grace.achieng@classroom.local,Teacher@2026,STAFF003,Mechanical Engineering
+David Mensah,david.mensah@classroom.local,Teacher@2026,STAFF004,Civil Engineering
+Fatou Diop,fatou.diop@classroom.local,Teacher@2026,STAFF005,Mathematics
