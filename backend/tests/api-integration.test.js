@@ -51,6 +51,8 @@ beforeAll(async () => {
       dept TEXT,
       media TEXT DEFAULT '{}',
       allocated_sections TEXT DEFAULT '[]',
+      totp_enabled INTEGER DEFAULT 0,
+      totp_secret TEXT,
       otp_code TEXT,
       otp_expiry TIMESTAMP
     );
@@ -64,6 +66,8 @@ beforeAll(async () => {
       class_dept TEXT,
       section TEXT,
       media TEXT DEFAULT '{}',
+      totp_enabled INTEGER DEFAULT 0,
+      totp_secret TEXT,
       otp_code TEXT,
       otp_expiry TIMESTAMP
     );
@@ -71,6 +75,7 @@ beforeAll(async () => {
     CREATE TABLE modules (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       section TEXT NOT NULL,
+      sections TEXT DEFAULT '[]',
       subject TEXT NOT NULL,
       topic_title TEXT NOT NULL,
       teacher_id INTEGER NOT NULL,
@@ -85,6 +90,7 @@ beforeAll(async () => {
       teacher_id INTEGER NOT NULL,
       teacher_name TEXT NOT NULL,
       section TEXT NOT NULL,
+      sections TEXT DEFAULT '[]',
       title TEXT NOT NULL,
       description TEXT,
       questions TEXT NOT NULL,
@@ -183,6 +189,18 @@ beforeAll(async () => {
     FROM notification_events ne
     LEFT JOIN notification_preferences np ON ne.event_code = np.event_code;
 
+    CREATE TABLE IF NOT EXISTS in_app_notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recipient_type TEXT NOT NULL,
+      recipient_id INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      title TEXT,
+      message TEXT NOT NULL,
+      metadata TEXT DEFAULT '{}',
+      is_read INTEGER DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE VIEW v_recent_notifications AS
     SELECT 
       nl.id,
@@ -234,6 +252,28 @@ beforeAll(async () => {
           return { rows: [{ track_module_access: 1 }], rowCount: 1 };
         }
         
+        // Handle PostgreSQL-specific section access check with @> jsonb operator
+        if (query.includes('@>') && query.includes('to_jsonb') && query.includes('modules m')) {
+          // Simplified access check for SQLite: just check section match
+          const sqliteParams = params.map(p => {
+            if (p instanceof Date) return p.toISOString();
+            if (typeof p === 'boolean') return p ? 1 : 0;
+            if (typeof p === 'object' && p !== null) return JSON.stringify(p);
+            return p;
+          });
+          try {
+            const stmt = db.prepare(`SELECT m.id FROM modules m
+              JOIN students s ON s.id = ?
+              WHERE m.id = ? AND (
+                UPPER(TRIM(m.section)) = UPPER(TRIM(COALESCE(s.class_dept,'') || ' ' || COALESCE(s.section,'')))
+              )`);
+            const rows = stmt.all(sqliteParams[1], sqliteParams[0]);
+            return { rows, rowCount: rows.length };
+          } catch (e) {
+            return { rows: [], rowCount: 0 };
+          }
+        }
+        
         // Convert PostgreSQL syntax to SQLite
         let sqliteQuery = query
           .replace(/\$(\d+)/g, '?')
@@ -243,7 +283,9 @@ beforeAll(async () => {
           .replace(/CURRENT_TIMESTAMP/g, "datetime('now')")
           .replace(/CURRENT_DATE - INTERVAL '30 days'/g, "date('now', '-30 days')")
           .replace(/::jsonb/g, '')
-          .replace(/::json/g, '');
+          .replace(/::json/g, '')
+          .replace(/to_jsonb\([^)]+\)/g, "'[]'")
+          .replace(/@>/g, 'LIKE');
 
         // Convert Date objects and objects to strings for SQLite; convert booleans to 0/1
         const sqliteParams = params.map(p => {
@@ -375,33 +417,15 @@ describe('Authentication & OTP', () => {
     expect(student.otp_code).toMatch(/^\d{6}$/);
   });
   
-  test('POST /api/verify-otp - valid OTP returns token', async () => {
-    // Set a known OTP
-    const otp = '123456';
-    const expiry = new Date(Date.now() + 5 * 60000).toISOString();
-    db.prepare('UPDATE students SET otp_code = ?, otp_expiry = ? WHERE email = ?')
-      .run(otp, expiry, testStudent.email);
-    
+  test('POST /api/verify-otp - endpoint removed (email OTP removed for security)', async () => {
+    // Email OTP was intentionally removed — see SECURITY-HARDENING-CHANGELOG.md
+    // Only TOTP (authenticator app) remains as MFA option
     const res = await request(app)
       .post('/api/verify-otp')
-      .send({ email: testStudent.email, otp, role: 'student' });
+      .send({ email: testStudent.email, otp: '123456', role: 'student' });
     
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.token).toBeDefined();
-    
-    // Verify OTP cleared
-    const student = db.prepare('SELECT otp_code FROM students WHERE email = ?').get(testStudent.email);
-    expect(student.otp_code).toBeNull();
-  });
-  
-  test('POST /api/verify-otp - invalid OTP fails', async () => {
-    const res = await request(app)
-      .post('/api/verify-otp')
-      .send({ email: testStudent.email, otp: '000000', role: 'student' });
-    
-    expect(res.status).toBe(401);
-    expect(res.body.success).toBe(false);
+    // Should return 404 since endpoint no longer exists
+    expect(res.status).toBe(404);
   });
 });
 
@@ -619,7 +643,8 @@ describe('Code Submission', () => {
   let studentToken;
   
   beforeAll(() => {
-    const student = db.prepare('SELECT id, email FROM students LIMIT 1').get();
+    // Use the student that has class_dept and section set (registered via API)
+    const student = db.prepare('SELECT id, email FROM students WHERE class_dept IS NOT NULL LIMIT 1').get();
     studentToken = jwt.sign({ id: student.id, email: student.email, role: 'student' }, JWT_SECRET);
   });
   
@@ -638,20 +663,23 @@ describe('Code Submission', () => {
   });
   
   test('POST /api/student/submit-code - handles valid submission', async () => {
-    // Mock fetch for Piston API
-    global.fetch = jest.fn(() =>
-      Promise.resolve({
-        json: () => Promise.resolve({ run: { stdout: '4\n' } })
-      })
-    );
+    // Seed a module that the student can access
+    const student = db.prepare('SELECT id, class_dept, section FROM students WHERE class_dept IS NOT NULL LIMIT 1').get();
+    const teacher = db.prepare('SELECT id, name FROM teachers LIMIT 1').get();
+    const sectionStr = ((student.class_dept || '') + ' ' + (student.section || '')).trim().toUpperCase();
     
+    // Use id=999 to avoid conflict with module from Module Management test
+    db.prepare(`INSERT OR REPLACE INTO modules (id, section, sections, subject, topic_title, teacher_id, teacher_name, step_count, steps) 
+      VALUES (999, ?, ?, 'TestSubject', 'TestTopic', ?, ?, 1, '[]')`)
+      .run(sectionStr, JSON.stringify([sectionStr]), teacher.id, teacher.name);
+
     const res = await request(app)
       .post('/api/student/submit-code')
       .set('Authorization', `Bearer ${studentToken}`)
       .send({
-        moduleId: 1,
-        code: 'console.log(2+2);',
-        language: 'javascript',
+        moduleId: 999,
+        code: 'print(4)',
+        language: 'python',
         testCases: [{ input: '', expected: '4' }]
       });
     

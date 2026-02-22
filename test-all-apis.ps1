@@ -1,6 +1,6 @@
 # Complete Backend API Test Suite
 # Tests ALL ~90 endpoints to ensure nothing is broken
-# Requires: EMAIL_OTP_REQUIRED=false (for direct login without OTP)
+# Login is direct JWT (no email OTP) — TOTP authenticator is optional
 # Usage: .\test-all-apis.ps1
 
 $baseUrl = "http://localhost:5000"
@@ -172,7 +172,8 @@ if ($teacherId -and $studentId) {
 
     Test-Endpoint "Allocate Sections" "POST" "/api/admin/allocate-sections" @{
         teacher_id = $teacherId
-        sections = @("CSE A")
+        sections = @(1)
+        subject = "Computer Science"
     } $adminToken
 
     Test-Endpoint "Get Teacher Students" "GET" "/api/admin/teacher/$teacherId/students" $null $adminToken
@@ -180,6 +181,7 @@ if ($teacherId -and $studentId) {
     
     Test-Endpoint "Update Teacher Allocations" "PUT" "/api/admin/teacher/$teacherId/allocations" @{
         sections = @("CSE A")
+        subject = "Computer Science"
     } $adminToken
 }
 
@@ -206,9 +208,9 @@ $teacherLogin = Test-Endpoint "Teacher Login" "POST" "/api/login" @{
 $teacherToken = $null
 if ($teacherLogin.token) {
     $teacherToken = $teacherLogin.token
-    Write-Host "  Direct login (OTP disabled)" -ForegroundColor DarkGray
-} elseif ($teacherLogin.mfaRequired) {
-    Write-Host "  OTP required - skipping teacher auth tests (set EMAIL_OTP_REQUIRED=false)" -ForegroundColor Yellow
+    Write-Host "  Direct login OK" -ForegroundColor DarkGray
+} else {
+    Write-Host "  Login returned no token" -ForegroundColor Yellow
 }
 
 # ==========================================
@@ -226,9 +228,9 @@ $studentLogin = Test-Endpoint "Student Login" "POST" "/api/login" @{
 $studentToken = $null
 if ($studentLogin.token) {
     $studentToken = $studentLogin.token
-    Write-Host "  Direct login (OTP disabled)" -ForegroundColor DarkGray
-} elseif ($studentLogin.mfaRequired) {
-    Write-Host "  OTP required - skipping student auth tests (set EMAIL_OTP_REQUIRED=false)" -ForegroundColor Yellow
+    Write-Host "  Direct login OK" -ForegroundColor DarkGray
+} else {
+    Write-Host "  Login returned no token" -ForegroundColor Yellow
 }
 
 # Login validation tests
@@ -343,8 +345,7 @@ if ($studentToken) {
     } $studentToken
     
     Test-Endpoint "Student Update Time" "POST" "/api/student/update-time" @{
-        moduleId = $(if ($moduleId) { $moduleId } else { 1 })
-        timeSpent = 60
+        seconds = 60
     } $studentToken
 }
 
@@ -452,7 +453,8 @@ if ($studentToken) {
 if ($teacherToken) {
     Test-Endpoint "Notification Stats (Teacher)" "GET" "/api/notifications/stats" $null $teacherToken
     Test-Endpoint "Test Notification" "POST" "/api/notifications/test" @{
-        message = "API test notification"
+        eventCode = "MODULE_PUBLISHED"
+        data = @{ title = "API Test Module" }
     } $teacherToken
 }
 
@@ -478,8 +480,8 @@ if ($teacherToken) {
     # Create a chat room
     if ($studentId) {
         $chatRoom = Test-Endpoint "Create Chat Room" "POST" "/api/chat/room" @{
-            participantId = $studentId
-            participantType = "student"
+            targetId = $studentId
+            targetRole = "student"
         } $teacherToken
         
         $roomId = $null

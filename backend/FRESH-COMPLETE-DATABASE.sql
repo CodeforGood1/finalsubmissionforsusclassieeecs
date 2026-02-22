@@ -39,7 +39,10 @@ DROP FUNCTION IF EXISTS create_index_if_not_exists(TEXT, TEXT, TEXT) CASCADE;
 
 -- Drop tables (in correct order due to foreign keys)
 DROP TABLE IF EXISTS in_app_notifications CASCADE;
+DROP TABLE IF EXISTS teacher_allocations CASCADE;
 DROP TABLE IF EXISTS teacher_student_allocations CASCADE;
+DROP TABLE IF EXISTS module_completion CASCADE;
+DROP TABLE IF EXISTS daily_study_time CASCADE;
 DROP TABLE IF EXISTS test_submissions CASCADE;
 DROP TABLE IF EXISTS mcq_tests CASCADE;
 DROP TABLE IF EXISTS modules CASCADE;
@@ -815,6 +818,47 @@ CREATE TABLE IF NOT EXISTS teacher_student_allocations (
 CREATE INDEX idx_allocations_teacher ON teacher_student_allocations(teacher_id);
 CREATE INDEX idx_allocations_student ON teacher_student_allocations(student_id);
 CREATE INDEX idx_allocations_subject ON teacher_student_allocations(subject);
+
+-- Table 6b: TEACHER_ALLOCATIONS (Tracks section/subject assignments)
+CREATE TABLE IF NOT EXISTS teacher_allocations (
+    id SERIAL PRIMARY KEY,
+    teacher_id INTEGER NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+    section TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(teacher_id, section)
+);
+
+CREATE INDEX idx_teacher_alloc_teacher ON teacher_allocations(teacher_id);
+
+-- Table 6c: MODULE_COMPLETION (Tracks per-step completion for students)
+CREATE TABLE IF NOT EXISTS module_completion (
+    id SERIAL PRIMARY KEY,
+    module_id INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    step_index INTEGER NOT NULL,
+    is_completed BOOLEAN DEFAULT FALSE,
+    completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(module_id, student_id, step_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_module_completion_module ON module_completion(module_id);
+CREATE INDEX IF NOT EXISTS idx_module_completion_student ON module_completion(student_id);
+CREATE INDEX IF NOT EXISTS idx_module_completion_completed ON module_completion(is_completed);
+
+-- Table 6d: DAILY_STUDY_TIME (Tracks daily study time per student)
+CREATE TABLE IF NOT EXISTS daily_study_time (
+    id SERIAL PRIMARY KEY,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    study_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    total_seconds INTEGER NOT NULL DEFAULT 0,
+    session_start TIMESTAMP,
+    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(student_id, study_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_study_student_date ON daily_study_time(student_id, study_date);
 
 -- View: Teachers with their students
 CREATE OR REPLACE VIEW v_teacher_students AS

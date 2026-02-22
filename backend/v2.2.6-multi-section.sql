@@ -65,7 +65,8 @@ CREATE INDEX IF NOT EXISTS idx_coding_submissions_student_module ON student_subm
 -- ============================================================
 -- VIEW: Student coding progress across all problems in a module
 -- ============================================================
-CREATE OR REPLACE VIEW v_student_coding_progress AS
+DROP VIEW IF EXISTS v_student_coding_progress;
+CREATE VIEW v_student_coding_progress AS
 SELECT 
     ss.student_id,
     s.name as student_name,

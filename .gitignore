@@ -55,6 +55,7 @@ setup-notifications.sh
 start-local.ps1
 *-sample.csv
 dsp-test-sample.csv
+SECURITY-HARDENING-CHANGELOG.md
 
 # Docker volumes and data
 postgres-data/

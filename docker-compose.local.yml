@@ -16,9 +16,9 @@ services:
     image: postgres:15-alpine
     container_name: lms-db
     environment:
-      POSTGRES_USER: lms_user
-      POSTGRES_PASSWORD: lms_password
-      POSTGRES_DB: lms_db
+      POSTGRES_USER: ${DB_USER:-lms_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-CHANGEME}
+      POSTGRES_DB: ${DB_NAME:-sustainable_classroom}
     ports:
       - "5432:5432"
     volumes:
@@ -32,7 +32,7 @@ services:
       - ./backend/v2.2.6-multi-section.sql:/docker-entrypoint-initdb.d/06-multi-section.sql:ro
       - ./backend/notification-system.sql:/docker-entrypoint-initdb.d/07-notification-system.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lms_user -d lms_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-lms_admin} -d ${DB_NAME:-sustainable_classroom}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -98,10 +98,10 @@ services:
       - ENABLE_LOBBY=1
       - ENABLE_XMPP_WEBSOCKET=1
       - JICOFO_AUTH_USER=focus
-      - JICOFO_AUTH_PASSWORD=jicofopassword
-      - JICOFO_COMPONENT_SECRET=componentpassword
+      - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD:-CHANGEME}
+      - JICOFO_COMPONENT_SECRET=${JICOFO_COMPONENT_SECRET:-CHANGEME}
       - JVB_AUTH_USER=jvb
-      - JVB_AUTH_PASSWORD=jvbpassword
+      - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD:-CHANGEME}
       - PUBLIC_URL=https://localhost:8443
       - TZ=UTC
       - XMPP_AUTH_DOMAIN=auth.meet.jitsi
@@ -128,8 +128,8 @@ services:
       - ENABLE_AUTH=0
       - ENABLE_AUTO_OWNER=1
       - JICOFO_AUTH_USER=focus
-      - JICOFO_AUTH_PASSWORD=jicofopassword
-      - JICOFO_COMPONENT_SECRET=componentpassword
+      - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD:-CHANGEME}
+      - JICOFO_COMPONENT_SECRET=${JICOFO_COMPONENT_SECRET:-CHANGEME}
       - TZ=UTC
       - XMPP_AUTH_DOMAIN=auth.meet.jitsi
       - XMPP_DOMAIN=meet.jitsi
@@ -153,7 +153,7 @@ services:
     environment:
       - DOCKER_HOST_ADDRESS=127.0.0.1
       - JVB_AUTH_USER=jvb
-      - JVB_AUTH_PASSWORD=jvbpassword
+      - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD:-CHANGEME}
       - JVB_BREWERY_MUC=jvbbrewery
       - JVB_PORT=10000
       - JVB_STUN_SERVERS=stun.l.google.com:19302,stun1.l.google.com:19302

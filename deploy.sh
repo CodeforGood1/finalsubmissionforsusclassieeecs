@@ -59,12 +59,12 @@ if [ ! -f .env ]; then
         # Create default .env
         cat > .env << EOF
 # Database
-DB_PASSWORD=SecureLocalDB2026
+DB_PASSWORD=CHANGEME
 
-# Authentication
-JWT_SECRET=OnPremiseSecureKey2026AfricaChallenge
+# Authentication - CHANGE THESE BEFORE FIRST USE
+JWT_SECRET=CHANGEME
 ADMIN_EMAIL=admin@classroom.local
-ADMIN_PASSWORD=Admin@2026
+ADMIN_PASSWORD=CHANGEME
 
 # Email Configuration
 # For Gmail: SMTP_HOST=smtp.gmail.com, SMTP_PORT=587, SMTP_SECURE=true
@@ -192,7 +192,7 @@ echo "   Jitsi Meet:      https://localhost:8443"
 echo "   Database:        localhost:5432"
 echo ""
 echo "Default Credentials:"
-echo "   Admin:   admin@classroom.local / Admin@2026"
+echo "   Admin:   admin@classroom.local / (password from .env)"
 echo ""
 echo "Commands:"
 echo "   View logs:   $COMPOSE_CMD -f $COMPOSE_FILE logs -f"

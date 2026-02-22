@@ -59,12 +59,12 @@ if (-not (Test-Path ".env")) {
     Print-Warning ".env file not found. Creating default..."
     @"
 # Database
-DB_PASSWORD=SecureLocalDB2026
+DB_PASSWORD=CHANGEME
 
-# Authentication
-JWT_SECRET=OnPremiseSecureKey2026AfricaChallenge
+# Authentication - CHANGE THESE BEFORE FIRST USE
+JWT_SECRET=CHANGEME
 ADMIN_EMAIL=admin@classroom.local
-ADMIN_PASSWORD=Admin@2026
+ADMIN_PASSWORD=CHANGEME
 
 # Email Configuration
 SMTP_HOST=mailhog
@@ -227,7 +227,7 @@ Write-Host "   Jitsi Meet:      https://localhost:8443"
 Write-Host "   Database:        localhost:5432"
 Write-Host ""
 Write-Host "Default Credentials:" -ForegroundColor Cyan
-Write-Host "   Admin:   admin@classroom.local / Admin@2026"
+Write-Host "   Admin:   admin@classroom.local / (password from .env)"
 Write-Host ""
 Write-Host "Commands:" -ForegroundColor Cyan
 if ($composeCmd -eq "docker compose") {

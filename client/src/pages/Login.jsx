@@ -8,23 +8,18 @@ function Login() {
   const [role, setRole] = useState('student'); 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [otp, setOtp] = useState('');
-  const [showOtp, setShowOtp] = useState(false);
+  const [totpCode, setTotpCode] = useState('');
+  const [showTotp, setShowTotp] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [inactivityMessage, setInactivityMessage] = useState('');
-  
-  // TOTP State
-  const [totpEnabled, setTotpEnabled] = useState(false);
-  const [useEmailOtp, setUseEmailOtp] = useState(false);
-  const [requestingEmailOtp, setRequestingEmailOtp] = useState(false);
   
   // Password Reset State
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetOtp, setResetOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [resetStep, setResetStep] = useState(1); // 1: email, 2: otp+password
+  const [resetStep, setResetStep] = useState(1); // 1: email, 2: code+password
   const [resetMessage, setResetMessage] = useState('');
 
   // Check for inactivity logout message
@@ -35,14 +30,13 @@ function Login() {
     }
   }, [location]);
 
-  // STEP 1: Handle Initial Login (Email/Password check + Trigger OTP)
+  // STEP 1: Handle Initial Login (Email/Password)
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     const activeRole = role.toLowerCase();
     
-    // Admin goes to a separate endpoint, others go to universal login
     const endpoint = activeRole === 'admin' ? '/api/admin/login' : '/api/login';
 
     try {
@@ -57,13 +51,11 @@ function Login() {
       });
       const data = await response.json();
 
-      if (data.mfaRequired) {
-        // Correct password! Now show the OTP popup
-        setTotpEnabled(data.totpEnabled || false);
-        setUseEmailOtp(!data.totpEnabled); // If no TOTP, default to email
-        setShowOtp(true); 
+      if (data.mfaRequired && data.totpEnabled) {
+        // User has authenticator app — show TOTP input
+        setShowTotp(true);
       } else if (data.success) {
-        // Direct login (usually for Admin or if MFA is disabled)
+        // Direct login (admin, or MFA disabled)
         completeAuth(data, activeRole);
       } else {
         setError(data.message || "INVALID CREDENTIALS");
@@ -76,63 +68,29 @@ function Login() {
     }
   };
 
-  // Request Email OTP (for users who have TOTP but want email fallback)
-  const handleRequestEmailOtp = async () => {
-    setRequestingEmailOtp(true);
+  // STEP 2: Verify TOTP code from authenticator app
+  const handleVerifyTotp = async (e) => {
+    e.preventDefault();
+    setLoading(true);
     setError('');
     
     try {
-      const res = await fetch(`${API_BASE_URL}/api/request-email-otp`, {
+      const res = await fetch(`${API_BASE_URL}/api/verify-totp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           email: email.trim(), 
+          code: totpCode.trim(), 
           role: role.toLowerCase() 
         })
       });
       const data = await res.json();
       
       if (data.success) {
-        setUseEmailOtp(true);
-        setOtp(''); // Clear any entered TOTP code
-      } else {
-        setError(data.error || "Failed to send email OTP");
-      }
-    } catch (err) {
-      setError("Connection failed");
-    } finally {
-      setRequestingEmailOtp(false);
-    }
-  };
-
-  // STEP 2: Handle OTP Verification (TOTP or Email OTP)
-  const handleVerifyOtp = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    
-    // Choose endpoint based on whether using TOTP or email OTP
-    const endpoint = (totpEnabled && !useEmailOtp) ? '/api/verify-totp' : '/api/verify-otp';
-    
-    // TOTP uses 'code', email OTP uses 'otp'
-    const bodyData = totpEnabled && !useEmailOtp
-      ? { email: email.trim(), code: otp.trim(), role: role.toLowerCase() }
-      : { email: email.trim(), otp: otp.trim(), role: role.toLowerCase() };
-    
-    try {
-      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyData)
-      });
-      const data = await res.json();
-      
-      if (data.success) {
         completeAuth(data, role.toLowerCase());
       } else {
-        // Use alert or error state for invalid OTP
         setError(data.error || data.message || "Invalid code");
-        setOtp(''); // Clear input on failure
+        setTotpCode('');
       }
     } catch (err) { 
       console.error(err);
@@ -158,24 +116,21 @@ function Login() {
         });
         const checkData = await checkRes.json();
         
-        // First-time users without TOTP - redirect to setup
         if (!checkData.totpEnabled) {
           navigate('/setup-authenticator');
           return;
         }
       } catch (err) {
         console.error('TOTP check failed:', err);
-        // Continue to dashboard if check fails
       }
     }
     
-    // Navigation Logic
     if (activeRole === 'admin') navigate('/admin-dashboard');
     else if (activeRole === 'teacher') navigate('/teacher-dashboard');
     else navigate('/dashboard');
   };
 
-  // Password Reset: Request OTP
+  // Password Reset: Request code
   const handleResetRequest = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -202,7 +157,7 @@ function Login() {
     }
   };
 
-  // Password Reset: Confirm with OTP
+  // Password Reset: Confirm with code
   const handleResetConfirm = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -311,26 +266,16 @@ function Login() {
         )}
       </div>
 
-      {/* OTP POPUP OVERLAY */}
-      {showOtp && (
+      {/* TOTP POPUP OVERLAY (Authenticator app only) */}
+      {showTotp && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md px-4">
           <div className="w-full max-w-sm rounded-[2.5rem] bg-white p-10 shadow-2xl border border-slate-100 text-center animate-in zoom-in duration-300">
-            {/* TOTP Mode - User has authenticator app */}
-            {totpEnabled && !useEmailOtp ? (
-              <>
-                <h3 className="text-xl font-black uppercase italic tracking-tighter">
-                  <span className="text-emerald-500">Authenticator</span> Code
-                </h3>
-                <p className="text-[10px] font-bold text-slate-400 uppercase mt-2 mb-6 tracking-widest">
-                  Enter 6-digit code from your authenticator app
-                </p>
-              </>
-            ) : (
-              <>
-                <h3 className="text-xl font-black uppercase italic tracking-tighter">Enter <span className="text-emerald-500">OTP</span></h3>
-                <p className="text-[10px] font-bold text-slate-400 uppercase mt-2 mb-6 tracking-widest">Verify the code sent to {email}</p>
-              </>
-            )}
+            <h3 className="text-xl font-black uppercase italic tracking-tighter">
+              <span className="text-emerald-500">Authenticator</span> Code
+            </h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase mt-2 mb-6 tracking-widest">
+              Enter 6-digit code from your authenticator app
+            </p>
             
             {error && (
               <div className="mb-4 p-3 bg-red-50 text-red-500 text-[10px] font-bold rounded-xl uppercase border border-red-100">
@@ -338,15 +283,15 @@ function Login() {
               </div>
             )}
             
-            <form onSubmit={handleVerifyOtp} className="space-y-4">
+            <form onSubmit={handleVerifyTotp} className="space-y-4">
               <input 
                 type="text" 
                 maxLength="6" 
                 required 
-                value={otp}
+                value={totpCode}
                 placeholder="------" 
                 className="w-full text-center text-3xl tracking-[0.3em] font-black rounded-2xl border-2 border-slate-100 bg-slate-50 p-5 outline-none focus:border-emerald-500" 
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} 
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))} 
               />
               <button 
                 type="submit" 
@@ -356,32 +301,9 @@ function Login() {
                 {loading ? 'Verifying...' : 'Verify Identity'}
               </button>
               
-              {/* Option to switch to email OTP (if TOTP is enabled) */}
-              {totpEnabled && !useEmailOtp && (
-                <button 
-                  type="button" 
-                  onClick={handleRequestEmailOtp}
-                  disabled={requestingEmailOtp}
-                  className="text-[9px] font-black text-emerald-600 uppercase tracking-widest block w-full text-center hover:text-emerald-700"
-                >
-                  {requestingEmailOtp ? 'Sending...' : 'Use Email OTP Instead'}
-                </button>
-              )}
-              
-              {/* Option to switch back to TOTP (if currently using email fallback) */}
-              {totpEnabled && useEmailOtp && (
-                <button 
-                  type="button" 
-                  onClick={() => { setUseEmailOtp(false); setOtp(''); setError(''); }}
-                  className="text-[9px] font-black text-emerald-600 uppercase tracking-widest block w-full text-center hover:text-emerald-700"
-                >
-                  Use Authenticator App
-                </button>
-              )}
-              
               <button 
                 type="button" 
-                onClick={() => { setShowOtp(false); setOtp(''); setError(''); setUseEmailOtp(false); }} 
+                onClick={() => { setShowTotp(false); setTotpCode(''); setError(''); }} 
                 className="text-[9px] font-black text-slate-400 uppercase tracking-widest block w-full text-center hover:text-slate-600"
               >
                 Cancel

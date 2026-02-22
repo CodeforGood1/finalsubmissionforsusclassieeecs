@@ -9,7 +9,7 @@ services:
     container_name: lms-database
     environment:
       POSTGRES_USER: lms_admin
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-SecureLocalDB2026}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
       POSTGRES_DB: sustainable_classroom
     ports:
       - "5432:5432"
@@ -26,33 +26,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U lms_admin -d sustainable_classroom"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    networks:
-      - lms-network
-    restart: unless-stopped
-
-  # ============================================================
-  redis:
-    image: redis:7-alpine
-    container_name: lms-cache
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: >
-      redis-server
-      --appendonly yes
-      --appendfsync everysec
-      --save 900 1
-      --save 300 10
-      --save 60 10000
-      --dir /data
-      --dbfilename dump.rdb
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 20s
     networks:
       - lms-network
     restart: unless-stopped
@@ -81,14 +56,12 @@ services:
       NODE_ENV: development
       PORT: 5000
       # Database (Local PostgreSQL)
-      DATABASE_URL: postgresql://lms_admin:${DB_PASSWORD:-SecureLocalDB2026}@postgres:5432/sustainable_classroom
+      DATABASE_URL: postgresql://lms_admin:${DB_PASSWORD:?Set DB_PASSWORD in .env}@postgres:5432/sustainable_classroom
       DB_SSL: "false"
       # Authentication
-      JWT_SECRET: ${JWT_SECRET:-OnPremiseSecureKey2026AfricaChallenge}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@classroom.local}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@2026}
-      # Set to "false" for offline deployments where mailhog is exposed to all users
-      EMAIL_OTP_REQUIRED: ${EMAIL_OTP_REQUIRED:-false}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
       # MailHog local SMTP
       SMTP_HOST: mailhog
       SMTP_PORT: 1025
@@ -96,23 +69,16 @@ services:
       SMTP_IGNORE_TLS: "true"
       EMAIL_FROM_NAME: Sustainable Classroom
       EMAIL_FROM_ADDRESS: noreply@classroom.local
-      # Frontend URL
-      FRONTEND_URL: http://localhost:5000
       # Jitsi Meet URL (Local)
       JITSI_SERVER_URL: ${JITSI_SERVER_URL:-https://localhost:8443}
       # Storage
       UPLOAD_DIR: /app/backend/uploads
-      # Redis Cache
-      REDIS_ENABLED: "true"
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      # Code Execution (Local Piston)
-      PISTON_URL: http://piston:2000
+      # Code Execution (Local - no external services required)
+      # PISTON_URL is not used — code execution uses local-code-executor.js
+      CODE_EXECUTION_MODE: local
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+        condition: service_started
     volumes:
       # Persist uploaded files
       - uploads_data:/app/backend/uploads
@@ -130,7 +96,7 @@ services:
     container_name: lms-proxy
     ports:
       - "80:80"
-      - "443:443"
+      # - "443:443"  # Uncomment when SSL certs are configured in nginx/ssl/
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
@@ -191,10 +157,10 @@ services:
       - GLOBAL_MODULES=statistics,alert
       - GLOBAL_CONFIG=statistics_interval = 60
       - JICOFO_AUTH_USER=focus
-      - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD:-jicofopassword}
-      - JICOFO_COMPONENT_SECRET=${JICOFO_COMPONENT_SECRET:-componentpassword}
+      - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD:?Set JICOFO_AUTH_PASSWORD in .env}
+      - JICOFO_COMPONENT_SECRET=${JICOFO_COMPONENT_SECRET:?Set JICOFO_COMPONENT_SECRET in .env}
       - JVB_AUTH_USER=jvb
-      - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD:-jvbpassword}
+      - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD:?Set JVB_AUTH_PASSWORD in .env}
       - PUBLIC_URL=${JITSI_PUBLIC_URL:-https://localhost:8443}
       - TZ=${TZ:-UTC}
       - XMPP_AUTH_DOMAIN=auth.meet.jitsi
@@ -222,8 +188,8 @@ services:
       - ENABLE_AUTH=0
       - ENABLE_AUTO_OWNER=1
       - JICOFO_AUTH_USER=focus
-      - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD:-jicofopassword}
-      - JICOFO_COMPONENT_SECRET=${JICOFO_COMPONENT_SECRET:-componentpassword}
+      - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD:?Set JICOFO_AUTH_PASSWORD in .env}
+      - JICOFO_COMPONENT_SECRET=${JICOFO_COMPONENT_SECRET:?Set JICOFO_COMPONENT_SECRET in .env}
       - SENTRY_DSN=
       - TZ=${TZ:-UTC}
       - XMPP_AUTH_DOMAIN=auth.meet.jitsi
@@ -246,12 +212,12 @@ services:
       - "10000:10000/udp"
       - "4443:4443"
     environment:
-      - DOCKER_HOST_ADDRESS=${DOCKER_HOST_ADDRESS:-127.0.0.1}
+      - DOCKER_HOST_ADDRESS=${DOCKER_HOST_ADDRESS:-0.0.0.0}
       - JVB_AUTH_USER=jvb
-      - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD:-jvbpassword}
+      - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD:?Set JVB_AUTH_PASSWORD in .env}
       - JVB_BREWERY_MUC=jvbbrewery
       - JVB_PORT=10000
-      - JVB_STUN_SERVERS=stun.l.google.com:19302,stun1.l.google.com:19302
+      - JVB_STUN_SERVERS=
       - PUBLIC_URL=${JITSI_PUBLIC_URL:-https://localhost:8443}
       - SENTRY_DSN=
       - TZ=${TZ:-UTC}
@@ -268,27 +234,15 @@ services:
 
 volumes:
   postgres_data:
-    name: lms-postgres-data
-  redis_data:
-    name: lms-redis-data
   uploads_data:
-    name: lms-uploads
   logs_data:
-    name: lms-logs
   jitsi_web_config:
-    name: lms-jitsi-web-config
   jitsi_web_certs:
-    name: lms-jitsi-web-certs
   jitsi_transcripts:
-    name: lms-jitsi-transcripts
   jitsi_prosody_config:
-    name: lms-jitsi-prosody-config
   jitsi_prosody_plugins:
-    name: lms-jitsi-prosody-plugins
   jitsi_jicofo_config:
-    name: lms-jitsi-jicofo-config
   jitsi_jvb_config:
-    name: lms-jitsi-jvb-config
 
 networks:
   lms-network:

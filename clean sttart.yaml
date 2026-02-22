@@ -1,0 +1,17 @@
+# Clean start
+docker compose down -v
+docker compose build --no-cache
+docker compose up -d
+
+# Wait for DB to be healthy (~30s), then check:
+docker compose logs backend | tail -20
+# Should see: "[DATABASE] Connecting to PostgreSQL..."
+
+# Run the API test suite:
+# (from PowerShell)
+.\test-all-apis.ps1
+# OR (from bash)
+curl http://localhost:5000/api/health
+curl -X POST http://localhost:5000/api/admin/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@classroom.local","password":"Admin@2026"}'

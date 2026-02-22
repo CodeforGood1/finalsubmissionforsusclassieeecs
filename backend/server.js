@@ -18,7 +18,30 @@ const QRCode = require('qrcode');
 // Local services for on-premise deployment
 const localStorageService = require('./localStorageService');
 const localEmailService = require('./localEmailService');
-const { executeCode } = require('./local-code-executor');
+const { executeCode, MAX_TIMEOUT_MS, MAX_MEMORY_MB } = require('./local-code-executor');
+
+// --- INPUT VALIDATION HELPERS ---
+const VALID_ROLES = ['student', 'teacher'];
+const VALID_LANGUAGES = ['python', 'javascript', 'js', 'java', 'cpp', 'c++'];
+const MAX_STEPS = 50;
+const MAX_QUESTIONS = 200;
+const MAX_TEST_CASES = 20;
+const MAX_CODE_SIZE = 50000;
+
+function sanitizeRole(role) {
+  const r = (role || 'student').toLowerCase().trim();
+  return VALID_ROLES.includes(r) ? r : null;
+}
+function roleToTable(role) {
+  const r = sanitizeRole(role);
+  if (r === 'student') return 'students';
+  if (r === 'teacher') return 'teachers';
+  return null;
+}
+function isPositiveInt(v) {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n > 0;
+}
 
 // Initialize local storage directories
 localStorageService.ensureUploadDirs();
@@ -109,7 +132,7 @@ app.use('/api/', generalLimiter);
 // Apply stricter rate limiting to auth routes
 app.use('/api/login', authLimiter);
 app.use('/api/register', authLimiter);
-app.use('/api/verify-otp', authLimiter);
+app.use('/api/verify-totp', authLimiter);
 app.use('/api/forgot-password', authLimiter);
 
 // Serve static files from /public in production
@@ -233,7 +256,11 @@ lms_db_pool_waiting ${pool.waitingCount || 0}
 
 // --- CONFIGURATION ---
 const SALT_ROUNDS = 10;
-const JWT_SECRET = process.env.JWT_SECRET || 'your_new_secure_secret_key';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('[FATAL] JWT_SECRET environment variable is not set. Exiting.');
+  process.exit(1);
+}
 
 // --- DATABASE CONNECTION (LOCAL POSTGRESQL) ---
 // On-premise: Connect to local PostgreSQL server with optimized pool settings
@@ -373,19 +400,9 @@ console.log('[EMAIL] SMTP Host:', process.env.SMTP_HOST || 'localhost');
 console.log('[EMAIL] SMTP Port:', process.env.SMTP_PORT || 1025);
 console.log('[EMAIL] Dev Mode:', process.env.EMAIL_DEV_MODE || 'auto');
 
-// OTP Configuration - set EMAIL_OTP_REQUIRED=false for offline deployments where mailhog is exposed
-const EMAIL_OTP_REQUIRED = process.env.EMAIL_OTP_REQUIRED !== 'false'; // defaults to true
-console.log('[AUTH] Email OTP Required:', EMAIL_OTP_REQUIRED);
-
-// Send email using local SMTP service
+// Send email using local SMTP service (used for password reset only)
 const sendEmailAsync = async (mailOptions) => {
   return localEmailService.sendEmail(mailOptions);
-};
-
-// Helper to extract OTP from email HTML for debugging
-const extractOTPFromHTML = (html) => {
-  const match = html.match(/(\d{6})/);
-  return match ? match[1] : 'not found';
 };
 
 // 1. Admin Login (Env based)
@@ -407,9 +424,12 @@ app.post('/api/login', async (req, res) => {
         return res.status(400).json({ error: "Email and password are required" });
     }
     
-    // Default to 'student' if no role specified
-    const activeRole = (role || 'student').toLowerCase();
-    const table = activeRole === 'student' ? 'students' : 'teachers';
+    // Default to 'student' if no role specified — strict whitelist
+    const activeRole = sanitizeRole(role);
+    const table = roleToTable(role);
+    if (!activeRole || !table) {
+        return res.status(400).json({ error: "Role must be 'student' or 'teacher'" });
+    }
 
     try {
         const result = await pool.query(`SELECT * FROM ${table} WHERE LOWER(email) = LOWER($1)`, [email]);
@@ -419,66 +439,32 @@ app.post('/api/login', async (req, res) => {
             const isMatch = await bcrypt.compare(password, user.password);
             
             if (isMatch) {
-                // Check if user has TOTP enabled
+                // Check if user has TOTP (authenticator app) enabled
                 const totpEnabled = user.totp_enabled || false;
 
-                // If EMAIL_OTP_REQUIRED is false and user has no TOTP, skip OTP entirely
-                if (!EMAIL_OTP_REQUIRED && !totpEnabled) {
-                    // Direct login - no OTP needed (offline/local deployment)
+                if (totpEnabled) {
+                    // User has authenticator app — prompt for TOTP code
+                    res.json({ 
+                        success: true, 
+                        mfaRequired: true, 
+                        totpEnabled: true,
+                        email: user.email,
+                        message: "Enter code from your authenticator app"
+                    });
+                } else {
+                    // Direct login — no MFA required
                     const token = jwt.sign(
                         { id: user.id, email: user.email, role: activeRole },
                         JWT_SECRET,
                         { expiresIn: '24h' }
                     );
                     delete user.password;
-                    return res.json({
+                    delete user.totp_secret;
+                    res.json({
                         success: true,
                         mfaRequired: false,
                         token,
                         user: { ...user, role: activeRole }
-                    });
-                }
-
-                if (totpEnabled) {
-                    // User has authenticator app - they can use TOTP or request email OTP
-                    res.json({ 
-                        success: true, 
-                        mfaRequired: true, 
-                        totpEnabled: true,
-                        email: user.email,
-                        message: "Enter code from your authenticator app, or request email OTP"
-                    });
-                } else {
-                    // No TOTP - send email OTP
-                    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                    const otpExpiry = new Date(Date.now() + 5 * 60000).toISOString();
-
-                    await pool.query(
-                        `UPDATE ${table} SET otp_code = $1, otp_expiry = $2 WHERE id = $3`,
-                        [otp, otpExpiry, user.id]
-                    );
-
-                    // SEND RESPONSE FIRST - don't wait for email
-                    res.json({ 
-                        success: true, 
-                        mfaRequired: true, 
-                        totpEnabled: false,
-                        email: user.email,
-                        message: "OTP sent to your email"
-                    });
-
-                    // Then send email in background (non-blocking)
-                    sendEmailAsync({
-                        to: email,
-                        subject: 'Your Portal Access Code',
-                        html: `
-                            <div style="font-family: sans-serif; text-align: center; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-                                <h2 style="color: #333;">Security Verification</h2>
-                                <p style="color: #666;">Use the code below to complete your login:</p>
-                                <h1 style="color: #10b981; font-size: 40px; letter-spacing: 5px;">${otp}</h1>
-                                <p style="color: #999; font-size: 12px;">This code expires in 5 minutes.</p>
-                            </div>
-                        `
                     });
                 }
             } else {
@@ -493,93 +479,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// 2b. Request Email OTP (for users who have TOTP but want email fallback)
-app.post('/api/request-email-otp', async (req, res) => {
-    const { email, role } = req.body;
-    const table = role.toLowerCase() === 'student' ? 'students' : 'teachers';
-
-    try {
-        const result = await pool.query(`SELECT id, email FROM ${table} WHERE LOWER(email) = LOWER($1)`, [email]);
-        
-        if (result.rows.length > 0) {
-            const user = result.rows[0];
-            const otp = Math.floor(100000 + Math.random() * 900000).toString();
-            const otpExpiry = new Date(Date.now() + 5 * 60000).toISOString();
-
-            await pool.query(
-                `UPDATE ${table} SET otp_code = $1, otp_expiry = $2 WHERE id = $3`,
-                [otp, otpExpiry, user.id]
-            );
-
-            res.json({ success: true, message: "OTP sent to your email" });
-
-            // Send email in background
-            sendEmailAsync({
-                to: email,
-                subject: 'Your Portal Access Code',
-                html: `
-                    <div style="font-family: sans-serif; text-align: center; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-                        <h2 style="color: #333;">Security Verification</h2>
-                        <p style="color: #666;">Use the code below to complete your login:</p>
-                        <h1 style="color: #10b981; font-size: 40px; letter-spacing: 5px;">${otp}</h1>
-                        <p style="color: #999; font-size: 12px;">This code expires in 5 minutes.</p>
-                    </div>
-                `
-            });
-        } else {
-            res.status(404).json({ error: "Account not found" });
-        }
-    } catch (err) {
-        console.error("Request OTP Error:", err);
-        res.status(500).json({ error: "Database error" });
-    }
-});
-
-// 3. Verify OTP - Step 2: The Final Authentication
-// 3. Verify OTP - Step 2: The Final Authentication
-// This must be a separate block from the login block!
-app.post('/api/verify-otp', async (req, res) => {
-    const { email, otp, role } = req.body;
-    const table = role.toLowerCase() === 'student' ? 'students' : 'teachers';
-
-    try {
-        // Look for a user where email and otp match, and time has not run out
-        const result = await pool.query(
-            `SELECT * FROM ${table} WHERE LOWER(email) = LOWER($1) AND otp_code = $2 AND otp_expiry > NOW()`,
-            [email, otp]
-        );
-
-        if (result.rows.length > 0) {
-            const user = result.rows[0];
-
-            // SECURITY: Clear OTP immediately so it can't be used again
-            await pool.query(
-                `UPDATE ${table} SET otp_code = NULL, otp_expiry = NULL WHERE id = $1`, 
-                [user.id]
-            );
-
-            // Correct code! Now generate the JWT Token for the frontend
-            const token = jwt.sign(
-                { id: user.id, email: user.email, role: role.toLowerCase() }, 
-                JWT_SECRET, 
-                { expiresIn: '24h' }
-            );
-
-            delete user.password; // Don't send the password hash back to the browser
-            res.json({ 
-                success: true, 
-                token, 
-                user: { ...user, role: role.toLowerCase() } 
-            });
-        } else {
-            // Either the code is wrong, or it expired (5 min limit)
-            res.status(401).json({ success: false, message: "Invalid or Expired OTP" });
-        }
-    } catch (err) {
-        console.error("OTP Verification Error:", err);
-        res.status(500).json({ error: "Database error during verification" });
-    }
-});
+// (Email OTP endpoints removed — login uses direct JWT or TOTP authenticator app)
 
 // --- TOTP (AUTHENTICATOR APP) SETUP ---
 // Setup TOTP for teacher/student - generates QR code for Microsoft/Google Authenticator
@@ -675,10 +575,12 @@ app.post('/api/verify-totp-setup', authenticateToken, async (req, res) => {
   }
 });
 
-// 4c. Verify TOTP during Login (alternative to email OTP)
+// 4c. Verify TOTP during Login (authenticator app)
 app.post('/api/verify-totp', async (req, res) => {
   const { email, code, role } = req.body;
-  const table = role.toLowerCase() === 'student' ? 'students' : 'teachers';
+  if (!email || !code || !role) return res.status(400).json({ error: 'Email, code, and role required' });
+  const table = roleToTable(role);
+  if (!table) return res.status(400).json({ error: "Role must be 'student' or 'teacher'" });
 
   try {
     const result = await pool.query(
@@ -710,8 +612,6 @@ app.post('/api/verify-totp', async (req, res) => {
 
       delete user.password;
       delete user.totp_secret;
-      delete user.otp_code;
-      delete user.otp_expiry;
 
       res.json({
         success: true,
@@ -728,7 +628,7 @@ app.post('/api/verify-totp', async (req, res) => {
   }
 });
 
-// 4d. Disable TOTP (fall back to email OTP)
+// 4d. Disable TOTP (password-only login)
 app.post('/api/disable-totp', authenticateToken, async (req, res) => {
   const { role } = req.user;
   const userId = req.user.id;
@@ -742,7 +642,7 @@ app.post('/api/disable-totp', authenticateToken, async (req, res) => {
 
     res.json({
       success: true,
-      message: "Authenticator disabled. You will receive OTP codes via email."
+      message: "Authenticator disabled. You will log in with password only."
     });
 
   } catch (err) {
@@ -781,7 +681,8 @@ app.get('/api/check-totp', async (req, res) => {
       return res.status(400).json({ error: "Email and role required" });
     }
 
-    const table = role.toLowerCase() === 'student' ? 'students' : 'teachers';
+    const table = roleToTable(role);
+    if (!table) return res.status(400).json({ error: "Role must be 'student' or 'teacher'" });
     const result = await pool.query(
       `SELECT totp_enabled FROM ${table} WHERE LOWER(email) = LOWER($1)`,
       [email]
@@ -811,7 +712,8 @@ app.post('/api/password-reset/request', async (req, res) => {
     return res.status(400).json({ error: "Email and role required" });
   }
   
-  const table = role.toLowerCase() === 'teacher' ? 'teachers' : 'students';
+  const table = roleToTable(role);
+  if (!table) return res.status(400).json({ error: "Role must be 'student' or 'teacher'" });
   
   try {
     // Check if user exists
@@ -898,7 +800,8 @@ app.post('/api/password-reset/confirm', async (req, res) => {
     return res.status(400).json({ error: "Password must be at least 6 characters" });
   }
   
-  const table = role.toLowerCase() === 'teacher' ? 'teachers' : 'students';
+  const table = roleToTable(role);
+  if (!table) return res.status(400).json({ error: "Role must be 'student' or 'teacher'" });
   
   try {
     // Verify OTP
@@ -2006,8 +1909,17 @@ app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
     const { section, sections, subject, topic, steps } = req.body;
     const teacherId = req.user.id;
 
-    if (!subject) {
+    if (!subject || typeof subject !== 'string' || subject.trim().length < 1) {
       return res.status(400).json({ error: "Subject is required" });
+    }
+    if (!topic || typeof topic !== 'string' || topic.trim().length < 1) {
+      return res.status(400).json({ error: "Topic title is required" });
+    }
+    if (!steps || !Array.isArray(steps) || steps.length === 0) {
+      return res.status(400).json({ error: "At least one step is required" });
+    }
+    if (steps.length > MAX_STEPS) {
+      return res.status(400).json({ error: `Too many steps (max ${MAX_STEPS})` });
     }
 
     // Support both single section and multiple sections
@@ -2354,11 +2266,18 @@ app.get('/api/student/my-modules', authenticateToken, async (req, res) => {
 app.get('/api/student/module/:moduleId', authenticateToken, async (req, res) => {
   try {
     const moduleId = req.params.moduleId;
+    if (!isPositiveInt(moduleId)) return res.status(400).json({ error: 'Invalid module ID' });
     const studentId = req.user.id;
+
+    // Verify student has access to this module's section
+    const studentResult = await pool.query('SELECT class_dept, section FROM students WHERE id = $1', [studentId]);
+    if (studentResult.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
+    const { class_dept, section } = studentResult.rows[0];
+    const studentSection = `${class_dept} ${section}`.trim();
     
     const result = await pool.query(
-      'SELECT steps FROM modules WHERE id = $1',
-      [moduleId]
+      "SELECT steps FROM modules WHERE id = $1 AND (section = $2 OR section = 'ALL')",
+      [moduleId, studentSection]
     );
     
     if (result.rows.length === 0) return res.status(404).json({ error: "Module not found" });
@@ -2406,17 +2325,23 @@ app.get('/api/student/module/:moduleId', authenticateToken, async (req, res) => 
 app.post('/api/student/module/:moduleId/complete', authenticateToken, async (req, res) => {
   try {
     const moduleId = req.params.moduleId;
+    if (!isPositiveInt(moduleId)) return res.status(400).json({ error: 'Invalid moduleId' });
     const studentId = req.user.id;
     const { stepIndex } = req.body;
     
     if (stepIndex !== undefined) {
+      // Validate stepIndex is a non-negative integer within bounds
+      const idx = parseInt(stepIndex, 10);
+      if (!Number.isFinite(idx) || idx < 0 || idx > 200) {
+        return res.status(400).json({ error: 'stepIndex must be a non-negative integer (max 200)' });
+      }
       // Mark specific step as complete
       await pool.query(`
         INSERT INTO module_completion (module_id, student_id, step_index, is_completed)
         VALUES ($1, $2, $3, TRUE)
         ON CONFLICT (module_id, student_id, step_index)
         DO UPDATE SET is_completed = TRUE, completed_at = CURRENT_TIMESTAMP
-      `, [moduleId, studentId, stepIndex]);
+      `, [moduleId, studentId, idx]);
       
       // Check if all steps are now complete
       const moduleQuery = await pool.query('SELECT step_count FROM modules WHERE id = $1', [moduleId]);
@@ -2634,6 +2559,12 @@ app.post('/api/student/update-time', authenticateToken, async (req, res) => {
   try {
     const studentId = req.user.id;
     const { seconds } = req.body;
+
+    // Validate and cap seconds to prevent abuse
+    const secs = parseInt(seconds, 10);
+    if (!Number.isFinite(secs) || secs < 1 || secs > 3600) {
+      return res.status(400).json({ error: 'seconds must be between 1 and 3600' });
+    }
     const today = new Date().toISOString().split('T')[0];
     
     await pool.query(`
@@ -2641,9 +2572,9 @@ app.post('/api/student/update-time', authenticateToken, async (req, res) => {
       VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
       ON CONFLICT (student_id, study_date)
       DO UPDATE SET 
-        total_seconds = daily_study_time.total_seconds + $3,
+        total_seconds = LEAST(daily_study_time.total_seconds + $3, 86400),
         last_activity = CURRENT_TIMESTAMP
-    `, [studentId, today, seconds]);
+    `, [studentId, today, secs]);
     
     res.json({ success: true, message: 'Time updated' });
   } catch (err) {
@@ -2800,9 +2731,23 @@ app.get('/api/teacher/module/:moduleId/coding-submissions', authenticateToken, a
 app.post('/api/student/execute-code', authenticateToken, async (req, res) => {
     try {
         const { code, language, stdin } = req.body;
-        
-        // Use local code executor (works completely offline)
-        const result = await executeCode(code, language || 'python', stdin || '');
+
+        // Validate inputs
+        if (!code || typeof code !== 'string' || code.trim().length === 0) {
+            return res.status(400).json({ error: 'Code is required' });
+        }
+        if (code.length > MAX_CODE_SIZE) {
+            return res.status(400).json({ error: `Code too large (max ${MAX_CODE_SIZE} chars)` });
+        }
+        const lang = (language || 'python').toLowerCase();
+        if (!VALID_LANGUAGES.includes(lang)) {
+            return res.status(400).json({ error: `Unsupported language. Use: ${VALID_LANGUAGES.join(', ')}` });
+        }
+        if (stdin && typeof stdin !== 'string') {
+            return res.status(400).json({ error: 'stdin must be a string' });
+        }
+
+        const result = await executeCode(code, lang, stdin || '');
         
         res.json({
             success: !result.error,
@@ -2813,7 +2758,7 @@ app.post('/api/student/execute-code', authenticateToken, async (req, res) => {
 
     } catch (err) {
         console.error("CODE EXECUTION ERROR:", err.message);
-        res.status(500).json({ error: "Execution failed: " + err.message });
+        res.status(500).json({ error: "Execution failed" });
     }
 });
 
@@ -2823,19 +2768,49 @@ app.post('/api/student/submit-code', authenticateToken, async (req, res) => {
         const studentId = req.user.id;
         const studentEmail = req.user.email;
 
-        if (!testCases || testCases.length === 0) {
+        // Validate inputs
+        if (!moduleId || !isPositiveInt(moduleId)) {
+            return res.status(400).json({ error: 'Valid moduleId is required' });
+        }
+        if (!code || typeof code !== 'string' || code.trim().length === 0) {
+            return res.status(400).json({ error: 'Code is required' });
+        }
+        if (code.length > MAX_CODE_SIZE) {
+            return res.status(400).json({ error: `Code too large (max ${MAX_CODE_SIZE} chars)` });
+        }
+        const lang = (language || 'python').toLowerCase();
+        if (!VALID_LANGUAGES.includes(lang)) {
+            return res.status(400).json({ error: `Unsupported language. Use: ${VALID_LANGUAGES.join(', ')}` });
+        }
+        if (!testCases || !Array.isArray(testCases) || testCases.length === 0) {
             return res.status(400).json({ error: "No test cases provided." });
+        }
+        if (testCases.length > MAX_TEST_CASES) {
+            return res.status(400).json({ error: `Too many test cases (max ${MAX_TEST_CASES})` });
+        }
+
+        // Verify student has access to this module's section
+        const accessCheck = await pool.query(
+          `SELECT m.id FROM modules m
+           JOIN students s ON s.id = $2
+           WHERE m.id = $1 AND (
+             UPPER(TRIM(m.section)) = UPPER(TRIM(s.class_dept || ' ' || s.section))
+             OR m.sections @> to_jsonb(UPPER(TRIM(s.class_dept || ' ' || s.section)))::jsonb
+           )`,
+          [moduleId, studentId]
+        );
+        if (accessCheck.rows.length === 0) {
+            return res.status(403).json({ error: 'You do not have access to this module' });
         }
 
         let passedCount = 0;
 
         // --- EVALUATION LOOP ---
         for (const tc of testCases) {
-            // Use local code executor
-            const result = await executeCode(code, language, tc.input);
+            if (!tc || typeof tc.expected !== 'string') continue;
+            const result = await executeCode(code, lang, tc.input || '');
             const actualOutput = (result.stdout || "").trim();
             
-            // Compare output with expected result
             if (actualOutput === tc.expected.trim()) {
                 passedCount++;
             }
@@ -2904,6 +2879,19 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
     const { section, sections, title, description, questions, start_date, deadline } = req.body;
     const teacher_id = req.user.id;
     
+    if (!title || typeof title !== 'string' || title.trim().length < 1) {
+      return res.status(400).json({ error: "Test title is required" });
+    }
+    if (!questions || !Array.isArray(questions) || questions.length === 0) {
+      return res.status(400).json({ error: "At least one question is required" });
+    }
+    if (questions.length > MAX_QUESTIONS) {
+      return res.status(400).json({ error: `Too many questions (max ${MAX_QUESTIONS})` });
+    }
+    if (!deadline) {
+      return res.status(400).json({ error: "Deadline is required" });
+    }
+
     // Support both single section and multiple sections
     const targetSections = sections && Array.isArray(sections) && sections.length > 0 
       ? sections 
@@ -4035,6 +4023,15 @@ app.post('/api/chat/room', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const userRole = req.user.role;
 
+    // Validate targetRole
+    if (!targetId || !targetRole) {
+      return res.status(400).json({ error: 'targetId and targetRole are required' });
+    }
+    const targetTable = roleToTable(targetRole);
+    if (!targetTable) {
+      return res.status(400).json({ error: "targetRole must be 'student' or 'teacher'" });
+    }
+
     // Validate: teachers can chat with students, students can chat with teachers
     if (userRole === targetRole) {
       return res.status(400).json({ error: 'Cannot create chat with same role' });
@@ -4055,8 +4052,7 @@ app.post('/api/chat/room', authenticateToken, async (req, res) => {
     }
 
     // Get names for room name
-    const userTable = userRole === 'student' ? 'students' : 'teachers';
-    const targetTable = targetRole === 'student' ? 'students' : 'teachers';
+    const userTable = roleToTable(userRole);
     
     const userData = await pool.query(`SELECT name FROM ${userTable} WHERE id = $1`, [userId]);
     const targetData = await pool.query(`SELECT name FROM ${targetTable} WHERE id = $1`, [targetId]);
@@ -4186,6 +4182,14 @@ app.post('/api/chat/rooms/:roomId/messages', authenticateToken, async (req, res)
     const userId = req.user.id;
     const userRole = req.user.role;
 
+    // Validate message
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      return res.status(400).json({ error: 'Message cannot be empty' });
+    }
+    if (message.length > 5000) {
+      return res.status(400).json({ error: 'Message too long (max 5000 chars)' });
+    }
+
     // Verify user is participant
     const participant = await pool.query(
       `SELECT * FROM chat_participants WHERE room_id = $1 AND user_id = $2 AND user_role = $3`,
@@ -4197,15 +4201,16 @@ app.post('/api/chat/rooms/:roomId/messages', authenticateToken, async (req, res)
     }
 
     // Get sender name
-    const table = userRole === 'student' ? 'students' : 'teachers';
-    const userData = await pool.query(`SELECT name FROM ${table} WHERE id = $1`, [userId]);
+    const senderTable = roleToTable(userRole);
+    if (!senderTable) return res.status(400).json({ error: 'Invalid role' });
+    const userData = await pool.query(`SELECT name FROM ${senderTable} WHERE id = $1`, [userId]);
     const senderName = userData.rows[0]?.name || 'Unknown';
 
     // Insert message
     const newMessage = await pool.query(
       `INSERT INTO chat_messages (room_id, sender_id, sender_role, sender_name, message)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [roomId, userId, userRole, senderName, message]
+      [roomId, userId, userRole, senderName, message.trim()]
     );
 
     res.json(newMessage.rows[0]);

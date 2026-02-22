@@ -46,12 +46,12 @@ if not exist .env (
     echo [WARNING] .env file not found. Creating default...
     (
         echo # Database
-        echo DB_PASSWORD=SecureLocalDB2026
+        echo DB_PASSWORD=CHANGEME
         echo.
-        echo # Authentication
-        echo JWT_SECRET=OnPremiseSecureKey2026AfricaChallenge
+        echo # Authentication - CHANGE THESE BEFORE FIRST USE
+        echo JWT_SECRET=CHANGEME
         echo ADMIN_EMAIL=admin@classroom.local
-        echo ADMIN_PASSWORD=Admin@2026
+        echo ADMIN_PASSWORD=CHANGEME
         echo.
         echo # Email Configuration
         echo SMTP_HOST=mailhog
@@ -120,7 +120,7 @@ echo    Jitsi Meet:      https://localhost:8443
 echo    Database:        localhost:5432
 echo.
 echo Default Credentials:
-echo    Admin:   admin@classroom.local / Admin@2026
+echo    Admin:   admin@classroom.local / (password from .env)
 echo.
 echo Commands:
 echo    View logs:   %COMPOSE_CMD% -f %COMPOSE_FILE% logs -f
