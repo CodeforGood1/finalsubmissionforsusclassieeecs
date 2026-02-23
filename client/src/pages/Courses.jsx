@@ -34,11 +34,11 @@ function Courses() {
     fetchMyModules();
   }, [fetchMyModules, navigate, token]);
 
-  // Group modules by subject
+  // Group modules by subject (case-insensitive: "New" / "NEW" / "new" → same group)
   const subjectGroups = useMemo(() => {
     const groups = {};
     modules.forEach(mod => {
-      const subj = mod.subject || 'General';
+      const subj = (mod.subject || 'General').toLowerCase();
       if (!groups[subj]) {
         groups[subj] = { name: subj, modules: [], totalSteps: 0, completedSteps: 0 };
       }
