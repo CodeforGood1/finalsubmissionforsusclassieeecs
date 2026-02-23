@@ -37,7 +37,7 @@ cd finalsubmissionforsusclassieeecs
 cp .env.example .env
 ```
 
-Open `.env` and set **two values**:
+Open `.env` and set **three values**:
 
 ```env
 # 1. Your server's LAN IP address — run `ip addr show` or `hostname -I` to find it
@@ -47,6 +47,10 @@ DOCKER_HOST_ADDRESS=192.168.1.100
 
 # 2. Timezone — full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 TZ=Africa/Lagos
+
+# 3. Secure random secret for JWT tokens — MUST change before going live
+#    Generate one: openssl rand -hex 32
+JWT_SECRET=replace-this-with-a-long-random-string
 ```
 
 Everything else in `.env` has working defaults and does **not** need to change for a standard deployment.
@@ -150,13 +154,16 @@ docker compose exec -T postgres psql -U lms_admin sustainable_classroom < backup
 
 ## Troubleshooting
 
-**Backend not starting**  
+**Backend not starting / keeps restarting**  
 ```bash
 docker compose logs backend --tail=40
 ```
-Most common cause: database still initialising. Wait 60 seconds, then:
+Common causes:
+- *Database still initialising* — wait 60 seconds, then `docker compose restart backend`
+- *`SyntaxError: Unexpected end of JSON input` in package.json* — the image was built incorrectly. Fix with a clean rebuild:
 ```bash
-docker compose restart backend
+docker compose build backend --no-cache
+docker compose up -d --force-recreate backend
 ```
 
 **Video calls not connecting from other devices**  
@@ -199,7 +206,9 @@ sudo ufw enable
 
 ```bash
 git pull
-docker compose down
-docker compose up -d --build
+docker compose build backend --no-cache
+docker compose up -d --force-recreate backend
 ```
+
+> Always use `--no-cache` when updating. Skipping it can result in a corrupted image (0-byte files) that causes the backend to crash on start.
 
