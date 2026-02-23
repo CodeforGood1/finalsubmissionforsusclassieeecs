@@ -780,7 +780,8 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                         max={10000}
                         className="w-full p-3 bg-slate-50 rounded-lg border font-bold"
                         value={codingProblem.timeLimit}
-                        onChange={e => setCodingProblem({...codingProblem, timeLimit: Math.min(10000, Math.max(1000, parseInt(e.target.value) || 5000))})}
+                        onChange={e => setCodingProblem({...codingProblem, timeLimit: e.target.value === '' ? '' : parseInt(e.target.value)})}
+                        onBlur={() => setCodingProblem(prev => ({...prev, timeLimit: Math.min(10000, Math.max(1000, parseInt(prev.timeLimit) || 5000))}))}
                       />
                     </div>
                     <div className="bg-white p-4 rounded-xl border-2 border-slate-200">
@@ -791,7 +792,8 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                         max={128}
                         className="w-full p-3 bg-slate-50 rounded-lg border font-bold"
                         value={codingProblem.memoryLimit}
-                        onChange={e => setCodingProblem({...codingProblem, memoryLimit: Math.min(128, Math.max(16, parseInt(e.target.value) || 64))})}
+                        onChange={e => setCodingProblem({...codingProblem, memoryLimit: e.target.value === '' ? '' : parseInt(e.target.value)})}
+                        onBlur={() => setCodingProblem(prev => ({...prev, memoryLimit: Math.min(128, Math.max(16, parseInt(prev.memoryLimit) || 64))}))}
                       />
                     </div>
                   </div>

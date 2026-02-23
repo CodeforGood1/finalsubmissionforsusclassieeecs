@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import API_BASE_URL from '../config/api';
-import JitsiMeet from '../components/JitsiMeet';
 
 // Extract YouTube video ID and return a clean embed URL
 const getYouTubeEmbedUrl = (url) => {
@@ -32,9 +31,6 @@ function ModuleLearning() {
   const [selectedAnswer, setSelectedAnswer] = useState('');
   const [mcqSubmitted, setMcqSubmitted] = useState(false);
   const [mcqCorrect, setMcqCorrect] = useState(false);
-
-  // Jitsi state
-  const [showJitsi, setShowJitsi] = useState(false);
 
   // Code submission state
   const [codeSubmitted, setCodeSubmitted] = useState(false);
@@ -94,7 +90,6 @@ function ModuleLearning() {
     setMcqSubmitted(false);
     setMcqCorrect(false);
     setOutput('');
-    setShowJitsi(false);
     setCodeSubmitted(false);
     setCodeResults(null);
     setCustomInput('');
@@ -405,34 +400,34 @@ function ModuleLearning() {
             {/* JITSI LIVE VIDEO */}
             {currentStep.step_type === 'jitsi' && (
               <div className="space-y-4">
-                {!showJitsi ? (
-                  <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-8 rounded-2xl border-2 border-indigo-200 text-center">
-                    <div className="w-16 h-16 bg-indigo-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-xl font-bold text-indigo-900 mb-2">Live Session</h3>
-                    <p className="text-indigo-700 mb-2">Room: {currentStep.mcq_data?.roomName || currentStep.content}</p>
-                    {currentStep.mcq_data?.scheduledTime && (
-                      <p className="text-indigo-600 text-sm mb-4">
-                        Scheduled: {new Date(currentStep.mcq_data.scheduledTime).toLocaleString()}
-                      </p>
-                    )}
-                    <button
-                      onClick={() => setShowJitsi(true)}
-                      className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all"
-                    >
-                      Join Live Session
-                    </button>
+                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-8 rounded-2xl border-2 border-indigo-200 text-center">
+                  <div className="w-16 h-16 bg-indigo-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
                   </div>
-                ) : (
-                  <JitsiMeet
-                    roomName={currentStep.mcq_data?.roomName || currentStep.content || 'classroom'}
-                    displayName={userName}
-                    onClose={() => setShowJitsi(false)}
-                  />
-                )}
+                  <h3 className="text-xl font-bold text-indigo-900 mb-2">Live Session</h3>
+                  <p className="text-indigo-700 mb-2">Room: {currentStep.mcq_data?.roomName || currentStep.content}</p>
+                  {currentStep.mcq_data?.scheduledTime && (
+                    <p className="text-indigo-600 text-sm mb-4">
+                      Scheduled: {new Date(currentStep.mcq_data.scheduledTime).toLocaleString()}
+                    </p>
+                  )}
+                  {currentStep.mcq_data?.duration && (
+                    <p className="text-indigo-600 text-sm mb-4">Duration: {currentStep.mcq_data.duration} minutes</p>
+                  )}
+                  <button
+                    onClick={() => {
+                      const rawRoom = currentStep.mcq_data?.roomName || currentStep.content || 'classroom';
+                      const cleanRoom = rawRoom.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').substring(0, 50) || 'classroom';
+                      window.open(`https://localhost:8443/${cleanRoom}`, '_blank');
+                    }}
+                    className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all"
+                  >
+                    Join Live Session
+                  </button>
+                  <p className="text-indigo-500 text-xs mt-3">Opens in a new tab for the best experience</p>
+                </div>
               </div>
             )}
 
@@ -539,6 +534,19 @@ function ModuleLearning() {
                   <textarea
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Tab') {
+                        e.preventDefault();
+                        const start = e.target.selectionStart;
+                        const end = e.target.selectionEnd;
+                        const newCode = code.substring(0, start) + '  ' + code.substring(end);
+                        setCode(newCode);
+                        requestAnimationFrame(() => {
+                          e.target.selectionStart = start + 2;
+                          e.target.selectionEnd = start + 2;
+                        });
+                      }
+                    }}
                     className="w-full h-64 p-4 bg-slate-900 text-emerald-400 font-mono text-sm outline-none resize-none"
                     spellCheck={false}
                   />
