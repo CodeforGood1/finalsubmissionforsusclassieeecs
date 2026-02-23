@@ -237,7 +237,7 @@ function Courses() {
   }
 
   // ============ MODULE LIST VIEW (inside a subject) ============
-  const subjectModules = modules.filter(m => (m.subject || 'General') === selectedSubject);
+  const subjectModules = modules.filter(m => (m.subject || 'General').toLowerCase() === selectedSubject);
   const subjectIdx = subjectGroups.findIndex(g => g.name === selectedSubject);
   const color = getSubjectColor(subjectIdx >= 0 ? subjectIdx : 0);
   const c = colorClasses[color];
