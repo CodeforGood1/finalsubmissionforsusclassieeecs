@@ -100,6 +100,8 @@ If `lms-backend` shows `health: starting`, wait 30 seconds and check again.
 | Direct API / test | `http://localhost:5000` |
 | Email viewer (debug) | `http://localhost:8025` |
 | Jitsi video server | `https://localhost:8443` |
+| Grafana (if monitoring started) | `http://localhost:3001` |
+| Prometheus (if monitoring started) | `http://localhost:9090` |
 
 > `http://localhost` (port 80) goes through nginx — recommended for normal use.  
 > `http://localhost:5000` hits the backend directly, bypassing nginx — useful for API testing or when running on the same machine.
@@ -199,6 +201,31 @@ sudo ufw allow 8443/tcp  # jitsi web
 sudo ufw allow 10000/udp # jitsi video bridge
 sudo ufw enable
 ```
+
+---
+
+## Monitoring (Optional — Prometheus + Grafana)
+
+The monitoring stack is **not started by default**. It adds Prometheus (metrics collection), Grafana (dashboards), and exporters for system and database metrics.
+
+Start it alongside the main stack:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+```
+
+| Tool | URL | Credentials |
+|------|-----|-------------|
+| Grafana dashboards | `http://localhost:3001` | `admin` / value of `GRAFANA_PASSWORD` in `.env` (default: `Admin@2026`) |
+| Prometheus raw metrics | `http://localhost:9090` | none |
+
+To stop just monitoring (without touching the main app):
+
+```bash
+docker compose -f docker-compose.monitoring.yml down
+```
+
+> The monitoring stack is purely optional. The LMS runs fine without it.
 
 ---
 
