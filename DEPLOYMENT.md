@@ -202,6 +202,45 @@ sudo ufw enable
 
 ---
 
+## Deploying Without Email (Recommended for Schools)
+
+By default the stack includes MailHog, a local mail server used only for **password reset OTP codes**. Every other feature — login, modules, tests, coding, video calls, notifications — works with no email at all.
+
+**Why you may want to disable it:** With MailHog running, students can request a password-reset code for any email address (including other students'). Removing MailHog disables the password reset flow entirely, so only an admin can change passwords — which is the safer default in a supervised school environment.
+
+To deploy without MailHog, open `docker-compose.yml` and comment out or delete the `mailhog` service block and the related `backend` environment variables:
+
+```yaml
+# Comment out or delete this entire block:
+  # mailhog:
+  #   image: mailhog/mailhog:latest
+  #   container_name: lms-mailserver
+  #   ports:
+  #     - "1025:1025"
+  #     - "8025:8025"
+  #   networks:
+  #     - lms-network
+  #   restart: unless-stopped
+
+# And comment out these lines inside the backend → environment section:
+  #     SMTP_HOST: mailhog
+  #     SMTP_PORT: 1025
+  #     SMTP_SECURE: "false"
+  #     SMTP_IGNORE_TLS: "true"
+  #     EMAIL_FROM_NAME: Sustainable Classroom
+  #     EMAIL_FROM_ADDRESS: noreply@classroom.local
+```
+
+Then start normally:
+
+```bash
+docker compose up -d
+```
+
+Only 7 containers will start. If a student requests a password reset, the page will say "code sent" but no code will ever be delivered — so the reset cannot be completed. Only an admin can change passwords from the Admin Dashboard.
+
+---
+
 ## Updating
 
 ```bash
