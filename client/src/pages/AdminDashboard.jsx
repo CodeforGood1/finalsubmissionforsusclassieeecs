@@ -803,7 +803,8 @@ function AdminDashboard() {
                     <input 
                       type="text" 
                       value={allocationSubject} 
-                      onChange={(e) => setAllocationSubject(e.target.value)}
+                      onChange={(e) => setAllocationSubject(e.target.value.slice(0, 60))}
+                      maxLength={60}
                       placeholder="Subject (e.g., Mathematics)" 
                       className="w-full p-5 bg-slate-50 rounded-2xl font-bold outline-none border-2 border-slate-100 focus:border-emerald-500" 
                     />
@@ -830,34 +831,34 @@ function AdminDashboard() {
               {/* Identity */}
               <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 space-y-4">
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Identity</h3>
-                <input type="text" placeholder="Full Name" required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" 
+                <input type="text" placeholder="Full Name" required maxLength={100} className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" 
                   value={activeTab === 'student' ? studentData.name : teacherData.name}
-                  onChange={e => activeTab === 'student' ? setStudentData({...studentData, name: e.target.value}) : setTeacherData({...teacherData, name: e.target.value})} />
+                  onChange={e => activeTab === 'student' ? setStudentData({...studentData, name: e.target.value.slice(0, 100)}) : setTeacherData({...teacherData, name: e.target.value.slice(0, 100)})} />
                 
                 {activeTab === 'student' ? (
                   <>
-                    <input type="text" placeholder="Reg No" required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" value={studentData.reg_no} onChange={e => setStudentData({...studentData, reg_no: e.target.value})} />
-                    <input type="text" placeholder="Section (e.g. ECE A)" required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none border-2 border-emerald-100" value={studentData.section} onChange={e => setStudentData({...studentData, section: e.target.value})} />
+                    <input type="text" placeholder="Reg No" required maxLength={20} className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" value={studentData.reg_no} onChange={e => setStudentData({...studentData, reg_no: e.target.value.slice(0, 20)})} />
+                    <input type="text" placeholder="Section (e.g. ECE A)" required maxLength={20} className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none border-2 border-emerald-100" value={studentData.section} onChange={e => setStudentData({...studentData, section: e.target.value.toUpperCase().slice(0, 20)})} />
                   </>
                 ) : (
-                  <input type="text" placeholder="Staff ID" required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" value={teacherData.staff_id} onChange={e => setTeacherData({...teacherData, staff_id: e.target.value})} />
+                  <input type="text" placeholder="Staff ID" required maxLength={20} className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" value={teacherData.staff_id} onChange={e => setTeacherData({...teacherData, staff_id: e.target.value.slice(0, 20)})} />
                 )}
                 
-                <input type="password" placeholder="Password" required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" 
+                <input type="password" placeholder="Password" required maxLength={72} className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" 
                   value={activeTab === 'student' ? studentData.password : teacherData.password}
-                  onChange={e => activeTab === 'student' ? setStudentData({...studentData, password: e.target.value}) : setTeacherData({...teacherData, password: e.target.value})} />
+                  onChange={e => activeTab === 'student' ? setStudentData({...studentData, password: e.target.value.slice(0, 72)}) : setTeacherData({...teacherData, password: e.target.value.slice(0, 72)})} />
               </div>
 
               {/* Details */}
               <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 space-y-4">
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Contact & Dept</h3>
-                <input type="email" placeholder="Email" required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" 
+                <input type="email" placeholder="Email" required maxLength={150} className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" 
                   value={activeTab === 'student' ? studentData.email : teacherData.email}
-                  onChange={e => activeTab === 'student' ? setStudentData({...studentData, email: e.target.value}) : setTeacherData({...teacherData, email: e.target.value})} />
+                  onChange={e => activeTab === 'student' ? setStudentData({...studentData, email: e.target.value.slice(0, 150)}) : setTeacherData({...teacherData, email: e.target.value.slice(0, 150)})} />
                 
-                <input type="text" placeholder={activeTab === 'student' ? "Class/Department" : "Department"} required className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" 
+                <input type="text" placeholder={activeTab === 'student' ? "Class/Department" : "Department"} required maxLength={60} className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" 
                   value={activeTab === 'student' ? studentData.class_dept : teacherData.dept}
-                  onChange={e => activeTab === 'student' ? setStudentData({...studentData, class_dept: e.target.value}) : setTeacherData({...teacherData, dept: e.target.value})} />
+                  onChange={e => activeTab === 'student' ? setStudentData({...studentData, class_dept: e.target.value.toUpperCase().slice(0, 60)}) : setTeacherData({...teacherData, dept: e.target.value.toUpperCase().slice(0, 60)})} />
               </div>
 
               {/* Media */}

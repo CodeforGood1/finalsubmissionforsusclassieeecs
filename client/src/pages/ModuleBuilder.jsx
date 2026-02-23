@@ -472,9 +472,10 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                     <input
                       type="text"
                       placeholder="e.g., CS A, ECE B (manually enter)"
+                      maxLength={20}
                       className="w-full p-4 bg-white rounded-xl font-bold border-2 border-emerald-300 focus:border-emerald-500 outline-none"
                       value={targetSection}
-                      onChange={e => setTargetSection(e.target.value)}
+                      onChange={e => setTargetSection(e.target.value.toUpperCase().slice(0, 20))}
                     />
                   )}
                   {!targetSection && (
@@ -492,9 +493,10 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                   <input
                     type="text"
                     placeholder="e.g., Mathematics, Physics"
+                    maxLength={60}
                     className="w-full p-4 bg-white rounded-xl font-bold border-2 border-purple-300 focus:border-purple-500 outline-none"
                     value={targetSubject}
-                    onChange={e => setTargetSubject(e.target.value)}
+                    onChange={e => setTargetSubject(e.target.value.slice(0, 60))}
                   />
                   {!targetSubject && (
                     <p className="text-xs text-red-600 font-bold mt-2">Required</p>
@@ -503,7 +505,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
               </div>
 
               <div className="grid grid-cols-2 gap-6">
-                <input type="text" placeholder="Step Topic" className="p-6 bg-slate-50 rounded-2xl font-bold" value={topicTitle} onChange={e => setTopicTitle(e.target.value)} />
+                <input type="text" placeholder="Step Topic" maxLength={100} className="p-6 bg-slate-50 rounded-2xl font-bold" value={topicTitle} onChange={e => setTopicTitle(e.target.value.slice(0, 100))} />
                 <select className="p-6 bg-slate-50 rounded-2xl font-bold" value={contentType} onChange={e => setContentType(e.target.value)}>
                   <option value="text">Text Lesson</option>
                   <option value="video">Video Upload</option>
@@ -514,7 +516,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                 </select>
               </div>
 
-              {contentType === 'text' && <textarea placeholder="Write lesson..." className="w-full p-8 bg-slate-50 rounded-2xl h-64 font-medium" value={textData} onChange={e => setTextData(e.target.value)} />}
+              {contentType === 'text' && <textarea placeholder="Write lesson..." maxLength={20000} className="w-full p-8 bg-slate-50 rounded-2xl h-64 font-medium" value={textData} onChange={e => setTextData(e.target.value.slice(0, 20000))} />}
               
               {contentType === 'video' && (
                 <div className="space-y-4">
@@ -545,9 +547,10 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                   <input 
                     type="text" 
                     placeholder="Or paste YouTube/Video URL" 
+                    maxLength={500}
                     className="w-full p-8 bg-slate-50 rounded-2xl font-mono text-blue-500" 
                     value={videoUrl} 
-                    onChange={e => setVideoUrl(e.target.value)} 
+                    onChange={e => setVideoUrl(e.target.value.slice(0, 500))} 
                   />
                 </div>
               )}
@@ -561,9 +564,10 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                     <input 
                       type="text" 
                       placeholder="e.g., math-class-10a"
+                      maxLength={50}
                       className="w-full p-4 bg-slate-50 rounded-xl border-2 border-indigo-300 font-mono"
                       value={jitsiData.roomName}
-                      onChange={e => setJitsiData({...jitsiData, roomName: e.target.value})}
+                      onChange={e => setJitsiData({...jitsiData, roomName: e.target.value.replace(/[^a-zA-Z0-9-]/g, '').slice(0, 50).toLowerCase()})}
                     />
                   </div>
                   
@@ -590,7 +594,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                         max="180"
                         className="w-full p-4 bg-slate-50 rounded-xl border-2 border-indigo-300"
                         value={jitsiData.duration}
-                        onChange={e => setJitsiData({...jitsiData, duration: parseInt(e.target.value) || 60})}
+                        onChange={e => setJitsiData({...jitsiData, duration: Math.min(180, Math.max(15, parseInt(e.target.value) || 60))})}
                       />
                     </div>
                   </div>
@@ -608,10 +612,10 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
               
               {contentType === 'mcq' && (
                 <div className="space-y-4 bg-slate-50 p-8 rounded-2xl">
-                  <input type="text" placeholder="Question" className="w-full p-4 rounded-xl border" value={mcqData.question} onChange={e => setMcqData({...mcqData, question: e.target.value})} />
+                  <input type="text" placeholder="Question" maxLength={500} className="w-full p-4 rounded-xl border" value={mcqData.question} onChange={e => setMcqData({...mcqData, question: e.target.value.slice(0, 500)})} />
                   <div className="grid grid-cols-2 gap-4">
                     {['a', 'b', 'c', 'd'].map(opt => (
-                      <input key={opt} type="text" placeholder={`Option ${opt.toUpperCase()}`} className="p-4 rounded-xl border" value={mcqData[opt]} onChange={e => setMcqData({...mcqData, [opt]: e.target.value})} />
+                      <input key={opt} type="text" placeholder={`Option ${opt.toUpperCase()}`} maxLength={200} className="p-4 rounded-xl border" value={mcqData[opt]} onChange={e => setMcqData({...mcqData, [opt]: e.target.value.slice(0, 200)})} />
                     ))}
                   </div>
                   <select className="w-full p-4 rounded-xl border font-bold" value={mcqData.correct} onChange={e => setMcqData({...mcqData, correct: e.target.value})}>
@@ -645,9 +649,10 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                     </label>
                     <textarea 
                       placeholder="Describe the coding problem. Example: Write a program that takes two numbers as input and prints their sum."
+                      maxLength={2000}
                       className="w-full p-6 bg-white rounded-2xl border-2 border-blue-300 h-32 font-medium resize-none"
                       value={codingProblem.description}
-                      onChange={e => setCodingProblem({...codingProblem, description: e.target.value})}
+                      onChange={e => setCodingProblem({...codingProblem, description: e.target.value.slice(0, 2000)})}
                     />
                   </div>
 
@@ -733,12 +738,13 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                               <label className="text-xs font-bold text-slate-600 mb-1 block">Input (STDIN)</label>
                               <textarea
                                 placeholder="e.g., 5 10"
+                                maxLength={1000}
                                 className="w-full p-3 bg-slate-50 rounded-lg border text-sm font-mono resize-none h-20"
                                 value={tc.input}
                                 onChange={e => setCodingProblem({
                                   ...codingProblem,
                                   testCases: codingProblem.testCases.map(t => 
-                                    t.id === tc.id ? {...t, input: e.target.value} : t
+                                    t.id === tc.id ? {...t, input: e.target.value.slice(0, 1000)} : t
                                   )
                                 })}
                               />
@@ -747,12 +753,13 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                               <label className="text-xs font-bold text-slate-600 mb-1 block">Expected Output</label>
                               <textarea
                                 placeholder="e.g., 15"
+                                maxLength={1000}
                                 className="w-full p-3 bg-slate-50 rounded-lg border text-sm font-mono resize-none h-20"
                                 value={tc.expected}
                                 onChange={e => setCodingProblem({
                                   ...codingProblem,
                                   testCases: codingProblem.testCases.map(t => 
-                                    t.id === tc.id ? {...t, expected: e.target.value} : t
+                                    t.id === tc.id ? {...t, expected: e.target.value.slice(0, 1000)} : t
                                   )
                                 })}
                               />
@@ -766,21 +773,25 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                   {/* Constraints */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-white p-4 rounded-xl border-2 border-slate-200">
-                      <label className="text-xs font-bold text-slate-600 mb-2 block">Time Limit (ms)</label>
+                      <label className="text-xs font-bold text-slate-600 mb-2 block">Time Limit (ms) — max 10 000</label>
                       <input
                         type="number"
+                        min={1000}
+                        max={10000}
                         className="w-full p-3 bg-slate-50 rounded-lg border font-bold"
                         value={codingProblem.timeLimit}
-                        onChange={e => setCodingProblem({...codingProblem, timeLimit: parseInt(e.target.value)})}
+                        onChange={e => setCodingProblem({...codingProblem, timeLimit: Math.min(10000, Math.max(1000, parseInt(e.target.value) || 5000))})}
                       />
                     </div>
                     <div className="bg-white p-4 rounded-xl border-2 border-slate-200">
-                      <label className="text-xs font-bold text-slate-600 mb-2 block">Memory Limit (MB)</label>
+                      <label className="text-xs font-bold text-slate-600 mb-2 block">Memory Limit (MB) — max 128</label>
                       <input
                         type="number"
+                        min={16}
+                        max={128}
                         className="w-full p-3 bg-slate-50 rounded-lg border font-bold"
                         value={codingProblem.memoryLimit}
-                        onChange={e => setCodingProblem({...codingProblem, memoryLimit: parseInt(e.target.value)})}
+                        onChange={e => setCodingProblem({...codingProblem, memoryLimit: Math.min(128, Math.max(16, parseInt(e.target.value) || 64))})}
                       />
                     </div>
                   </div>

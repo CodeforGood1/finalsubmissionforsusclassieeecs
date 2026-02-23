@@ -879,8 +879,23 @@ app.post('/api/admin/register-teacher', authenticateToken, adminOnly, async (req
   if (!trimmedName || trimmedName.length < 2) {
     return res.status(400).json({ error: "Name must be at least 2 characters long" });
   }
+  if (trimmedName.length > 100) {
+    return res.status(400).json({ error: "Name too long (max 100 characters)" });
+  }
   if (!email || !password) {
     return res.status(400).json({ error: "Email and password are required" });
+  }
+  if (email.length > 150) {
+    return res.status(400).json({ error: "Email too long (max 150 characters)" });
+  }
+  if (password.length > 72) {
+    return res.status(400).json({ error: "Password too long (max 72 characters)" });
+  }
+  if (staff_id && staff_id.length > 20) {
+    return res.status(400).json({ error: "Staff ID too long (max 20 characters)" });
+  }
+  if (dept && dept.trim().length > 60) {
+    return res.status(400).json({ error: "Department too long (max 60 characters)" });
   }
   
   // Validate email format
@@ -891,10 +906,11 @@ app.post('/api/admin/register-teacher', authenticateToken, adminOnly, async (req
   
   try {
     const hashed = await bcrypt.hash(password, SALT_ROUNDS);
+    const normalizedDept = dept ? dept.trim().toUpperCase() : null;
     // Note: We pass objects directly; pg driver handles JSON conversion for JSONB columns
     const query = `INSERT INTO teachers (name, email, password, staff_id, dept, media, allocated_sections) 
                    VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`;
-    const values = [trimmedName, email, hashed, staff_id, dept, media || {}, []];
+    const values = [trimmedName, email.toLowerCase().trim(), hashed, staff_id, normalizedDept, media || {}, []];
     
     const result = await pool.query(query, values);
     const teacherId = result.rows[0].id;
@@ -948,9 +964,27 @@ app.post('/api/admin/register-student', authenticateToken, adminOnly, async (req
       console.log("[ERROR] Name must be at least 2 characters long");
       return res.status(400).json({ error: "Name must be at least 2 characters long" });
     }
+    if (name.trim().length > 100) {
+      return res.status(400).json({ error: "Name too long (max 100 characters)" });
+    }
     if (!email || !password) {
       console.log("[ERROR] Missing required fields");
       return res.status(400).json({ error: "Email and password are required" });
+    }
+    if (email.length > 150) {
+      return res.status(400).json({ error: "Email too long (max 150 characters)" });
+    }
+    if (password.length > 72) {
+      return res.status(400).json({ error: "Password too long (max 72 characters)" });
+    }
+    if (reg_no && reg_no.length > 20) {
+      return res.status(400).json({ error: "Reg No too long (max 20 characters)" });
+    }
+    if (section && section.trim().length > 20) {
+      return res.status(400).json({ error: "Section too long (max 20 characters)" });
+    }
+    if (class_dept && class_dept.trim().length > 60) {
+      return res.status(400).json({ error: "Class/Department too long (max 60 characters)" });
     }
     
     // Validate email format
@@ -971,7 +1005,7 @@ app.post('/api/admin/register-student', authenticateToken, adminOnly, async (req
     console.log("Normalized Class:", normalizedClass, "Normalized Section:", normalizedSection);
     const query = `INSERT INTO students (name, email, password, reg_no, class_dept, section, media) 
                    VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`;
-    const values = [name, email, hashed, reg_no, normalizedClass, normalizedSection, media || {}];
+    const values = [name.trim(), email.toLowerCase().trim(), hashed, reg_no, normalizedClass, normalizedSection, media || {}];
     
     const result = await pool.query(query, values);
     const studentId = result.rows[0].id;
@@ -1912,8 +1946,14 @@ app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
     if (!subject || typeof subject !== 'string' || subject.trim().length < 1) {
       return res.status(400).json({ error: "Subject is required" });
     }
+    if (subject.trim().length > 60) {
+      return res.status(400).json({ error: "Subject too long (max 60 characters)" });
+    }
     if (!topic || typeof topic !== 'string' || topic.trim().length < 1) {
       return res.status(400).json({ error: "Topic title is required" });
+    }
+    if (topic.trim().length > 100) {
+      return res.status(400).json({ error: "Topic title too long (max 100 characters)" });
     }
     if (!steps || !Array.isArray(steps) || steps.length === 0) {
       return res.status(400).json({ error: "At least one step is required" });
