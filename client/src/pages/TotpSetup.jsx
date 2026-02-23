@@ -276,7 +276,7 @@ function TotpSetup() {
           onClick={handleSkip}
           className="mt-6 text-[9px] font-black text-slate-400 uppercase tracking-widest block w-full text-center hover:text-slate-600"
         >
-          Skip for now (use email OTP)
+          Skip for now
         </button>
       </div>
     </div>

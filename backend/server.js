@@ -2789,9 +2789,9 @@ app.post('/api/student/submit-code', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: `Too many test cases (max ${MAX_TEST_CASES})` });
         }
 
-        // Verify student has access to this module's section
+        // Verify student has access to this module's section and fetch limits
         const accessCheck = await pool.query(
-          `SELECT m.id FROM modules m
+          `SELECT m.id, m.steps FROM modules m
            JOIN students s ON s.id = $2
            WHERE m.id = $1 AND (
              UPPER(TRIM(m.section)) = UPPER(TRIM(s.class_dept || ' ' || s.section))
@@ -2803,12 +2803,24 @@ app.post('/api/student/submit-code', authenticateToken, async (req, res) => {
             return res.status(403).json({ error: 'You do not have access to this module' });
         }
 
+        // Extract per-module time/memory limits set by the teacher
+        let execLimits = {};
+        try {
+            const steps = JSON.parse(accessCheck.rows[0].steps || '[]');
+            for (const step of steps) {
+                if (step.timeLimit || step.memoryLimit) {
+                    execLimits = { timeoutMs: step.timeLimit, memoryMb: step.memoryLimit };
+                    break;
+                }
+            }
+        } catch (_) { /* use defaults if steps unparseable */ }
+
         let passedCount = 0;
 
         // --- EVALUATION LOOP ---
         for (const tc of testCases) {
             if (!tc || typeof tc.expected !== 'string') continue;
-            const result = await executeCode(code, lang, tc.input || '');
+            const result = await executeCode(code, lang, tc.input || '', execLimits);
             const actualOutput = (result.stdout || "").trim();
             
             if (actualOutput === tc.expected.trim()) {
