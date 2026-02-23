@@ -48,6 +48,9 @@ logs/
 temp/
 tmp/
 
+# Local developer reference docs (not for repo)
+HOW-TO-BUILD-AND-DEPLOY.md
+
 # Test scripts and internal docs
 test-api.ps1
 setup-notifications.ps1

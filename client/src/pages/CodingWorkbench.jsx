@@ -117,6 +117,19 @@ public class Solution {
               <textarea
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const start = e.target.selectionStart;
+                    const end = e.target.selectionEnd;
+                    const newCode = code.substring(0, start) + '  ' + code.substring(end);
+                    setCode(newCode);
+                    requestAnimationFrame(() => {
+                      e.target.selectionStart = start + 2;
+                      e.target.selectionEnd = start + 2;
+                    });
+                  }
+                }}
                 spellCheck="false"
                 className="flex-1 p-6 font-mono text-sm outline-none resize-none text-slate-700 custom-scrollbar"
               />
