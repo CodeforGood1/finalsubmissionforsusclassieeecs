@@ -172,7 +172,7 @@ function Dashboard() {
                   className="bg-white p-4 md:p-6 rounded-2xl border border-slate-200 hover:border-emerald-300 transition-all flex flex-col sm:flex-row justify-between sm:items-center text-left gap-2"
                 >
                   <div>
-                    <p className="font-bold text-slate-800 text-sm md:text-base">{module.topic_title}</p>
+                    <p className="font-bold text-slate-800 text-sm md:text-base truncate">{module.topic_title}</p>
                     <p className="text-xs md:text-sm text-slate-500">{module.subject} - {module.section}</p>
                   </div>
                   <div className="flex items-center gap-3">

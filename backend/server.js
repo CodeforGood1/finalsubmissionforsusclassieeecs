@@ -361,6 +361,35 @@ notificationService.initializeNotificationService(pool);
     `);
     await pool.query('CREATE INDEX IF NOT EXISTS idx_daily_study_student_date ON daily_study_time(student_id, study_date)');
     console.log('daily_study_time table ready');
+
+    // Recreate v_student_module_progress view to support multi-section modules (sections JSONB)
+    await pool.query(`
+      CREATE OR REPLACE VIEW v_student_module_progress AS
+      SELECT
+        s.id AS student_id,
+        s.name AS student_name,
+        s.reg_no,
+        s.class_dept,
+        s.section,
+        COUNT(DISTINCT m.id) AS total_modules,
+        COUNT(DISTINCT CASE WHEN mp.is_completed = true THEN m.id END) AS completed_modules,
+        COUNT(DISTINCT CASE WHEN mp.is_completed = false OR mp.id IS NULL THEN m.id END) AS pending_modules,
+        CASE WHEN COUNT(DISTINCT m.id) > 0
+          THEN ROUND(COUNT(DISTINCT CASE WHEN mp.is_completed = true THEN m.id END)::numeric / COUNT(DISTINCT m.id)::numeric * 100, 2)
+          ELSE 0
+        END AS completion_percentage
+      FROM students s
+      LEFT JOIN modules m ON (
+        UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = UPPER(TRIM(s.class_dept || ' ' || s.section))
+        OR EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.sections, '[]'::jsonb)) AS sec
+          WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(sec, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = UPPER(TRIM(s.class_dept || ' ' || s.section))
+        )
+      )
+      LEFT JOIN module_progress mp ON m.id = mp.module_id AND mp.student_id = s.id
+      GROUP BY s.id, s.name, s.reg_no, s.class_dept, s.section
+    `);
+    console.log('v_student_module_progress view updated (multi-section support)');
   } catch (err) {
     console.error('[WARNING] Database table setup error:', err.message);
   }
@@ -1062,12 +1091,14 @@ app.post('/api/admin/bulk-upload-students', authenticateToken, adminOnly, upload
     
     const text = fs.readFileSync(req.file.path, 'utf-8');
     const lines = text.split('\n').filter(line => line.trim());
-    if (lines.length < 2) return res.status(400).json({ error: "CSV must have a header row and at least one data row" });
+    if (lines.length < 1) return res.status(400).json({ error: "CSV file is empty" });
     
-    // Parse header
+    // Auto-detect header row
     const header = lines[0].toLowerCase().replace(/\r/g, '');
-    const hasHeader = header.includes('name') || header.includes('email');
+    const hasHeader = header.includes('name') || header.includes('email') || header.includes('reg_no') || header.includes('class_dept');
     const startIndex = hasHeader ? 1 : 0;
+    
+    if (lines.length <= startIndex) return res.status(400).json({ error: "CSV has no data rows" });
     
     const results = { success: 0, failed: 0, errors: [] };
     
@@ -1133,11 +1164,13 @@ app.post('/api/admin/bulk-upload-teachers', authenticateToken, adminOnly, upload
     
     const text = fs.readFileSync(req.file.path, 'utf-8');
     const lines = text.split('\n').filter(line => line.trim());
-    if (lines.length < 2) return res.status(400).json({ error: "CSV must have a header row and at least one data row" });
+    if (lines.length < 1) return res.status(400).json({ error: "CSV file is empty" });
     
     const header = lines[0].toLowerCase().replace(/\r/g, '');
-    const hasHeader = header.includes('name') || header.includes('email');
+    const hasHeader = header.includes('name') || header.includes('email') || header.includes('staff_id') || header.includes('dept');
     const startIndex = hasHeader ? 1 : 0;
+    
+    if (lines.length <= startIndex) return res.status(400).json({ error: "CSV has no data rows" });
     
     const results = { success: 0, failed: 0, errors: [] };
     
@@ -1473,18 +1506,39 @@ app.put('/api/admin/teacher/:id/allocations', authenticateToken, adminOnly, asyn
       [JSON.stringify(sections || []), id]
     );
     
-    // Delete existing allocations in teacher_allocations table
+    // Delete existing allocations in both tables
     await pool.query('DELETE FROM teacher_allocations WHERE teacher_id = $1', [id]);
+    await pool.query('DELETE FROM teacher_student_allocations WHERE teacher_id = $1', [id]);
     
-    // Add new allocations
+    // Add new allocations to both tables
     if (sections && sections.length > 0 && subject) {
       for (const sectionStr of sections) {
         await pool.query(
           'INSERT INTO teacher_allocations (teacher_id, section, subject) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
           [id, sectionStr, subject]
         );
+        
+        // Also populate teacher_student_allocations
+        const parts = sectionStr.trim().split(/\s+/);
+        if (parts.length >= 2) {
+          const dept = parts.slice(0, -1).join(' ');
+          const sec = parts[parts.length - 1];
+          const studentsResult = await pool.query(
+            'SELECT id FROM students WHERE UPPER(class_dept) = UPPER($1) AND UPPER(section) = UPPER($2)',
+            [dept, sec]
+          );
+          for (const student of studentsResult.rows) {
+            await pool.query(
+              'INSERT INTO teacher_student_allocations (teacher_id, student_id, subject) VALUES ($1, $2, $3) ON CONFLICT (teacher_id, student_id, subject) DO NOTHING',
+              [id, student.id, subject]
+            );
+          }
+        }
       }
     }
+    
+    // Invalidate cache
+    cache.invalidate(`teacher_students_${id}`);
     
     res.json({ success: true, message: `Teacher allocations updated to: ${(sections || []).join(', ')}` });
   } catch (err) {
@@ -1522,6 +1576,22 @@ app.delete('/api/admin/teacher/:id/section/:section', authenticateToken, adminOn
       'DELETE FROM teacher_allocations WHERE teacher_id = $1 AND UPPER(TRIM(section)) = UPPER(TRIM($2))',
       [id, decodedSection]
     );
+    
+    // Also remove from teacher_student_allocations for students in this section
+    const parts = decodedSection.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      const dept = parts.slice(0, -1).join(' ');
+      const sec = parts[parts.length - 1];
+      await pool.query(
+        `DELETE FROM teacher_student_allocations WHERE teacher_id = $1 AND student_id IN (
+          SELECT id FROM students WHERE UPPER(class_dept) = UPPER($2) AND UPPER(section) = UPPER($3)
+        )`,
+        [id, dept, sec]
+      );
+    }
+    
+    // Invalidate cache
+    cache.invalidate(`teacher_students_${id}`);
     
     res.json({ success: true, message: `Removed section: ${decodedSection}` });
   } catch (err) {
@@ -1649,7 +1719,7 @@ app.get('/api/teacher/me', authenticateToken, async (req, res) => {
   }
 });
 
-// 8b. Teacher: Get My Allocated Students (with caching)
+// 8b. Teacher: Get My Allocated Students (with self-healing)
 app.get('/api/teacher/my-students', authenticateToken, async (req, res) => {
   try {
     const teacher_id = req.user.id;
@@ -1661,12 +1731,71 @@ app.get('/api/teacher/my-students', authenticateToken, async (req, res) => {
       return res.json(cached);
     }
     
+    // Get teacher's allocated_sections (source of truth for which sections)
+    const teacherResult = await pool.query(
+      'SELECT dept, allocated_sections FROM teachers WHERE id = $1',
+      [teacher_id]
+    );
+    const teacherDept = teacherResult.rows[0]?.dept || '';
+    let allocatedSections = teacherResult.rows[0]?.allocated_sections || [];
+    if (typeof allocatedSections === 'string') {
+      try { allocatedSections = JSON.parse(allocatedSections); } catch(e) { allocatedSections = []; }
+    }
+    if (!Array.isArray(allocatedSections)) allocatedSections = [];
+    
+    // Self-heal: ensure teacher_student_allocations has rows for ALL allocated sections
+    if (allocatedSections.length > 0) {
+      // Get existing allocation sections from teacher_student_allocations
+      const existingResult = await pool.query(
+        `SELECT DISTINCT UPPER(s.class_dept || ' ' || s.section) as full_section
+         FROM teacher_student_allocations a
+         JOIN students s ON a.student_id = s.id
+         WHERE a.teacher_id = $1`,
+        [teacher_id]
+      );
+      const existingSections = new Set(existingResult.rows.map(r => r.full_section));
+      
+      // Find sections in allocated_sections that have no rows in teacher_student_allocations
+      const missingSections = allocatedSections.filter(s => !existingSections.has(s.toUpperCase()));
+      
+      if (missingSections.length > 0) {
+        console.log(`[Self-Heal] Teacher ${teacher_id}: creating allocation rows for missing sections:`, missingSections);
+        for (const sectionStr of missingSections) {
+          const parts = sectionStr.trim().split(/\s+/);
+          if (parts.length < 2) continue;
+          const dept = parts.slice(0, -1).join(' ');
+          const sec = parts[parts.length - 1];
+          
+          const studentsResult = await pool.query(
+            'SELECT id FROM students WHERE UPPER(class_dept) = UPPER($1) AND UPPER(section) = UPPER($2)',
+            [dept, sec]
+          );
+          
+          // Determine subject: check if teacher has any existing allocations with a subject, otherwise use dept
+          const subjectResult = await pool.query(
+            'SELECT DISTINCT subject FROM teacher_student_allocations WHERE teacher_id = $1 AND subject IS NOT NULL LIMIT 1',
+            [teacher_id]
+          );
+          const subject = subjectResult.rows[0]?.subject || teacherDept;
+          
+          for (const student of studentsResult.rows) {
+            await pool.query(
+              'INSERT INTO teacher_student_allocations (teacher_id, student_id, subject) VALUES ($1, $2, $3) ON CONFLICT (teacher_id, student_id, subject) DO NOTHING',
+              [teacher_id, student.id, subject]
+            );
+          }
+        }
+        // Clear cache since we just modified data
+        cache.invalidate(cacheKey);
+      }
+    }
+    
     const result = await pool.query(
       'SELECT * FROM v_teacher_students WHERE teacher_id = $1 ORDER BY student_name',
       [teacher_id]
     );
     
-    // Cache for 2 minutes (allocations don't change often)
+    // Cache for 2 minutes
     cache.set(cacheKey, result.rows, 2 * 60 * 1000);
     
     res.json(result.rows);
@@ -1832,7 +1961,7 @@ app.get('/api/student/recent-modules', authenticateToken, async (req, res) => {
     }
     
     const { class_dept, section } = studentResult.rows[0];
-    const fullSection = `${class_dept} ${section}`;
+    const fullSection = `${class_dept} ${section}`.toUpperCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
     
     // Get modules for student's section with accurate progress
     const modulesResult = await pool.query(`
@@ -1849,7 +1978,11 @@ app.get('/api/student/recent-modules', authenticateToken, async (req, res) => {
           -1
         )::int as last_step_index
       FROM modules m 
-      WHERE LOWER(m.section) = LOWER($2)
+      WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $2
+         OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.sections, '[]'::jsonb)) AS s
+           WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $2
+         )
       ORDER BY m.created_at DESC 
       LIMIT 5
     `, [req.user.id, fullSection]);
@@ -1874,11 +2007,16 @@ app.get('/api/student/stats', authenticateToken, async (req, res) => {
     }
     
     const { class_dept, section } = studentResult.rows[0];
-    const fullSection = `${class_dept} ${section}`;
+    const fullSection = `${class_dept} ${section}`.toUpperCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
     
-    // Get total modules for section
+    // Get total modules for section (check both section column and sections JSONB)
     const totalResult = await pool.query(
-      'SELECT COUNT(*) as total FROM modules WHERE LOWER(section) = LOWER($1)',
+      `SELECT COUNT(*) as total FROM modules WHERE 
+        UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
+        OR EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(COALESCE(sections, '[]'::jsonb)) AS s
+          WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
+        )`,
       [fullSection]
     );
     
@@ -1886,7 +2024,13 @@ app.get('/api/student/stats', authenticateToken, async (req, res) => {
     const completedResult = await pool.query(`
       SELECT COUNT(DISTINCT m.id) as completed
       FROM modules m
-      WHERE LOWER(m.section) = LOWER($1)
+      WHERE (
+        UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
+        OR EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.sections, '[]'::jsonb)) AS s
+          WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
+        )
+      )
       AND m.step_count > 0
       AND NOT EXISTS (
         SELECT 1 FROM generate_series(0, m.step_count - 1) s(n)
@@ -2313,10 +2457,17 @@ app.get('/api/student/module/:moduleId', authenticateToken, async (req, res) => 
     const studentResult = await pool.query('SELECT class_dept, section FROM students WHERE id = $1', [studentId]);
     if (studentResult.rows.length === 0) return res.status(404).json({ error: 'Student not found' });
     const { class_dept, section } = studentResult.rows[0];
-    const studentSection = `${class_dept} ${section}`.trim();
+    const studentSection = `${class_dept} ${section}`.toUpperCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
     
     const result = await pool.query(
-      "SELECT steps FROM modules WHERE id = $1 AND (section = $2 OR section = 'ALL')",
+      `SELECT steps FROM modules WHERE id = $1 AND (
+        UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $2
+        OR section = 'ALL'
+        OR EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(COALESCE(sections, '[]'::jsonb)) AS s
+          WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $2
+        )
+      )`,
       [moduleId, studentSection]
     );
     
@@ -3923,6 +4074,10 @@ app.get('/api/student/live-sessions', authenticateToken, async (req, res) => {
       SELECT m.id as module_id, m.topic_title, m.teacher_name, m.section, m.subject, m.steps
       FROM modules m
       WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
+         OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.sections, '[]'::jsonb)) AS s
+           WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
+         )
       ORDER BY m.created_at DESC
     `, [normalizedSection]);
     
@@ -4302,7 +4457,13 @@ app.get('/api/chat/available-users', authenticateToken, async (req, res) => {
           COALESCE(m.subject, tsa.subject, 'Teacher') as subject
         FROM teachers t
         LEFT JOIN modules m ON t.id = m.teacher_id 
-          AND UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
+          AND (
+            UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
+            OR EXISTS (
+              SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.sections, '[]'::jsonb)) AS s
+              WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
+            )
+          )
         LEFT JOIN mcq_tests mt ON t.id = mt.teacher_id 
           AND UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(mt.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $1
         LEFT JOIN teacher_student_allocations tsa ON t.id = tsa.teacher_id AND tsa.student_id = $2
@@ -4319,10 +4480,16 @@ app.get('/api/chat/available-users', authenticateToken, async (req, res) => {
       // 2. Directly allocated students via teacher_student_allocations
       // 3. Sections from their allocated_sections JSONB column
       
-      // Get sections from modules this teacher created
+      // Get sections from modules this teacher created (both legacy and JSONB)
       const moduleSections = await pool.query(
-        `SELECT DISTINCT UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) as section 
-         FROM modules WHERE teacher_id = $1`, [userId]
+        `SELECT DISTINCT norm_section as section FROM (
+           SELECT UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) as norm_section 
+           FROM modules WHERE teacher_id = $1
+           UNION
+           SELECT UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) as norm_section
+           FROM modules, jsonb_array_elements_text(COALESCE(sections, '[]'::jsonb)) AS s
+           WHERE teacher_id = $1
+         ) sub`, [userId]
       );
 
       // Get sections from tests this teacher created

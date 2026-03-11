@@ -556,8 +556,9 @@ function AdminDashboard() {
             
             {/* CSV Format Help */}
             <div className="mb-4 p-4 bg-blue-50 rounded-xl border border-blue-200">
-              <p className="text-xs font-bold text-blue-800 mb-1">CSV Format: name,email,password,reg_no,class_dept,section</p>
-              <p className="text-xs text-blue-600">Example: John Doe,john@email.com,pass123,REG001,CSE,A</p>
+              <p className="text-xs font-bold text-blue-800 mb-1">CSV Format (first row must be header):</p>
+              <code className="text-xs text-blue-700 block">name,email,password,reg_no,class_dept,section</code>
+              <p className="text-xs text-blue-600 mt-1">Then data rows: John Doe,john@email.com,pass123,REG001,CSE,A</p>
             </div>
             
             {/* CSV Upload Results */}
@@ -642,8 +643,9 @@ function AdminDashboard() {
             
             {/* CSV Format Help */}
             <div className="mb-4 p-4 bg-blue-50 rounded-xl border border-blue-200">
-              <p className="text-xs font-bold text-blue-800 mb-1">CSV Format: name,email,password,staff_id,dept</p>
-              <p className="text-xs text-blue-600">Example: Jane Smith,jane@email.com,pass123,STAFF001,Science</p>
+              <p className="text-xs font-bold text-blue-800 mb-1">CSV Format (first row must be header):</p>
+              <code className="text-xs text-blue-700 block">name,email,password,staff_id,dept</code>
+              <p className="text-xs text-blue-600 mt-1">Then data rows: Jane Smith,jane@email.com,pass123,STAFF001,Science</p>
             </div>
             
             {/* CSV Upload Results */}

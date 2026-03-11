@@ -16,7 +16,7 @@ const pool = new Pool({
 const teachers = [
   { name: 'Dr. Sarah Okonkwo', email: 'susclass.global+sarah.teacher@gmail.com', password: 'password123', staff_id: 'TCH001', dept: 'Science', sections: ['SS1 A', 'SS1 B', 'SS2 A'] },
   { name: 'Mr. Emmanuel Adebayo', email: 'susclass.global+emmanuel.teacher@gmail.com', password: 'password123', staff_id: 'TCH002', dept: 'Mathematics', sections: ['SS1 A', 'SS1 B', 'SS2 A', 'SS2 B'] },
-  { name: 'Mrs. Fatima Bello', email: 'susclass.global+fatima.teacher@gmail.com', password: 'password123', staff_id: 'TCH003', dept: 'English', sections: ['SS1 A', 'SS2 A', 'SS2 B'] }
+  { name: 'Mrs. Fatima Bello', email: 'susclass.global+fatima.teacher@gmail.com', password: 'password123', staff_id: 'TCH003', dept: 'English', sections: ['SS1 A', 'SS1 B', 'SS2 A', 'SS2 B'] }
 ];
 
 const students = [
@@ -269,6 +269,32 @@ async function seed() {
     }
     console.log('');
 
+    // Seed teacher-student allocations (new system)
+    console.log('Creating teacher-student allocations...');
+    for (let i = 0; i < teachers.length; i++) {
+      const teacherOrigId = i + 1;
+      const actualTeacherId = teacherIdMap[teacherOrigId];
+      const teacher = teachers[i];
+
+      for (const sectionStr of teacher.sections) {
+        const [class_dept, section] = sectionStr.split(' ');
+
+        const studentsResult = await pool.query(
+          'SELECT id FROM students WHERE class_dept = $1 AND section = $2',
+          [class_dept, section]
+        );
+
+        for (const student of studentsResult.rows) {
+          await pool.query(
+            'INSERT INTO teacher_student_allocations (teacher_id, student_id, subject) VALUES ($1, $2, $3) ON CONFLICT (teacher_id, student_id, subject) DO NOTHING',
+            [actualTeacherId, student.id, teacher.dept]
+          );
+        }
+      }
+      console.log(`   [OK] ${teacher.name} → ${teacher.sections.join(', ')} (${teacher.dept})`);
+    }
+    console.log('');
+
     // Seed modules
     console.log('Creating learning modules...');
     for (const module of modules) {
@@ -303,6 +329,7 @@ async function seed() {
     const counts = await pool.query(`
       SELECT 'Teachers' as entity, COUNT(*) as count FROM teachers
       UNION ALL SELECT 'Students', COUNT(*) FROM students
+      UNION ALL SELECT 'Allocations', COUNT(*) FROM teacher_student_allocations
       UNION ALL SELECT 'Modules', COUNT(*) FROM modules
       UNION ALL SELECT 'MCQ Tests', COUNT(*) FROM mcq_tests
     `);

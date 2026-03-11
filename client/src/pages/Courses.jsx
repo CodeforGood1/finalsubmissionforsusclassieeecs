@@ -121,7 +121,7 @@ function Courses() {
               <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                   <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">Continue where you left off</p>
-                  <h2 className="text-xl font-bold">{resumeModule.topic_title}</h2>
+                  <h2 className="text-xl font-bold truncate">{resumeModule.topic_title}</h2>
                   <p className="text-slate-400 text-sm mt-1">
                     {resumeModule.subject || 'General'} · {getProgressPercent(resumeModule)}% complete
                   </p>
@@ -305,7 +305,7 @@ function Courses() {
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-bold text-slate-800 group-hover:text-emerald-600 transition-colors">
+                      <h4 className="font-bold text-slate-800 group-hover:text-emerald-600 transition-colors truncate">
                         {mod.topic_title}
                       </h4>
                       <div className="flex items-center gap-3 mt-1">

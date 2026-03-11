@@ -393,7 +393,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                 return (
                 <div key={mod.id} className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
                   <p className="text-[10px] font-black text-emerald-500 uppercase">Module</p>
-                  <h4 className="text-lg font-black text-slate-800 uppercase mb-2">{mod.topic_title}</h4>
+                  <h4 className="text-lg font-black text-slate-800 uppercase mb-2 truncate">{mod.topic_title}</h4>
                   <div className="flex flex-wrap gap-2 mb-2">
                     {sectionsArray.length > 0 ? (
                       <button 
