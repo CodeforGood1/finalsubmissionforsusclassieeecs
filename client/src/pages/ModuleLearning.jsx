@@ -439,6 +439,47 @@ function ModuleLearning() {
               </div>
             )}
 
+            {/* PDF DOCUMENT */}
+            {currentStep.step_type === 'pdf' && (
+              <div className="space-y-4">
+                <div className="bg-gradient-to-br from-red-50 to-orange-50 p-6 rounded-2xl border-2 border-red-200">
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="w-12 h-12 bg-red-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs text-red-600 font-bold uppercase">PDF Document</p>
+                      <p className="text-sm text-slate-700 font-medium">{currentStep.mcq_data?.filename || currentStep.step_header || 'Document.pdf'}</p>
+                      {currentStep.mcq_data?.size && (
+                        <p className="text-xs text-slate-500">Size: {(currentStep.mcq_data.size / 1024 / 1024).toFixed(2)} MB</p>
+                      )}
+                    </div>
+                    <a
+                      href={currentStep.mcq_data?.url || currentStep.content || ''}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      download
+                      className="px-4 py-2 bg-red-500 text-white rounded-xl text-sm font-bold hover:bg-red-600 transition-all"
+                    >
+                      Download
+                    </a>
+                  </div>
+                </div>
+                
+                {/* PDF Viewer */}
+                <div className="bg-slate-100 rounded-2xl overflow-hidden border-2 border-slate-200" style={{ height: '80vh' }}>
+                  <iframe
+                    src={currentStep.mcq_data?.url || currentStep.content || ''}
+                    className="w-full h-full"
+                    title="PDF Viewer"
+                    frameBorder="0"
+                  />
+                </div>
+              </div>
+            )}
+
             {/* MCQ QUIZ */}
             {currentStep.step_type === 'mcq' && currentStep.mcq_data && (
               <div className="space-y-6">

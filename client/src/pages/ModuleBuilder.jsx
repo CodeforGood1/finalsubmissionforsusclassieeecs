@@ -21,6 +21,18 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
   const [targetSubject, setTargetSubject] = useState(""); // Subject for this module
   const [uploadingVideo, setUploadingVideo] = useState(false);
   
+  // Bulk module steps upload state (supports PDFs and videos)
+  const [showBulkPdfModal, setShowBulkPdfModal] = useState(false);
+  const [bulkPdfFiles, setBulkPdfFiles] = useState([]); // Array of {file, stepName}
+  const [bulkPdfTopic, setBulkPdfTopic] = useState("");
+  const [bulkPdfSubject, setBulkPdfSubject] = useState("");
+  const [bulkPdfSection, setBulkPdfSection] = useState("");
+  const [uploadingBulkPdf, setUploadingBulkPdf] = useState(false);
+  
+  // Current step being added
+  const [currentStepName, setCurrentStepName] = useState("");
+  const [currentStepFile, setCurrentStepFile] = useState(null);
+  
   // Section editing modal state
   const [showSectionModal, setShowSectionModal] = useState(false);
   const [editingSectionModuleId, setEditingSectionModuleId] = useState(null);
@@ -325,6 +337,108 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
     setShowSectionModal(true);
   };
 
+  // Handle bulk PDF upload
+  // Handle adding a step to the bulk upload list
+  const handleAddStepToBulk = () => {
+    if (!currentStepName || !currentStepName.trim()) {
+      return alert("Please enter a step name");
+    }
+    if (!currentStepFile) {
+      return alert("Please select a PDF or video file");
+    }
+    
+    // Validate file type
+    if (currentStepFile.type !== 'application/pdf' && !currentStepFile.type.startsWith('video/')) {
+      return alert("Only PDF and video files are allowed");
+    }
+    
+    // Add to list
+    setBulkPdfFiles([...bulkPdfFiles, {
+      file: currentStepFile,
+      stepName: currentStepName.trim()
+    }]);
+    
+    // Reset current step inputs
+    setCurrentStepName("");
+    setCurrentStepFile(null);
+    
+    // Clear file input
+    const fileInput = document.getElementById('bulk-step-file-input');
+    if (fileInput) fileInput.value = '';
+  };
+  
+  // Handle removing a step from the list
+  const handleRemoveStepFromBulk = (index) => {
+    setBulkPdfFiles(bulkPdfFiles.filter((_, idx) => idx !== index));
+  };
+
+  // Handle bulk PDF upload - now supports mixed media with custom step names
+  const handleBulkPdfUpload = async () => {
+    if (bulkPdfFiles.length === 0) {
+      return alert("Please add at least one step with a file");
+    }
+    if (!bulkPdfTopic) {
+      return alert("Please enter a module title");
+    }
+    if (!bulkPdfSubject) {
+      return alert("Please enter a subject");
+    }
+    if (!bulkPdfSection) {
+      return alert("Please select a section");
+    }
+    
+    setUploadingBulkPdf(true);
+    
+    try {
+      const formData = new FormData();
+      
+      // Append all files and their step names
+      bulkPdfFiles.forEach((item, index) => {
+        formData.append('files', item.file);
+        formData.append(`stepName_${index}`, item.stepName);
+      });
+      
+      // Append metadata
+      formData.append('topic', bulkPdfTopic);
+      formData.append('subject', bulkPdfSubject);
+      formData.append('section', bulkPdfSection);
+      formData.append('stepCount', bulkPdfFiles.length);
+      
+      const res = await fetch(`${API_BASE_URL}/api/teacher/upload-module-mixed`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+        body: formData
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || "Upload failed");
+      }
+      
+      const pdfCount = data.pdfCount || 0;
+      const videoCount = data.videoCount || 0;
+      alert(`Success! Module created with ${pdfCount} PDF${pdfCount !== 1 ? 's' : ''} and ${videoCount} video${videoCount !== 1 ? 's' : ''}.`);
+      
+      // Reset and close modal
+      setBulkPdfFiles([]);
+      setBulkPdfTopic("");
+      setBulkPdfSubject("");
+      setBulkPdfSection("");
+      setCurrentStepName("");
+      setCurrentStepFile(null);
+      setShowBulkPdfModal(false);
+      
+      // Refresh modules list
+      fetchModules();
+    } catch (err) {
+      console.error("Bulk upload error:", err);
+      alert("Failed to upload files: " + err.message);
+    } finally {
+      setUploadingBulkPdf(false);
+    }
+  };
+
   // Safety check to prevent blank screen
   if (!allocatedSections || !authHeaders) {
     console.log('[ModuleBuilder] Showing loading state - missing required props');
@@ -368,7 +482,20 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
         <div className="space-y-6">
           <div className="flex justify-between items-center">
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Live Modules</h3>
-            <button onClick={() => setIsBuilding(true)} className="bg-emerald-500 text-white px-6 py-3 rounded-full font-black text-[10px] uppercase shadow-lg hover:bg-emerald-600 transition-colors">Create New Module</button>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowBulkPdfModal(true)} 
+                className="bg-purple-500 text-white px-6 py-3 rounded-full font-black text-[10px] uppercase shadow-lg hover:bg-purple-600 transition-colors"
+              >
+                Bulk Module Steps Upload
+              </button>
+              <button 
+                onClick={() => setIsBuilding(true)} 
+                className="bg-emerald-500 text-white px-6 py-3 rounded-full font-black text-[10px] uppercase shadow-lg hover:bg-emerald-600 transition-colors"
+              >
+                Create New Module
+              </button>
+            </div>
           </div>
           
           {existingModules.length === 0 ? (
@@ -900,6 +1027,209 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
               >
                 Save ({selectedSectionsForEdit.length})
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Bulk PDF Upload Modal */}
+      {showBulkPdfModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-black text-slate-800">Bulk Module Steps Upload</h3>
+              <button 
+                onClick={() => setShowBulkPdfModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-2xl font-bold"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <p className="text-sm text-slate-600 mb-6">
+              Upload multiple PDF files or videos at once. Each file will become a separate step in the module.
+            </p>
+            
+            <div className="space-y-6">
+              {/* Module Title */}
+              <div className="bg-emerald-50 p-6 rounded-2xl border-2 border-emerald-200">
+                <label className="text-xs font-black text-emerald-700 uppercase mb-3 block">
+                  Module Title
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., Introduction to Biology"
+                  maxLength={100}
+                  className="w-full p-4 bg-white rounded-xl font-bold border-2 border-emerald-300 focus:border-emerald-500 outline-none"
+                  value={bulkPdfTopic}
+                  onChange={e => setBulkPdfTopic(e.target.value.slice(0, 100))}
+                />
+              </div>
+              
+              {/* Subject */}
+              <div className="bg-purple-50 p-6 rounded-2xl border-2 border-purple-200">
+                <label className="text-xs font-black text-purple-700 uppercase mb-3 block">
+                  Subject
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., Biology, Mathematics"
+                  maxLength={60}
+                  className="w-full p-4 bg-white rounded-xl font-bold border-2 border-purple-300 focus:border-purple-500 outline-none"
+                  value={bulkPdfSubject}
+                  onChange={e => setBulkPdfSubject(e.target.value.slice(0, 60))}
+                />
+              </div>
+              
+              {/* Section */}
+              <div className="bg-blue-50 p-6 rounded-2xl border-2 border-blue-200">
+                <label className="text-xs font-black text-blue-700 uppercase mb-3 block">
+                  Target Section
+                </label>
+                {allocatedSections && allocatedSections.length > 0 ? (
+                  <select 
+                    className="w-full p-4 bg-white rounded-xl font-bold border-2 border-blue-300 focus:border-blue-500 outline-none"
+                    value={bulkPdfSection}
+                    onChange={e => setBulkPdfSection(e.target.value)}
+                  >
+                    <option value="">-- Choose Section --</option>
+                    {allocatedSections.map(sec => (
+                      <option key={sec} value={sec}>{sec}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    placeholder="e.g., CS A, ECE B"
+                    maxLength={20}
+                    className="w-full p-4 bg-white rounded-xl font-bold border-2 border-blue-300 focus:border-blue-500 outline-none"
+                    value={bulkPdfSection}
+                    onChange={e => setBulkPdfSection(e.target.value.toUpperCase().slice(0, 20))}
+                  />
+                )}
+              </div>
+              
+              {/* PDF Files */}
+              {/* PDF and Video Files */}
+              <div className="bg-amber-50 p-6 rounded-2xl border-2 border-amber-200">
+                <label className="text-xs font-black text-amber-700 uppercase mb-3 block">
+                  Add Steps (PDF or Video)
+                </label>
+                
+                {/* Current Step Input */}
+                <div className="bg-white rounded-xl p-4 mb-4 space-y-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 mb-2 block">Step Name</label>
+                    <input 
+                      type="text"
+                      placeholder="e.g., Introduction to Cells"
+                      maxLength={100}
+                      className="w-full p-3 bg-slate-50 rounded-lg border-2 border-amber-300 font-medium"
+                      value={currentStepName}
+                      onChange={e => setCurrentStepName(e.target.value.slice(0, 100))}
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 mb-2 block">Select File (PDF or Video)</label>
+                    <input 
+                      id="bulk-step-file-input"
+                      type="file" 
+                      accept="application/pdf,video/*"
+                      className="w-full p-3 bg-slate-50 rounded-lg border-2 border-amber-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-white hover:file:bg-amber-600"
+                      onChange={e => setCurrentStepFile(e.target.files[0])}
+                    />
+                    {currentStepFile && (
+                      <p className="text-xs text-amber-700 mt-2 flex items-center gap-2">
+                        <span>{currentStepFile.type === 'application/pdf' ? '📄' : '🎬'}</span>
+                        <span className="truncate">{currentStepFile.name}</span>
+                        <span className="text-slate-400">({(currentStepFile.size / 1024 / 1024).toFixed(2)} MB)</span>
+                      </p>
+                    )}
+                  </div>
+                  
+                  <button
+                    type="button"
+                    onClick={handleAddStepToBulk}
+                    disabled={!currentStepName || !currentStepFile}
+                    className="w-full px-4 py-3 bg-emerald-500 text-white rounded-lg font-bold hover:bg-emerald-600 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                  >
+                    ➕ Add Step to Module
+                  </button>
+                </div>
+                
+                {/* Steps List */}
+                {bulkPdfFiles.length > 0 && (
+                  <div className="mt-4 bg-white rounded-xl p-4 max-h-64 overflow-y-auto">
+                    <p className="text-xs font-black text-amber-700 uppercase mb-3">
+                      Steps in Module ({bulkPdfFiles.length})
+                    </p>
+                    <ul className="space-y-2">
+                      {bulkPdfFiles.map((item, idx) => {
+                        const isPdf = item.file.type === 'application/pdf';
+                        return (
+                          <li key={idx} className="bg-slate-50 p-3 rounded-lg flex items-center gap-3">
+                            <span className="text-slate-500 font-bold text-sm">{idx + 1}.</span>
+                            <span className={isPdf ? "text-red-500 text-lg" : "text-blue-500 text-lg"}>
+                              {isPdf ? '📄' : '🎬'}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-sm text-slate-800 truncate">{item.stepName}</p>
+                              <p className="text-xs text-slate-500 truncate">{item.file.name} ({(item.file.size / 1024 / 1024).toFixed(2)} MB)</p>
+                            </div>
+                            <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                              isPdf ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
+                            }`}>
+                              {isPdf ? 'PDF' : 'VIDEO'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveStepFromBulk(idx)}
+                              className="text-red-500 hover:text-red-700 font-bold text-lg"
+                              title="Remove step"
+                            >
+                              ✕
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </div>
+              
+              {/* Info Box */}
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
+                <p className="text-sm text-blue-800">
+                  <span className="font-bold">💡 How it works:</span> Add multiple steps one by one. For each step, enter a custom name and upload a PDF or video. All steps will be published together as ONE module.
+                </p>
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => {
+                    setShowBulkPdfModal(false);
+                    setBulkPdfFiles([]);
+                    setBulkPdfTopic("");
+                    setBulkPdfSubject("");
+                    setBulkPdfSection("");
+                    setCurrentStepName("");
+                    setCurrentStepFile(null);
+                  }}
+                  className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200"
+                  disabled={uploadingBulkPdf}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleBulkPdfUpload}
+                  disabled={uploadingBulkPdf || bulkPdfFiles.length === 0 || !bulkPdfTopic || !bulkPdfSubject || !bulkPdfSection}
+                  className="flex-1 px-6 py-4 bg-purple-500 text-white rounded-xl font-bold hover:bg-purple-600 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                >
+                  {uploadingBulkPdf ? 'Uploading...' : `Publish Module (${bulkPdfFiles.length} step${bulkPdfFiles.length !== 1 ? 's' : ''})`}
+                </button>
+              </div>
             </div>
           </div>
         </div>

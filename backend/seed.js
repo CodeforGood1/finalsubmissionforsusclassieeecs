@@ -128,6 +128,74 @@ const mcqTests = [
       { question: 'Identify the pronoun:', options: ['She', 'Dog', 'Run', 'Blue'], correctAnswer: 0 }
     ],
     daysUntilDeadline: 7
+  },
+  {
+    teacher_id: 1,
+    teacher_name: 'Dr. Sarah Okonkwo',
+    section: 'SS1 A',
+    title: 'Chemistry: Periodic Table Basics',
+    description: 'Understanding elements and the periodic table',
+    questions: [
+      { question: 'What is the chemical symbol for water?', options: ['H2O', 'O2', 'CO2', 'H2'], correctAnswer: 0 },
+      { question: 'Which element has the symbol O?', options: ['Gold', 'Oxygen', 'Osmium', 'Oganesson'], correctAnswer: 1 },
+      { question: 'What is the atomic number of Carbon?', options: ['4', '6', '8', '12'], correctAnswer: 1 },
+      { question: 'Which is a noble gas?', options: ['Nitrogen', 'Oxygen', 'Helium', 'Hydrogen'], correctAnswer: 2 },
+      { question: 'What is the symbol for Sodium?', options: ['S', 'So', 'Na', 'N'], correctAnswer: 2 },
+      { question: 'Which element is most abundant in Earth\'s atmosphere?', options: ['Oxygen', 'Nitrogen', 'Carbon Dioxide', 'Argon'], correctAnswer: 1 },
+      { question: 'What is the chemical formula for table salt?', options: ['NaCl', 'KCl', 'CaCl2', 'MgCl2'], correctAnswer: 0 },
+      { question: 'Which element is a liquid at room temperature?', options: ['Iron', 'Mercury', 'Gold', 'Silver'], correctAnswer: 1 }
+    ],
+    daysUntilDeadline: 7
+  },
+  {
+    teacher_id: 1,
+    teacher_name: 'Dr. Sarah Okonkwo',
+    section: 'SS1 B',
+    title: 'Physics: Forces and Motion',
+    description: 'Basic concepts of forces, motion, and energy',
+    questions: [
+      { question: 'What is the SI unit of force?', options: ['Joule', 'Newton', 'Watt', 'Pascal'], correctAnswer: 1 },
+      { question: 'What force pulls objects toward Earth?', options: ['Friction', 'Gravity', 'Magnetism', 'Tension'], correctAnswer: 1 },
+      { question: 'Speed = Distance / ?', options: ['Force', 'Mass', 'Time', 'Acceleration'], correctAnswer: 2 },
+      { question: 'What is the formula for kinetic energy?', options: ['mgh', '1/2 mv²', 'Fd', 'ma'], correctAnswer: 1 },
+      { question: 'Which law states "For every action, there is an equal and opposite reaction"?', options: ['First Law', 'Second Law', 'Third Law', 'Law of Gravity'], correctAnswer: 2 },
+      { question: 'What is the acceleration due to gravity on Earth?', options: ['9.8 m/s²', '10 m/s', '9.8 km/h', '10 km/s²'], correctAnswer: 0 }
+    ],
+    daysUntilDeadline: 6
+  },
+  {
+    teacher_id: 2,
+    teacher_name: 'Mr. Emmanuel Adebayo',
+    section: 'SS1 A',
+    title: 'Computer Science: Programming Basics',
+    description: 'Introduction to programming concepts and logic',
+    questions: [
+      { question: 'What is a variable in programming?', options: ['A fixed value', 'A container for storing data', 'A type of loop', 'A function'], correctAnswer: 1 },
+      { question: 'Which symbol is used for assignment in most languages?', options: ['==', '=', '===', '!='], correctAnswer: 1 },
+      { question: 'What does "if-else" represent?', options: ['Loop', 'Conditional statement', 'Function', 'Variable'], correctAnswer: 1 },
+      { question: 'What is a loop used for?', options: ['Storing data', 'Making decisions', 'Repeating code', 'Defining functions'], correctAnswer: 2 },
+      { question: 'Which is NOT a programming language?', options: ['Python', 'Java', 'HTML', 'C++'], correctAnswer: 2 },
+      { question: 'What does "debugging" mean?', options: ['Writing code', 'Finding and fixing errors', 'Running code', 'Deleting code'], correctAnswer: 1 },
+      { question: 'What is an algorithm?', options: ['A programming language', 'A step-by-step procedure', 'A type of variable', 'A computer'], correctAnswer: 1 },
+      { question: 'Which data type stores whole numbers?', options: ['String', 'Float', 'Integer', 'Boolean'], correctAnswer: 2 }
+    ],
+    daysUntilDeadline: 7
+  },
+  {
+    teacher_id: 2,
+    teacher_name: 'Mr. Emmanuel Adebayo',
+    section: 'SS1 B',
+    title: 'Computer Science: Data Structures',
+    description: 'Understanding basic data structures and their uses',
+    questions: [
+      { question: 'What is an array?', options: ['A single variable', 'A collection of elements', 'A function', 'A loop'], correctAnswer: 1 },
+      { question: 'Which data structure follows LIFO (Last In First Out)?', options: ['Queue', 'Stack', 'Array', 'Tree'], correctAnswer: 1 },
+      { question: 'Which data structure follows FIFO (First In First Out)?', options: ['Stack', 'Queue', 'Tree', 'Graph'], correctAnswer: 1 },
+      { question: 'What is a linked list?', options: ['An array', 'A sequence of nodes', 'A tree structure', 'A hash table'], correctAnswer: 1 },
+      { question: 'What does "index" mean in an array?', options: ['The size', 'The position of an element', 'The type', 'The value'], correctAnswer: 1 },
+      { question: 'Which operation adds an element to a stack?', options: ['Pop', 'Push', 'Enqueue', 'Dequeue'], correctAnswer: 1 }
+    ],
+    daysUntilDeadline: 6
   }
 ];
 

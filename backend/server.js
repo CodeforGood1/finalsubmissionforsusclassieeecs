@@ -1867,6 +1867,311 @@ app.post('/api/upload', authenticateToken, upload.single('file'), (req, res) => 
   }
 });
 
+// Bulk PDF upload - creates a module with each PDF as a step
+app.post('/api/teacher/upload-module-pdfs', authenticateToken, upload.array('pdfs', 50), async (req, res) => {
+  try {
+    console.log("[BULK PDF UPLOAD] Request received");
+    
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No PDF files uploaded" });
+    }
+    
+    const { section, sections, subject, topic } = req.body;
+    const teacherId = req.user.id;
+    
+    // Validate inputs
+    if (!subject || typeof subject !== 'string' || subject.trim().length < 1) {
+      return res.status(400).json({ error: "Subject is required" });
+    }
+    if (!topic || typeof topic !== 'string' || topic.trim().length < 1) {
+      return res.status(400).json({ error: "Module topic/title is required" });
+    }
+    
+    // Support both single section and multiple sections
+    const targetSections = sections && Array.isArray(sections) && sections.length > 0 
+      ? sections 
+      : (section ? [section] : []);
+    
+    if (targetSections.length === 0) {
+      return res.status(400).json({ error: "At least one section is required" });
+    }
+    
+    // Validate all files are PDFs
+    const nonPdfFiles = req.files.filter(f => f.mimetype !== 'application/pdf');
+    if (nonPdfFiles.length > 0) {
+      return res.status(400).json({ error: `Only PDF files allowed. Found: ${nonPdfFiles.map(f => f.originalname).join(', ')}` });
+    }
+    
+    // Create steps from PDFs
+    const steps = req.files.map((file, index) => {
+      const fileUrl = `/uploads/documents/${file.filename}`;
+      // Use original filename (without extension) as step header
+      const stepHeader = file.originalname.replace(/\.pdf$/i, '');
+      
+      return {
+        type: 'pdf',
+        header: stepHeader,
+        data: {
+          url: fileUrl,
+          filename: file.originalname,
+          size: file.size
+        }
+      };
+    });
+    
+    console.log(`[BULK PDF UPLOAD] Created ${steps.length} steps from PDFs`);
+    
+    // Get teacher name
+    const teacherResult = await pool.query('SELECT name FROM teachers WHERE id = $1', [teacherId]);
+    const teacherName = teacherResult.rows[0]?.name || 'Unknown';
+    
+    // Insert module
+    const query = `
+      INSERT INTO modules (section, sections, subject, topic_title, teacher_id, teacher_name, step_count, steps) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+      RETURNING id
+    `;
+    const values = [
+      targetSections[0], 
+      JSON.stringify(targetSections), 
+      subject, 
+      topic, 
+      teacherId, 
+      teacherName, 
+      steps.length, 
+      JSON.stringify(steps)
+    ];
+    
+    const result = await pool.query(query, values);
+    const moduleId = result.rows[0].id;
+    
+    console.log(`[BULK PDF UPLOAD] Module created with ID: ${moduleId}`);
+    
+    // Send notifications (non-blocking)
+    try {
+      const sectionPlaceholders = targetSections.map((_, i) => `$${i + 1}`).join(', ');
+      const sectionStudentsResult = await pool.query(
+        `SELECT DISTINCT id, name, email FROM students 
+         WHERE LOWER(class_dept || ' ' || section) IN (${sectionPlaceholders})`,
+        targetSections.map(s => s.toLowerCase())
+      );
+      const uniqueStudents = sectionStudentsResult.rows;
+
+      for (const student of uniqueStudents) {
+        await pool.query(`
+          INSERT INTO in_app_notifications 
+          (recipient_type, recipient_id, type, title, message, link, metadata, created_at)
+          VALUES ('student', $1, 'module_published', $2, $3, $4, $5, CURRENT_TIMESTAMP)
+        `, [
+          student.id,
+          'New Module Available',
+          `${teacherName} published "${topic}" with ${steps.length} PDF documents. Start learning now!`,
+          `/learning/${moduleId}`,
+          JSON.stringify({
+            module_id: moduleId,
+            module_title: topic,
+            teacher_name: teacherName,
+            sections: targetSections,
+            subject: subject,
+            step_count: steps.length,
+            content_type: 'pdf'
+          })
+        ]);
+      }
+      console.log(`[BULK PDF UPLOAD] Created notifications for ${uniqueStudents.length} students`);
+    } catch (notifErr) {
+      console.error('[BULK PDF UPLOAD] Notification error (non-blocking):', notifErr);
+    }
+    
+    // Invalidate cache
+    for (const sec of targetSections) {
+      cache.invalidate(`modules_section_${sec.toLowerCase()}`);
+    }
+    
+    res.status(201).json({ 
+      success: true, 
+      moduleId, 
+      sections: targetSections,
+      pdfCount: steps.length,
+      message: `Module created with ${steps.length} PDF documents`
+    });
+  } catch (err) {
+    console.error("[BULK PDF UPLOAD] Error:", err);
+    res.status(500).json({ error: "Failed to upload PDFs: " + err.message });
+  }
+});
+
+// Mixed media upload - PDFs and videos together, auto-routed to correct step types
+app.post('/api/teacher/upload-module-mixed', authenticateToken, upload.array('files', 50), async (req, res) => {
+  try {
+    console.log("[MIXED MEDIA UPLOAD] Request received");
+    
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+    
+    const { section, sections, subject, topic, stepCount } = req.body;
+    const teacherId = req.user.id;
+    
+    // Validate inputs
+    if (!subject || typeof subject !== 'string' || subject.trim().length < 1) {
+      return res.status(400).json({ error: "Subject is required" });
+    }
+    if (!topic || typeof topic !== 'string' || topic.trim().length < 1) {
+      return res.status(400).json({ error: "Module topic/title is required" });
+    }
+    
+    // Support both single section and multiple sections
+    const targetSections = sections && Array.isArray(sections) && sections.length > 0 
+      ? sections 
+      : (section ? [section] : []);
+    
+    if (targetSections.length === 0) {
+      return res.status(400).json({ error: "At least one section is required" });
+    }
+    
+    // Separate files by type and get custom step names
+    const pdfFiles = [];
+    const videoFiles = [];
+    const unsupportedFiles = [];
+    
+    req.files.forEach((file, index) => {
+      const stepName = req.body[`stepName_${index}`] || file.originalname.replace(/\.(pdf|mp4|webm|ogg|mov|avi|mkv)$/i, '');
+      
+      if (file.mimetype === 'application/pdf') {
+        pdfFiles.push({ file, stepName });
+      } else if (file.mimetype.startsWith('video/')) {
+        videoFiles.push({ file, stepName });
+      } else {
+        unsupportedFiles.push(file);
+      }
+    });
+    
+    if (unsupportedFiles.length > 0) {
+      return res.status(400).json({ 
+        error: `Only PDF and video files allowed. Unsupported files: ${unsupportedFiles.map(f => f.originalname).join(', ')}` 
+      });
+    }
+    
+    // Create steps from files with custom names
+    const steps = [];
+    
+    // Add PDF steps
+    pdfFiles.forEach(({ file, stepName }) => {
+      const fileUrl = `/uploads/documents/${file.filename}`;
+      
+      steps.push({
+        type: 'pdf',
+        header: stepName,
+        data: {
+          url: fileUrl,
+          filename: file.originalname,
+          size: file.size
+        }
+      });
+    });
+    
+    // Add video steps
+    videoFiles.forEach(({ file, stepName }) => {
+      const fileUrl = `/uploads/videos/${file.filename}`;
+      
+      steps.push({
+        type: 'video',
+        header: stepName,
+        data: fileUrl
+      });
+    });
+    
+    if (steps.length === 0) {
+      return res.status(400).json({ error: "No valid PDF or video files found" });
+    }
+    
+    console.log(`[MIXED MEDIA UPLOAD] Created ${steps.length} steps (${pdfFiles.length} PDFs, ${videoFiles.length} videos)`);
+    
+    // Get teacher name
+    const teacherResult = await pool.query('SELECT name FROM teachers WHERE id = $1', [teacherId]);
+    const teacherName = teacherResult.rows[0]?.name || 'Unknown';
+    
+    // Insert module
+    const query = `
+      INSERT INTO modules (section, sections, subject, topic_title, teacher_id, teacher_name, step_count, steps) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+      RETURNING id
+    `;
+    const values = [
+      targetSections[0], 
+      JSON.stringify(targetSections), 
+      subject, 
+      topic, 
+      teacherId, 
+      teacherName, 
+      steps.length, 
+      JSON.stringify(steps)
+    ];
+    
+    const result = await pool.query(query, values);
+    const moduleId = result.rows[0].id;
+    
+    console.log(`[MIXED MEDIA UPLOAD] Module created with ID: ${moduleId}`);
+    
+    // Send notifications (non-blocking)
+    try {
+      const sectionPlaceholders = targetSections.map((_, i) => `$${i + 1}`).join(', ');
+      const sectionStudentsResult = await pool.query(
+        `SELECT DISTINCT id, name, email FROM students 
+         WHERE LOWER(class_dept || ' ' || section) IN (${sectionPlaceholders})`,
+        targetSections.map(s => s.toLowerCase())
+      );
+      const uniqueStudents = sectionStudentsResult.rows;
+
+      for (const student of uniqueStudents) {
+        await pool.query(`
+          INSERT INTO in_app_notifications 
+          (recipient_type, recipient_id, type, title, message, link, metadata, created_at)
+          VALUES ('student', $1, 'module_published', $2, $3, $4, $5, CURRENT_TIMESTAMP)
+        `, [
+          student.id,
+          'New Module Available',
+          `${teacherName} published "${topic}" with ${pdfFiles.length} PDFs and ${videoFiles.length} videos. Start learning now!`,
+          `/learning/${moduleId}`,
+          JSON.stringify({
+            module_id: moduleId,
+            module_title: topic,
+            teacher_name: teacherName,
+            sections: targetSections,
+            subject: subject,
+            step_count: steps.length,
+            pdf_count: pdfFiles.length,
+            video_count: videoFiles.length,
+            content_type: 'mixed'
+          })
+        ]);
+      }
+      console.log(`[MIXED MEDIA UPLOAD] Created notifications for ${uniqueStudents.length} students`);
+    } catch (notifErr) {
+      console.error('[MIXED MEDIA UPLOAD] Notification error (non-blocking):', notifErr);
+    }
+    
+    // Invalidate cache
+    for (const sec of targetSections) {
+      cache.invalidate(`modules_section_${sec.toLowerCase()}`);
+    }
+    
+    res.status(201).json({ 
+      success: true, 
+      moduleId, 
+      sections: targetSections,
+      pdfCount: pdfFiles.length,
+      videoCount: videoFiles.length,
+      totalSteps: steps.length,
+      message: `Module created with ${pdfFiles.length} PDFs and ${videoFiles.length} videos`
+    });
+  } catch (err) {
+    console.error("[MIXED MEDIA UPLOAD] Error:", err);
+    res.status(500).json({ error: "Failed to upload files: " + err.message });
+  }
+});
+
 // Video streaming endpoint with range support for large files
 app.get('/api/videos/stream/:filename', (req, res) => {
   const { filename } = req.params;
@@ -2490,7 +2795,7 @@ app.get('/api/student/module/:moduleId', authenticateToken, async (req, res) => 
     // Handle both old format (title/content) and new format (header/data)
     const formattedSteps = steps.map((step, index) => ({
       id: index + 1,
-      step_type: step.type, // 'video', 'text', 'mcq', 'coding', 'jitsi', 'code', 'quiz'
+      step_type: step.type, // 'video', 'text', 'mcq', 'coding', 'jitsi', 'code', 'quiz', 'pdf'
       step_header: step.header || step.title, // Support both formats
       content: step.type === 'video' ? (step.data || step.content) : 
                step.type === 'text' ? (step.data || step.content) : 
@@ -2500,7 +2805,8 @@ app.get('/api/student/module/:moduleId', authenticateToken, async (req, res) => 
                 step.type === 'quiz' ? (step.data || step.content) :
                 step.type === 'coding' ? (step.data || step.content) :
                 step.type === 'jitsi' ? (step.data || step.content) :
-                null, // For structured data (MCQ, coding problems, jitsi)
+                step.type === 'pdf' ? (step.data || step.content) :
+                null, // For structured data (MCQ, coding problems, jitsi, pdf)
       is_completed: completedSteps.includes(index)
     }));
     

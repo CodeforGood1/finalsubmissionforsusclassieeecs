@@ -61,6 +61,33 @@ All features below are **fully implemented and production-ready**:
 - Watch progress tracking
 - Bandwidth-optimized delivery
 
+### Bulk Module Creation (NEW)
+- **Bulk Module Steps Upload**: Create complete modules by uploading multiple PDFs and videos in one workflow
+- **Custom Step Naming**: Assign custom names to each step during upload
+- **Mixed Media Support**: Automatically categorizes PDFs as text steps and videos as video steps
+- **Step-by-Step Workflow**: Add files one at a time with custom names, review before publishing
+- **Multi-File Processing**: Upload up to 50 files per module with automatic type detection
+- **Visual Feedback**: See all added steps with remove/edit options before final submission
+
+### Enhanced MCQ Testing (NEW)
+- **Multi-Section Test Assignment**: Create one test and assign to multiple sections simultaneously
+- **Smart Button Validation**: Create button automatically enables/disables based on form completion
+- **Visual Section Selection**: Checkbox-based section selector with selected sections preview
+- **Improved User Experience**: Clear feedback on missing requirements (minimum 5 questions, section selection, etc.)
+- **CSV Bulk Upload**: Import questions from CSV files for faster test creation
+
+### Sample Content Library (NEW)
+- **Pre-organized Sample Structure**: Ready-to-use folder structure for science and computer science content
+- **Sample MCQ Tests**: 7 pre-loaded MCQ tests covering:
+  - Biology (Cell Structure)
+  - Chemistry (Periodic Table Basics)
+  - Physics (Forces and Motion)
+  - Mathematics (Algebra Basics)
+  - Computer Science (Programming Basics, Data Structures)
+  - English (Grammar)
+- **Content Placeholders**: Organized folders in `samples/` directory for easy content addition
+- **Subject-Based Organization**: Separate folders for science PDFs/videos and CS PDFs/videos
+
 ### Real-Time Communication
 - Teacher-Student chat system
 - Video conferencing via self-hosted Jitsi server
@@ -87,6 +114,88 @@ All features below are **fully implemented and production-ready**:
 - **4GB RAM minimum** (8GB recommended)
 - **20GB disk space**
 - **Git** for cloning the repository
+
+---
+
+## Recently Added Features
+
+### 1. Bulk Module Steps Upload
+
+Teachers can now create complete learning modules by uploading multiple PDFs and videos in a single workflow:
+
+**How to Use:**
+1. Navigate to Module Builder in Teacher Dashboard
+2. Click "📄 Bulk Module Steps Upload" button
+3. Enter module title, subject, and select target section(s)
+4. Add steps one by one:
+   - Enter custom step name
+   - Upload PDF or video file
+   - Click "Add Step to Module"
+5. Review all added steps (with remove option)
+6. Click "Publish Module (X steps)" to create the complete module
+
+**Features:**
+- Supports up to 50 files per module
+- Automatic file type detection (PDFs → text steps, videos → video steps)
+- Custom naming for each step
+- Visual preview of all steps before publishing
+- Individual step removal before final submission
+
+**Technical Details:**
+- Endpoint: `POST /api/teacher/upload-module-mixed`
+- File storage: `/app/backend/uploads/documents/` (PDFs) and `/app/backend/uploads/videos/` (videos)
+- Supported formats: PDF, MP4, WebM, OGG
+
+### 2. Enhanced MCQ Test Creation
+
+Improved MCQ test creation with multi-section support and better validation:
+
+**New Features:**
+- **Multi-Section Assignment**: Select multiple sections for a single test
+- **Smart Validation**: Create button only enables when all requirements are met:
+  - Test title filled
+  - Start date selected
+  - Deadline selected
+  - Minimum 5 questions added
+  - At least one section selected
+- **Visual Feedback**: Button changes color and shows disabled state when requirements aren't met
+- **Section Preview**: See selected sections in a highlighted box
+
+**CSV Upload Format:**
+```csv
+question,option_a,option_b,option_c,option_d,correct_answer
+"What is 2+2?",2,3,4,5,C
+```
+
+### 3. Sample Content Library
+
+Pre-loaded sample MCQ tests and organized folder structure for easy content addition:
+
+**Included Sample Tests:**
+- **Biology**: Cell Structure (5 questions)
+- **Chemistry**: Periodic Table Basics (8 questions)
+- **Physics**: Forces and Motion (6 questions)
+- **Mathematics**: Algebra Basics (5 questions)
+- **Computer Science**: Programming Basics (8 questions)
+- **Computer Science**: Data Structures (6 questions)
+- **English**: Grammar Test (5 questions)
+
+**Sample Folder Structure:**
+```
+samples/
+├── README.md
+├── science/
+│   ├── pdfs/          # Place science PDF files here
+│   └── videos/        # Place science video files here
+└── computer-science/
+    ├── pdfs/          # Place CS PDF files here
+    └── videos/        # Place CS video files here
+```
+
+**How to Add Your Own Content:**
+1. Place PDF or video files in appropriate folders
+2. Use the Bulk Module Steps Upload feature to create modules
+3. Files are automatically categorized by type
 
 ---
 
@@ -134,6 +243,11 @@ Adds:
 ## Full Documentation
 
 For detailed deployment instructions, configuration options, and troubleshooting, see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+
+**Feature-Specific Documentation:**
+- **[MIXED-MEDIA-UPLOAD-FEATURE.md](MIXED-MEDIA-UPLOAD-FEATURE.md)** - Complete guide to bulk module creation
+- **[PDF-FEATURE-FIX-SUMMARY.md](PDF-FEATURE-FIX-SUMMARY.md)** - PDF viewing and download troubleshooting
+- **[TEST-BULK-PDF-FEATURE.md](TEST-BULK-PDF-FEATURE.md)** - Testing bulk PDF upload functionality
 
 ---
 
@@ -229,6 +343,8 @@ Students and teachers can access all features without internet connectivity. Ema
 **Teacher Operations:**
 - `POST /api/teacher/test/create` - MCQ test creation (multi-section)
 - `POST /api/teacher/module/create` - Learning module creation
+- `POST /api/teacher/upload-module-pdfs` - Bulk PDF upload (up to 50 PDFs as steps)
+- `POST /api/teacher/upload-module-mixed` - Mixed media upload (PDFs + videos with custom step names)
 - `GET /api/teacher/tests/:section` - Section test listing
 - `GET /api/teacher/students/:section` - Student roster
 

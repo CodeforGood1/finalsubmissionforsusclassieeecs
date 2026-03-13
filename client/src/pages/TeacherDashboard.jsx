@@ -1069,7 +1069,27 @@ const fetchTeacherProfile = useCallback(async () => {
                 
                 <div className="flex gap-4">
                   <button onClick={() => {setShowCreateTest(false); setQuestions([]);}} className="flex-1 bg-slate-100 text-slate-600 p-4 rounded-xl font-black uppercase text-xs">Cancel</button>
-                  <button onClick={handleCreateTest} className="flex-1 bg-slate-900 text-white p-4 rounded-xl font-black uppercase text-xs">Create Test</button>
+                  <button 
+                    onClick={handleCreateTest} 
+                    disabled={
+                      !testForm.title.trim() || 
+                      !testForm.start_date || 
+                      !testForm.deadline || 
+                      questions.length < 5 || 
+                      selectedSectionsForTest.length === 0
+                    }
+                    className={`flex-1 p-4 rounded-xl font-black uppercase text-xs transition-all ${
+                      !testForm.title.trim() || 
+                      !testForm.start_date || 
+                      !testForm.deadline || 
+                      questions.length < 5 || 
+                      selectedSectionsForTest.length === 0
+                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                        : 'bg-slate-900 text-white hover:bg-slate-800 cursor-pointer'
+                    }`}
+                  >
+                    Create Test
+                  </button>
                 </div>
               </div>
             )}
