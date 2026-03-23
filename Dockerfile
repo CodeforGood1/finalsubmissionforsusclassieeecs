@@ -26,7 +26,7 @@ RUN apk add --no-cache \
     curl \
     python3 \
     py3-pip \
-    openjdk17 \
+    openjdk17-jdk \
     g++ \
     make
 
