@@ -48,6 +48,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    platform: linux/amd64   # explicit — prevents ARM emulation on amd64 hosts
     container_name: lms-backend
     ports:
       - "5000:5000"

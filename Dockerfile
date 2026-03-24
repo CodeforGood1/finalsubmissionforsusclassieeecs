@@ -1,7 +1,8 @@
 # Multi-stage Dockerfile for Sustainable Classroom LMS
 
 # Stage 1: Build Frontend
-FROM node:20-alpine AS frontend-builder
+# --platform ensures consistent builds across amd64 and arm64 hosts
+FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-builder
 
 WORKDIR /app/client
 
@@ -16,6 +17,9 @@ ENV VITE_API_URL=""
 RUN npm run build
 
 # Stage 2: Build Backend + Runtime
+# TARGETPLATFORM is set by buildx — defaults to host arch when building locally
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
 FROM node:20-alpine
 
 WORKDIR /app/backend
