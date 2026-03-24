@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: codeforgood1/finalsubmissionforsusclassieeecs
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-and-push:
