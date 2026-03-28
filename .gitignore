@@ -29,6 +29,7 @@ Thumbs.db
 
 # AI Instructions (local developer reference, not for repo)
 .github/copilot-instructions.md
+temp_instructions.md
 
 # Database files
 *.db

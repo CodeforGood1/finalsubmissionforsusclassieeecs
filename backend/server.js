@@ -50,7 +50,8 @@ localStorageService.ensureUploadDirs();
 localEmailService.initializeEmailService();
 
 // Get upload middleware
-const { upload } = localStorageService;
+const { upload, createUploader } = localStorageService;
+const bulkUpload = createUploader({ maxFiles: 200 });
 
 const app = express();
 
@@ -2002,7 +2003,7 @@ app.post('/api/teacher/upload-module-pdfs', authenticateToken, upload.array('pdf
 });
 
 // Mixed media upload - PDFs and videos together, auto-routed to correct step types
-app.post('/api/teacher/upload-module-mixed', authenticateToken, upload.array('files', 50), async (req, res) => {
+app.post('/api/teacher/upload-module-mixed', authenticateToken, bulkUpload.array('files', 200), async (req, res) => {
   try {
     console.log("[MIXED MEDIA UPLOAD] Request received");
     
@@ -2535,7 +2536,7 @@ app.get('/api/teacher/my-modules', authenticateToken, async (req, res) => {
     const teacherId = req.user.id;
     
     const result = await pool.query(
-      `SELECT id, topic_title, section, subject, teacher_name, step_count, created_at 
+      `SELECT id, topic_title, section, sections, subject, teacher_name, step_count, created_at 
        FROM modules 
        WHERE teacher_id = $1 
        ORDER BY created_at DESC`,

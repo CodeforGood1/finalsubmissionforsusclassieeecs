@@ -1,0 +1,5 @@
+networks:
+  lms-network:
+    ipam:
+      config:
+        - subnet: 172.29.0.0/16

@@ -101,8 +101,8 @@ export default function TestKnowledge() {
     return (
       <div className="min-h-screen bg-[#fdfdfd] flex items-center justify-center p-6 font-sans">
         <div className="max-w-xl w-full text-center space-y-8">
-          <div className="w-20 h-20 mx-auto rounded-full flex items-center justify-center mb-6 ${result.percentage >= 60 ? 'bg-emerald-100' : 'bg-amber-100'}">
-            <svg className="w-10 h-10 ${result.percentage >= 60 ? 'text-emerald-600' : 'text-amber-600'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center mb-6 ${result.percentage >= 60 ? 'bg-emerald-100' : 'bg-amber-100'}`}>
+            <svg className={`w-10 h-10 ${result.percentage >= 60 ? 'text-emerald-600' : 'text-amber-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               {result.percentage >= 60 ? (
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               ) : (

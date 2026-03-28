@@ -28,6 +28,16 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
   const [bulkPdfSubject, setBulkPdfSubject] = useState("");
   const [bulkPdfSection, setBulkPdfSection] = useState("");
   const [uploadingBulkPdf, setUploadingBulkPdf] = useState(false);
+
+  // Auto bulk module steps upload state (Ctrl+A selection)
+  const [showAutoBulkModal, setShowAutoBulkModal] = useState(false);
+  const [autoBulkFiles, setAutoBulkFiles] = useState([]); 
+  const [autoBulkTopic, setAutoBulkTopic] = useState("");
+  const [autoBulkSubject, setAutoBulkSubject] = useState("");
+  const [autoBulkSection, setAutoBulkSection] = useState("");
+  const [uploadingAutoBulk, setUploadingAutoBulk] = useState(false);
+
+
   
   // Current step being added
   const [currentStepName, setCurrentStepName] = useState("");
@@ -372,6 +382,86 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
     setBulkPdfFiles(bulkPdfFiles.filter((_, idx) => idx !== index));
   };
 
+  // --- AUTO BULK UPLOAD HANDLERS ---
+  const handleAutoBulkFilesSelected = (e) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    
+    // Convert FileList to array
+    const selectedFiles = Array.from(e.target.files);
+    
+    // Filter to only PDF or Video
+    const validFiles = selectedFiles.filter(file => 
+      file.type === 'application/pdf' || file.type.startsWith('video/')
+    );
+    
+    if (validFiles.length < selectedFiles.length) {
+      alert(`Filtered out ${selectedFiles.length - validFiles.length} unsupported files. Only PDFs and videos are allowed.`);
+    }
+    
+    // Sort by lastModified (creation time)
+    validFiles.sort((a, b) => a.lastModified - b.lastModified);
+    
+    setAutoBulkFiles(validFiles);
+  };
+
+  const handleAutoBulkSubmit = async () => {
+    if (!autoBulkTopic || !autoBulkSubject || !autoBulkSection) {
+      return alert("Please fill all module details");
+    }
+    if (autoBulkFiles.length === 0) {
+      return alert("Please select at least one valid file");
+    }
+
+    setUploadingAutoBulk(true);
+
+    try {
+      const formData = new FormData();
+
+      // Append all files. We omit step names to let backend derive from file name
+      autoBulkFiles.forEach((file) => {
+        formData.append('files', file);
+      });
+
+      // Append metadata
+      formData.append('topic', autoBulkTopic);
+      formData.append('subject', autoBulkSubject);
+      formData.append('section', autoBulkSection);
+      formData.append('stepCount', autoBulkFiles.length);
+
+      const res = await fetch(`${API_BASE_URL}/api/teacher/upload-module-mixed`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+        body: formData
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Upload failed");
+      }
+
+      const pdfCount = data.pdfCount || 0;
+      const videoCount = data.videoCount || 0;
+      alert(`Auto Bulk Upload Success! Module created with ${pdfCount} PDF${pdfCount !== 1 ? 's' : ''} and ${videoCount} video${videoCount !== 1 ? 's' : ''}.`);
+
+      // Reset and close modal
+      setAutoBulkFiles([]);
+      setAutoBulkTopic("");
+      setAutoBulkSubject("");
+      setAutoBulkSection("");
+      setShowAutoBulkModal(false);
+
+      // Refresh data
+      fetchModules();
+    } catch (err) {
+      console.error("Auto Bulk upload error:", err);
+      alert("Failed to upload files: " + err.message);
+    } finally {
+      setUploadingAutoBulk(false);
+    }
+  };
+  // ---------------------------------
+
   // Handle bulk PDF upload - now supports mixed media with custom step names
   const handleBulkPdfUpload = async () => {
     if (bulkPdfFiles.length === 0) {
@@ -484,10 +574,16 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Live Modules</h3>
             <div className="flex gap-3">
               <button 
+                onClick={() => setShowAutoBulkModal(true)} 
+                className="bg-indigo-500 text-white px-6 py-3 rounded-full font-black text-[10px] uppercase shadow-lg hover:bg-indigo-600 transition-colors"
+              >
+                Auto Bulk Upload
+              </button>
+              <button 
                 onClick={() => setShowBulkPdfModal(true)} 
                 className="bg-purple-500 text-white px-6 py-3 rounded-full font-black text-[10px] uppercase shadow-lg hover:bg-purple-600 transition-colors"
               >
-                Bulk Module Steps Upload
+                Custom Bulk Upload
               </button>
               <button 
                 onClick={() => setIsBuilding(true)} 
@@ -1032,12 +1128,132 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
         </div>
       )}
       
+      {/* Auto Bulk Upload Modal */}
+      {showAutoBulkModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-black text-slate-800">Auto Bulk Upload</h3>
+              <button 
+                onClick={() => setShowAutoBulkModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-2xl font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-sm text-slate-600 mb-6">
+              Upload up to 200 PDF and video files at once. The module steps will be automatically named according to the file names and ordered by their modification time.
+            </p>
+
+            <div className="space-y-6">
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">Module Title</label>
+                <input
+                  type="text"
+                  value={autoBulkTopic}
+                  onChange={(e) => setAutoBulkTopic(e.target.value)}
+                  className="w-full text-lg p-4 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-400 focus:ring-0 transition-colors font-bold text-slate-700"
+                  placeholder="e.g. Complete JavaScript Course"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">Subject</label>
+                  <input
+                    type="text"
+                    value={autoBulkSubject}
+                    onChange={(e) => setAutoBulkSubject(e.target.value)}
+                    className="w-full text-lg p-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-400 focus:ring-0 transition-colors font-bold text-slate-700"
+                    placeholder="e.g. Web Dev"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase mb-2">Target Section</label>
+                  {allocatedSections && allocatedSections.length > 0 ? (
+                    <select
+                      value={autoBulkSection}
+                      onChange={(e) => setAutoBulkSection(e.target.value)}
+                      className="w-full text-lg p-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-400 focus:ring-0 transition-colors font-bold text-slate-700"
+                    >
+                      <option value="">Select a section...</option>
+                      {allocatedSections.map(sec => (
+                        <option key={sec} value={sec}>{sec}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={autoBulkSection}
+                      onChange={(e) => setAutoBulkSection(e.target.value)}
+                      className="w-full text-lg p-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-400 font-bold text-slate-700"
+                      placeholder="e.g. 10A"
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-6 rounded-2xl border-2 border-dashed border-slate-300">
+                <label className="block text-xs font-black text-slate-400 uppercase mb-4">Select Files (Ctrl+A to select multiple)</label>
+                <input 
+                  type="file" 
+                  multiple 
+                  accept="application/pdf,video/*"
+                  onChange={handleAutoBulkFilesSelected}
+                  className="w-full p-3 bg-white rounded-lg border-2 border-indigo-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-indigo-500 file:text-white hover:file:bg-indigo-600"
+                />
+                
+                {autoBulkFiles.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-xs font-black text-indigo-700 uppercase mb-2">Selected Files ({autoBulkFiles.length})</p>
+                    <div className="max-h-48 overflow-y-auto space-y-2 bg-white p-3 rounded-lg border border-slate-200">
+                      {autoBulkFiles.map((f, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-sm border-b border-slate-100 pb-1 last:border-0">
+                          <span className="truncate flex-1 font-medium text-slate-700 mr-4" title={f.name}>
+                            {f.type === 'application/pdf' ? '📄' : '🎬'} {f.name}
+                          </span>
+                          <span className="text-slate-400 text-xs shrink-0 block">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-4 pt-4 border-t-2 border-slate-100">
+                <button 
+                  onClick={() => {
+                    setShowAutoBulkModal(false);
+                    setAutoBulkFiles([]);
+                    setAutoBulkTopic("");
+                    setAutoBulkSubject("");
+                    setAutoBulkSection("");
+                  }}
+                  className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200"
+                  disabled={uploadingAutoBulk}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleAutoBulkSubmit}
+                  disabled={uploadingAutoBulk || autoBulkFiles.length === 0 || !autoBulkTopic || !autoBulkSubject || !autoBulkSection}
+                  className="flex-1 px-6 py-4 bg-indigo-500 text-white rounded-xl font-bold hover:bg-indigo-600 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                >
+                  {uploadingAutoBulk ? 'Uploading...' : "Upload " + autoBulkFiles.length + " File(s)"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Bulk PDF Upload Modal */}
       {showBulkPdfModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-black text-slate-800">Bulk Module Steps Upload</h3>
+              <h3 className="text-2xl font-black text-slate-800">Custom Bulk Upload</h3>
               <button 
                 onClick={() => setShowBulkPdfModal(false)}
                 className="text-slate-400 hover:text-slate-600 text-2xl font-bold"
@@ -1239,3 +1455,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
 }
 
 export default ModuleBuilder;
+
+
+
+
