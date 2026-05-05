@@ -522,6 +522,16 @@ cd D:\sus\backend
 npm run test:notify
 ```
 
+PowerShell smoke test for the live API:
+
+```powershell
+cd D:\sus
+.\scripts\test-endpoints.ps1
+.\scripts\test-endpoints.ps1 -BaseUrl http://localhost -StudentCsvPath "$env:USERPROFILE\Downloads\susclass_students_test.csv" -TeacherCsvPath "$env:USERPROFILE\Downloads\susclass_teachers_test.csv"
+```
+
+The smoke test covers health, metrics, admin login, the admin password change endpoint, CSV bulk uploads, MCQ test creation, student submission, and restores the admin password before exiting. If the admin password has already been changed locally, the script reads `backend/data/admin-password.txt` first and uses that value automatically.
+
 ## 15. Full Docker Deployment
 
 Use this for packaged deployment with backend, nginx, Postgres, MailHog, and Jitsi in Docker:

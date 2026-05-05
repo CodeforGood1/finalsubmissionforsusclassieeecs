@@ -124,9 +124,9 @@ function Dashboard() {
   };
 
   const statCards = [
-    { label: 'Meetings today', value: stats.modulesCompleted, tone: 'text-[#101828]', note: 'View all' },
-    { label: 'Pending tasks', value: stats.totalModules, tone: 'text-[#101828]', note: 'View all' },
-    { label: 'Streak', value: stats.streak, tone: 'text-amber-700', note: 'days in rhythm' }
+    { label: 'Meetings today', value: stats.modulesCompleted, tone: 'text-[#101828]' },
+    { label: 'Pending tasks', value: stats.totalModules, tone: 'text-[#101828]' },
+    { label: 'Streak', value: stats.streak, tone: 'text-amber-700' }
   ];
 
   const navItems = [
@@ -234,7 +234,6 @@ function Dashboard() {
                         <>
                           <p className="text-[11px] font-medium text-[#667085]">{stat.label}</p>
                           <p className={`mt-2 text-2xl font-black ${stat.tone}`}>{stat.value}</p>
-                          <p className="mt-4 text-xs font-medium text-[#667085]">{stat.note} <span className="ml-1">&gt;</span></p>
                         </>
                       )}
                     </div>

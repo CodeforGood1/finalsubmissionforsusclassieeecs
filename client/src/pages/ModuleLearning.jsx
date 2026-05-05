@@ -525,14 +525,6 @@ function ModuleLearning() {
               </div>
             )}
 
-            {/* CODE EXAMPLE (read-only) */}
-            {currentStep.step_type === 'code' && (
-              <div className="bg-slate-900 rounded-2xl overflow-hidden">
-                <div className="px-4 py-2 bg-slate-800 text-xs text-slate-400 font-bold uppercase">Code Example</div>
-                <pre className="p-4 text-emerald-400 font-mono text-sm whitespace-pre-wrap">{currentStep.content || ''}</pre>
-              </div>
-            )}
-
             {/* CODING PROBLEM */}
             {currentStep.step_type === 'coding' && (
               <div className="space-y-6">

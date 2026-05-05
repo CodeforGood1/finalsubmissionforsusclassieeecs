@@ -129,8 +129,8 @@ Write-Host "Connection:"
 Write-Host "  docker exec -it $container psql -U $dbUser -d $dbName"
 Write-Host ""
 Write-Host "Admin login:"
-Write-Host "  Email:    $(Get-EnvValue $envPath "ADMIN_EMAIL")"
-Write-Host "  Password: $(Get-EnvValue $envPath "ADMIN_PASSWORD")"
+Write-Host "  Email:    $(Get-EnvValue $envPath 'ADMIN_EMAIL')"
+Write-Host "  Password: $(Get-EnvValue $envPath 'ADMIN_PASSWORD')"
 
 if (-not $StartApp) {
     Write-Host ""
