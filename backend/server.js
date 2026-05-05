@@ -43,6 +43,38 @@ function isPositiveInt(v) {
   return Number.isFinite(n) && n > 0;
 }
 
+const ADMIN_PASSWORD_FILE = path.resolve(__dirname, 'data', 'admin-password.txt');
+
+function loadAdminPasswordOverride() {
+  if (!fs.existsSync(ADMIN_PASSWORD_FILE)) {
+    return;
+  }
+
+  try {
+    const savedPassword = fs.readFileSync(ADMIN_PASSWORD_FILE, 'utf8').replace(/\r?\n+$/, '');
+    if (savedPassword) {
+      process.env.ADMIN_PASSWORD = savedPassword;
+      console.log('[ADMIN] Loaded persisted admin password override');
+    }
+  } catch (error) {
+    console.error('[ADMIN] Failed to load persisted admin password:', error);
+  }
+}
+
+function saveAdminPasswordOverride(newPassword) {
+  try {
+    fs.mkdirSync(path.dirname(ADMIN_PASSWORD_FILE), { recursive: true });
+    fs.writeFileSync(ADMIN_PASSWORD_FILE, `${newPassword}\n`, 'utf8');
+    process.env.ADMIN_PASSWORD = newPassword;
+    return true;
+  } catch (error) {
+    console.error('[ADMIN] Failed to persist admin password:', error);
+    return false;
+  }
+}
+
+loadAdminPasswordOverride();
+
 // Initialize local storage directories
 localStorageService.ensureUploadDirs();
 
@@ -444,6 +476,33 @@ app.post('/api/admin/login', (req, res) => {
   } else {
     res.status(401).json({ success: false, message: "Invalid Admin Credentials" });
   }
+});
+
+app.post('/api/admin/change-password', authLimiter, (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
+    return res.status(400).json({ error: 'currentPassword and newPassword are required' });
+  }
+
+  if (currentPassword !== process.env.ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Current admin password is incorrect' });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+
+  if (/\r|\n/.test(newPassword)) {
+    return res.status(400).json({ error: 'Password cannot contain line breaks' });
+  }
+
+  if (!saveAdminPasswordOverride(newPassword)) {
+    return res.status(500).json({ error: 'Failed to save the new admin password' });
+  }
+
+  console.log('[ADMIN] Admin password updated');
+  return res.json({ success: true, message: 'Admin password updated successfully' });
 });
 
 // 2. Universal Login (Student/Teacher)

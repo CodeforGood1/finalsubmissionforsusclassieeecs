@@ -22,6 +22,13 @@ function Login() {
   const [resetStep, setResetStep] = useState(1); // 1: email, 2: code+password
   const [resetMessage, setResetMessage] = useState('');
 
+  const [showAdminPasswordModal, setShowAdminPasswordModal] = useState(false);
+  const [adminCurrentPassword, setAdminCurrentPassword] = useState('');
+  const [adminNewPassword, setAdminNewPassword] = useState('');
+  const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
+  const [adminPasswordMessage, setAdminPasswordMessage] = useState('');
+  const [adminPasswordStatus, setAdminPasswordStatus] = useState('');
+
   // Check for inactivity logout message
   useEffect(() => {
     if (location.state?.message) {
@@ -197,6 +204,76 @@ function Login() {
     }
   };
 
+  const openAdminPasswordModal = () => {
+    setAdminCurrentPassword(password);
+    setAdminNewPassword('');
+    setAdminConfirmPassword('');
+    setAdminPasswordMessage('');
+    setAdminPasswordStatus('');
+    setShowAdminPasswordModal(true);
+  };
+
+  const closeAdminPasswordModal = () => {
+    setShowAdminPasswordModal(false);
+    setAdminCurrentPassword('');
+    setAdminNewPassword('');
+    setAdminConfirmPassword('');
+    setAdminPasswordMessage('');
+    setAdminPasswordStatus('');
+  };
+
+  const handleAdminPasswordChange = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setAdminPasswordMessage('');
+    setAdminPasswordStatus('');
+
+    if (adminNewPassword !== adminConfirmPassword) {
+      setAdminPasswordStatus('error');
+      setAdminPasswordMessage('New passwords do not match');
+      setLoading(false);
+      return;
+    }
+
+    if (adminNewPassword.length < 6) {
+      setAdminPasswordStatus('error');
+      setAdminPasswordMessage('New password must be at least 6 characters');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword: adminCurrentPassword,
+          newPassword: adminNewPassword
+        })
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setPassword(adminNewPassword);
+        setAdminPasswordStatus('success');
+        setAdminPasswordMessage('Admin password updated successfully. You can now sign in.');
+        setTimeout(() => {
+          closeAdminPasswordModal();
+        }, 1800);
+      } else {
+        setAdminPasswordStatus('error');
+        setAdminPasswordMessage(data.error || data.message || 'Failed to change admin password');
+      }
+    } catch (err) {
+      console.error('Admin password change failed:', err);
+      setAdminPasswordStatus('error');
+      setAdminPasswordMessage('Connection failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="app-shell relative flex min-h-screen items-center justify-center px-4 py-8 font-sans sm:px-6">
       <div className="absolute left-0 top-0 h-1 w-full bg-gradient-to-r from-[#060708] via-[#cf3a1f] to-[#c6b5bf]" />
@@ -208,16 +285,6 @@ function Login() {
         <h1 className="max-w-md text-5xl font-black leading-tight text-slate-900">
           A calmer classroom portal for daily learning.
         </h1>
-        <p className="mt-5 max-w-md text-base font-medium leading-7 text-slate-600">
-          Students, teachers, and admins can get to the right workspace quickly, even on local school networks.
-        </p>
-        <div className="mt-8 grid max-w-md grid-cols-3 gap-3">
-          {['Offline ready', 'Role based', 'Secure access'].map((item) => (
-            <div key={item} className="ui-card-soft px-4 py-3 text-center text-xs font-black uppercase tracking-wide text-slate-600">
-              {item}
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* MAIN LOGIN CARD */}
@@ -267,6 +334,7 @@ function Login() {
             required 
             placeholder="Email Identity" 
             className="field" 
+            value={email}
             onChange={(e) => setEmail(e.target.value)} 
           />
           <input 
@@ -274,6 +342,7 @@ function Login() {
             required 
             placeholder="Access Password" 
             className="field" 
+            value={password}
             onChange={(e) => setPassword(e.target.value)} 
           />
           <button 
@@ -285,8 +354,16 @@ function Login() {
           </button>
         </form>
         
-        {/* Forgot Password Link */}
-        {role !== 'admin' && (
+        {/* Account Recovery / Admin Password Change */}
+        {role === 'admin' ? (
+          <button
+            type="button"
+            onClick={openAdminPasswordModal}
+            className="mt-6 block w-full text-center text-[10px] font-bold uppercase tracking-widest text-slate-500 transition-colors hover:text-[#cf3a1f]"
+          >
+            Change Admin Password
+          </button>
+        ) : (
           <button 
             type="button"
             onClick={() => { setShowResetModal(true); setResetEmail(email); }}
@@ -410,6 +487,67 @@ function Login() {
             <button 
               type="button" 
               onClick={() => { setShowResetModal(false); setResetStep(1); setResetMessage(''); }}
+              className="mt-4 text-[9px] font-black text-slate-400 uppercase tracking-widest block w-full text-center hover:text-slate-600"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showAdminPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md px-4">
+          <div className="ui-card w-full max-w-sm p-8 text-center sm:p-10">
+            <h3 className="mb-2 text-xl font-black tracking-tight">Change <span className="text-[#cf3a1f]">Admin Password</span></h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase mb-6 tracking-widest">
+              Confirm your current password and choose a new one
+            </p>
+
+            {adminPasswordMessage && (
+              <div className={`mb-4 p-3 text-[10px] font-bold rounded-xl uppercase ${adminPasswordStatus === 'success' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'}`}>
+                {adminPasswordMessage}
+              </div>
+            )}
+
+            <form onSubmit={handleAdminPasswordChange} className="space-y-4">
+              <input
+                type="password"
+                required
+                value={adminCurrentPassword}
+                placeholder="Current Admin Password"
+                className="field"
+                onChange={(e) => setAdminCurrentPassword(e.target.value)}
+              />
+              <input
+                type="password"
+                required
+                minLength="6"
+                value={adminNewPassword}
+                placeholder="New Password (min 6 chars)"
+                className="field"
+                onChange={(e) => setAdminNewPassword(e.target.value)}
+              />
+              <input
+                type="password"
+                required
+                minLength="6"
+                value={adminConfirmPassword}
+                placeholder="Confirm New Password"
+                className="field"
+                onChange={(e) => setAdminConfirmPassword(e.target.value)}
+              />
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary w-full py-4 text-[10px] uppercase tracking-widest"
+              >
+                {loading ? 'Updating...' : 'Update Password'}
+              </button>
+            </form>
+
+            <button
+              type="button"
+              onClick={closeAdminPasswordModal}
               className="mt-4 text-[9px] font-black text-slate-400 uppercase tracking-widest block w-full text-center hover:text-slate-600"
             >
               Cancel

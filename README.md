@@ -146,7 +146,7 @@ DB_USER=lms_user
 DB_PASSWORD=lms_password
 DB_NAME=lms_db
 ADMIN_EMAIL=admin@classroom.local
-ADMIN_PASSWORD=Admin@2026
+ADMIN_PASSWORD=admin123
 JWT_SECRET=local_dev_jwt_secret_change_before_production_2026
 JITSI_PUBLIC_URL=https://localhost:8443
 JICOFO_AUTH_PASSWORD=jicofo-offline-2026
@@ -232,7 +232,7 @@ http://localhost:5173
 
 | Role | Email | Password |
 | --- | --- | --- |
-| Admin | `admin@classroom.local` | `Admin@2026` |
+| Admin | `admin@classroom.local` | `admin123` |
 | Teacher | `susclass.global+sarah.teacher@gmail.com` | `password123` |
 | Teacher | `susclass.global+emmanuel.teacher@gmail.com` | `password123` |
 | Student | `susclass.global+amara@gmail.com` | `student123` |

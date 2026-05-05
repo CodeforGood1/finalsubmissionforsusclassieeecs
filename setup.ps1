@@ -18,19 +18,20 @@ function New-Secret([int]$Length = 32) {
 
 function Set-EnvValue([string]$Path, [string]$Name, [string]$Value) {
     $escaped = [regex]::Escape($Name)
-    $lines = Get-Content -LiteralPath $Path
-    $updated = $false
-    $lines = $lines | ForEach-Object {
-        if ($_ -match "^$escaped=") {
-            $updated = $true
-            "$Name=$Value"
-        } else {
-            $_
+    $lines = @(Get-Content -LiteralPath $Path)
+
+    if ($lines -match "^$escaped=") {
+        $lines = $lines | ForEach-Object {
+            if ($_ -match "^$escaped=") {
+                "$Name=$Value"
+            } else {
+                $_
+            }
         }
-    }
-    if (-not $updated) {
+    } else {
         $lines += "$Name=$Value"
     }
+
     Set-Content -LiteralPath $Path -Value $lines -Encoding UTF8
 }
 
@@ -40,10 +41,10 @@ function Get-EnvValue([string]$Path, [string]$Name) {
     return ($line -split "=", 2)[1]
 }
 
-function Invoke-Compose([string[]]$Args) {
-    & docker compose @Args
+function Invoke-Compose([string[]]$ComposeCommand) {
+    & docker compose @ComposeCommand
     if ($LASTEXITCODE -ne 0) {
-        throw "docker compose $($Args -join ' ') failed with exit code $LASTEXITCODE"
+        throw "docker compose $($ComposeCommand -join ' ') failed with exit code $LASTEXITCODE"
     }
 }
 
@@ -79,7 +80,7 @@ if (-not (Test-Path -LiteralPath $envPath)) {
     Set-EnvValue $envPath "DB_USER" $dbUser
     Set-EnvValue $envPath "DB_PASSWORD" $dbPassword
     Set-EnvValue $envPath "DB_NAME" $dbName
-    Set-EnvValue $envPath "ADMIN_PASSWORD" (New-Secret 18)
+    Set-EnvValue $envPath "ADMIN_PASSWORD" "admin123"
     Set-EnvValue $envPath "JWT_SECRET" (New-Secret 48)
     Set-EnvValue $envPath "JICOFO_AUTH_PASSWORD" (New-Secret 24)
     Set-EnvValue $envPath "JICOFO_COMPONENT_SECRET" (New-Secret 24)
