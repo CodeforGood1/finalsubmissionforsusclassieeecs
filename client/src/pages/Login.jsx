@@ -151,6 +151,7 @@ function Login() {
         setResetMessage(data.error || 'Failed to send reset code');
       }
     } catch (err) {
+      console.error('Password reset request failed:', err);
       setResetMessage('Connection failed');
     } finally {
       setLoading(false);
@@ -189,6 +190,7 @@ function Login() {
         setResetMessage(data.error || 'Failed to reset password');
       }
     } catch (err) {
+      console.error('Password reset confirm failed:', err);
       setResetMessage('Connection failed');
     } finally {
       setLoading(false);
@@ -196,35 +198,64 @@ function Login() {
   };
 
   return (
-    <div className="flex h-screen items-center justify-center bg-[#F8FAFC] font-sans relative">
+    <div className="app-shell relative flex min-h-screen items-center justify-center px-4 py-8 font-sans sm:px-6">
+      <div className="absolute left-0 top-0 h-1 w-full bg-gradient-to-r from-[#060708] via-[#cf3a1f] to-[#c6b5bf]" />
+      <div className="hidden max-w-lg pr-12 lg:block">
+        <div className="mb-6 inline-flex items-center gap-3">
+          <span className="brand-mark">S</span>
+          <span className="text-sm font-black uppercase tracking-[0.16em] text-[#cf3a1f]">Sustainable Classroom</span>
+        </div>
+        <h1 className="max-w-md text-5xl font-black leading-tight text-slate-900">
+          A calmer classroom portal for daily learning.
+        </h1>
+        <p className="mt-5 max-w-md text-base font-medium leading-7 text-slate-600">
+          Students, teachers, and admins can get to the right workspace quickly, even on local school networks.
+        </p>
+        <div className="mt-8 grid max-w-md grid-cols-3 gap-3">
+          {['Offline ready', 'Role based', 'Secure access'].map((item) => (
+            <div key={item} className="ui-card-soft px-4 py-3 text-center text-xs font-black uppercase tracking-wide text-slate-600">
+              {item}
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* MAIN LOGIN CARD */}
-      <div className="w-full max-w-md rounded-[2.5rem] bg-white p-12 shadow-2xl border border-slate-100">
+      <div className="ui-card w-full max-w-md p-6 sm:p-8 md:p-10">
+        <div className="mb-8 flex items-center gap-3 lg:hidden">
+          <span className="brand-mark">S</span>
+          <div>
+            <p className="text-sm font-black text-slate-900">Sustainable Classroom</p>
+            <p className="text-xs font-semibold text-slate-500">Learning portal</p>
+          </div>
+        </div>
         
         {/* Role Selector */}
-        <div className="mb-10 flex rounded-2xl bg-slate-100/80 p-1.5 backdrop-blur-sm">
+        <div className="mb-8 flex rounded-2xl border border-slate-200 bg-slate-100/80 p-1.5 backdrop-blur-sm">
           {['admin', 'teacher', 'student'].map((r) => (
             <button 
               key={r} 
               type="button" 
               onClick={() => setRole(r)} 
-              className={`flex-1 py-2.5 text-[10px] font-black uppercase transition-all duration-300 ${role === r ? 'bg-white text-emerald-600 shadow-md rounded-xl' : 'text-slate-400'}`}
+              className={`flex-1 rounded-xl py-2.5 text-[10px] font-black uppercase transition-all duration-300 ${role === r ? 'bg-white text-[#cf3a1f] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               {r}
             </button>
           ))}
         </div>
 
-        <div className="mb-10 text-center">
-          <h2 className="text-4xl font-black uppercase italic tracking-tighter text-slate-800">
-            {role}<span className="text-emerald-500"> </span><span className="text-emerald-600 not-italic lowercase font-medium">portal</span>
+        <div className="mb-8 text-center sm:text-left">
+          <p className="section-label mb-2">Sign in</p>
+          <h2 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
+            {role.charAt(0).toUpperCase() + role.slice(1)} portal
           </h2>
           {inactivityMessage && (
-            <div className="mt-6 p-3 bg-amber-50 text-amber-700 text-[10px] font-bold rounded-xl uppercase border border-amber-200">
+            <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] font-bold uppercase text-amber-700">
                {inactivityMessage}
             </div>
           )}
           {error && (
-            <div className="mt-6 p-3 bg-red-50 text-red-500 text-[10px] font-bold rounded-xl uppercase border border-red-100 animate-shake">
+            <div className="mt-6 rounded-xl border border-red-100 bg-red-50 p-3 text-[10px] font-bold uppercase text-red-600">
               {error}
             </div>
           )}
@@ -235,20 +266,20 @@ function Login() {
             type="email" 
             required 
             placeholder="Email Identity" 
-            className="w-full rounded-2xl border bg-slate-50/50 p-4 text-sm font-bold outline-none focus:bg-white focus:border-emerald-500 transition-all" 
+            className="field" 
             onChange={(e) => setEmail(e.target.value)} 
           />
           <input 
             type="password" 
             required 
             placeholder="Access Password" 
-            className="w-full rounded-2xl border bg-slate-50/50 p-4 text-sm font-bold outline-none focus:bg-white focus:border-emerald-500 transition-all" 
+            className="field" 
             onChange={(e) => setPassword(e.target.value)} 
           />
           <button 
             type="submit" 
             disabled={loading} 
-            className="w-full rounded-2xl bg-slate-900 py-5 font-black text-white uppercase tracking-widest text-[11px] hover:bg-emerald-600 transition-all disabled:opacity-50"
+            className="btn-primary w-full py-5 text-[11px] uppercase tracking-widest"
           >
             {loading ? 'Verifying...' : 'Authenticate Access'}
           </button>
@@ -259,7 +290,7 @@ function Login() {
           <button 
             type="button"
             onClick={() => { setShowResetModal(true); setResetEmail(email); }}
-            className="mt-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest block w-full text-center hover:text-emerald-600 transition-colors"
+            className="mt-6 block w-full text-center text-[10px] font-bold uppercase tracking-widest text-slate-500 transition-colors hover:text-[#cf3a1f]"
           >
             Forgot Password?
           </button>
@@ -269,9 +300,9 @@ function Login() {
       {/* TOTP POPUP OVERLAY (Authenticator app only) */}
       {showTotp && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md px-4">
-          <div className="w-full max-w-sm rounded-[2.5rem] bg-white p-10 shadow-2xl border border-slate-100 text-center animate-in zoom-in duration-300">
-            <h3 className="text-xl font-black uppercase italic tracking-tighter">
-              <span className="text-emerald-500">Authenticator</span> Code
+          <div className="ui-card w-full max-w-sm p-8 text-center sm:p-10">
+            <h3 className="text-xl font-black tracking-tight">
+              <span className="text-[#cf3a1f]">Authenticator</span> Code
             </h3>
             <p className="text-[10px] font-bold text-slate-400 uppercase mt-2 mb-6 tracking-widest">
               Enter 6-digit code from your authenticator app
@@ -290,13 +321,13 @@ function Login() {
                 required 
                 value={totpCode}
                 placeholder="------" 
-                className="w-full text-center text-3xl tracking-[0.3em] font-black rounded-2xl border-2 border-slate-100 bg-slate-50 p-5 outline-none focus:border-emerald-500" 
+                className="field text-center text-3xl font-black tracking-[0.3em]" 
                 onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))} 
               />
               <button 
                 type="submit" 
                 disabled={loading} 
-                className="w-full rounded-2xl bg-emerald-600 py-4 font-black text-white text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all"
+                className="btn-primary w-full py-4 text-[10px] uppercase tracking-widest"
               >
                 {loading ? 'Verifying...' : 'Verify Identity'}
               </button>
@@ -316,8 +347,8 @@ function Login() {
       {/* PASSWORD RESET MODAL */}
       {showResetModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md px-4">
-          <div className="w-full max-w-sm rounded-[2.5rem] bg-white p-10 shadow-2xl border border-slate-100 text-center">
-            <h3 className="text-xl font-black uppercase italic tracking-tighter mb-2">Reset <span className="text-emerald-500">Password</span></h3>
+          <div className="ui-card w-full max-w-sm p-8 text-center sm:p-10">
+            <h3 className="mb-2 text-xl font-black tracking-tight">Reset <span className="text-[#cf3a1f]">Password</span></h3>
             <p className="text-[10px] font-bold text-slate-400 uppercase mb-6 tracking-widest">
               {resetStep === 1 ? 'Enter your email to receive a reset code' : 'Enter code and new password'}
             </p>
@@ -335,13 +366,13 @@ function Login() {
                   required 
                   value={resetEmail}
                   placeholder="Your Email" 
-                  className="w-full rounded-2xl border bg-slate-50/50 p-4 text-sm font-bold outline-none focus:bg-white focus:border-emerald-500 transition-all" 
+                  className="field" 
                   onChange={(e) => setResetEmail(e.target.value)} 
                 />
                 <button 
                   type="submit" 
                   disabled={loading} 
-                  className="w-full rounded-2xl bg-emerald-600 py-4 font-black text-white text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all"
+                  className="btn-primary w-full py-4 text-[10px] uppercase tracking-widest"
                 >
                   {loading ? 'Sending...' : 'Send Reset Code'}
                 </button>
@@ -354,7 +385,7 @@ function Login() {
                   required 
                   value={resetOtp}
                   placeholder="Reset Code" 
-                  className="w-full text-center text-2xl tracking-[0.2em] font-black rounded-2xl border-2 border-slate-100 bg-slate-50 p-4 outline-none focus:border-emerald-500" 
+                  className="field text-center text-2xl font-black tracking-[0.2em]" 
                   onChange={(e) => setResetOtp(e.target.value)} 
                 />
                 <input 
@@ -363,13 +394,13 @@ function Login() {
                   minLength="6"
                   value={newPassword}
                   placeholder="New Password (min 6 chars)" 
-                  className="w-full rounded-2xl border bg-slate-50/50 p-4 text-sm font-bold outline-none focus:bg-white focus:border-emerald-500 transition-all" 
+                  className="field" 
                   onChange={(e) => setNewPassword(e.target.value)} 
                 />
                 <button 
                   type="submit" 
                   disabled={loading} 
-                  className="w-full rounded-2xl bg-emerald-600 py-4 font-black text-white text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all"
+                  className="btn-primary w-full py-4 text-[10px] uppercase tracking-widest"
                 >
                   {loading ? 'Resetting...' : 'Reset Password'}
                 </button>

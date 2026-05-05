@@ -4,13 +4,15 @@ import ModuleBuilder from './ModuleBuilder';
 import NotificationBell from '../components/NotificationBell';
 import LiveSessionsCalendar from '../components/LiveSessionsCalendar';
 import Chat from '../components/Chat';
+import DashboardSidebar from '../components/DashboardSidebar';
+import PageTitle from '../components/PageTitle';
 import API_BASE_URL from '../config/api';
 
 function TeacherDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('students');
   const [teacherInfo, setTeacherInfo] = useState(null);
-  const [students, setStudents] = useState([]);
+  const [, setStudents] = useState([]);
   const [selectedSection, setSelectedSection] = useState("");
   const [loading, setLoading] = useState(true);
   const [allAllocations, setAllAllocations] = useState([]); // Store all teacher's class allocations
@@ -300,8 +302,8 @@ const fetchTeacherProfile = useCallback(async () => {
       return;
     }
     
-    if (questions.length >= 20) {
-      alert("Maximum 20 questions allowed per test");
+    if (questions.length >= 200) {
+      alert("Maximum 200 questions allowed per test");
       return;
     }
     
@@ -347,8 +349,20 @@ const fetchTeacherProfile = useCallback(async () => {
         }
         
         if (parsedQuestions.length > 0) {
-          setQuestions([...questions, ...parsedQuestions]);
-          alert(`Successfully imported ${parsedQuestions.length} questions!`);
+          const availableSlots = Math.max(0, 200 - questions.length);
+          if (availableSlots === 0) {
+            alert("Maximum 200 questions allowed per test");
+            return;
+          }
+
+          const questionsToImport = parsedQuestions.slice(0, availableSlots);
+          setQuestions([...questions, ...questionsToImport]);
+
+          if (questionsToImport.length < parsedQuestions.length) {
+            alert(`Imported ${questionsToImport.length} questions. Maximum 200 questions allowed per test.`);
+          } else {
+            alert(`Successfully imported ${questionsToImport.length} questions!`);
+          }
         } else {
           alert("No valid questions found in CSV");
         }
@@ -363,8 +377,16 @@ const fetchTeacherProfile = useCallback(async () => {
   
   // Create test - supports multi-section
   const handleCreateTest = async () => {
-    if (!testForm.title.trim()) {
+    const cleanTitle = testForm.title.trim();
+    const cleanDescription = testForm.description.trim();
+
+    if (!cleanTitle) {
       alert("Please enter a test title");
+      return;
+    }
+
+    if (cleanTitle.length < 3 || cleanTitle.length > 200) {
+      alert("Test title must be between 3 and 200 characters");
       return;
     }
     
@@ -380,6 +402,11 @@ const fetchTeacherProfile = useCallback(async () => {
     
     if (questions.length < 5) {
       alert("Please add at least 5 questions to create a test");
+      return;
+    }
+
+    if (questions.length > 200) {
+      alert("Maximum 200 questions allowed per test");
       return;
     }
     
@@ -400,22 +427,25 @@ const fetchTeacherProfile = useCallback(async () => {
         body: JSON.stringify({
           sections: sectionsToUse,
           section: sectionsToUse[0], // Primary section for backwards compatibility
-          title: testForm.title,
-          description: testForm.description || '',
+          title: cleanTitle,
+          description: cleanDescription,
           questions: questions,
           start_date: testForm.start_date,
           deadline: testForm.deadline
         })
       });
       
+      const data = await res.json();
       if (res.ok) {
-        alert(`Test "${testForm.title}" created for ${sectionsToUse.length} section(s)!`);
+        alert(`Test "${cleanTitle}" created for ${sectionsToUse.length} section(s)!`);
         setShowCreateTest(false);
         setTestForm({ title: '', description: '', start_date: '', deadline: '' });
         setQuestions([]);
         setSelectedSectionsForTest([]);
         setCurrentQuestion({ question: '', a: '', b: '', c: '', d: '', correct: 'A' });
         fetchTests();
+      } else {
+        alert(data.error || "Failed to create test");
       }
     } catch (err) {
       alert("Failed to create test");
@@ -537,47 +567,58 @@ const fetchTeacherProfile = useCallback(async () => {
   console.log("TeacherDashboard: selectedSection:", selectedSection);
   console.log("TeacherDashboard: activeTab:", activeTab);
 
+  const teacherNavItems = [
+    { id: 'students', label: 'Class Roster', icon: 'users' },
+    { id: 'modules', label: 'Module Builder', icon: 'upload' },
+    { id: 'tests', label: 'MCQ Tests', icon: 'check' },
+    { id: 'live', label: 'Live Sessions', icon: 'video' }
+  ];
+  const activeTabLabel = teacherNavItems.find((item) => item.id === activeTab)?.label || 'Teacher Dashboard';
+
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900">
-      {/* SIDEBAR */}
-      <aside className="w-80 bg-slate-900 text-white p-8 flex flex-col shadow-2xl z-10">
-        <h2 className="text-3xl font-black text-emerald-400 italic mb-12">TEACHER<span className="text-white">DASH</span></h2>
-        <nav className="flex-1 space-y-3">
-          {[
-            { id: 'students', label: 'Class Roster', icon: '' }, 
-            { id: 'modules', label: 'Module Builder', icon: '' },
-            { id: 'tests', label: 'MCQ Tests', icon: '' },
-            { id: 'live', label: 'Live Sessions', icon: '' }
-          ].map(item => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full text-left p-5 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center gap-4 ${activeTab === item.id ? 'bg-emerald-600' : 'hover:bg-white/5 text-slate-500'}`}>
-              {item.label}
-            </button>
-          ))}
-        </nav>
-        <div className="space-y-3">
-          <button 
-            onClick={() => navigate('/setup-authenticator')} 
-            className="w-full p-5 rounded-2xl bg-emerald-500/10 text-emerald-500 font-black uppercase text-[10px] flex items-center gap-3"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-            Security
-          </button>
-          <button 
-            onClick={() => { localStorage.removeItem('token'); localStorage.removeItem('user_role'); localStorage.removeItem('user_data'); navigate('/'); }} 
-            className="w-full p-5 rounded-2xl bg-red-500/10 text-red-500 font-black uppercase text-[10px]"
-          >
-            Logout
-          </button>
-        </div>
-      </aside>
+      <DashboardSidebar
+        title="TEACHERDASH"
+        subtitle="Teacher panel"
+        navItems={teacherNavItems.map((item) => ({
+          ...item,
+          active: activeTab === item.id,
+          onClick: () => setActiveTab(item.id)
+        }))}
+        actions={[
+          { label: teacherInfo?.totp_enabled ? 'Disable Auth' : 'Enable Auth', icon: 'lock', onClick: () => navigate('/setup-authenticator') },
+          { label: 'Logout', icon: 'logout', danger: true, onClick: () => { localStorage.removeItem('token'); localStorage.removeItem('user_role'); localStorage.removeItem('user_data'); navigate('/'); } }
+        ]}
+      />
 
       {/* MAIN CONTENT */}
-      <main className="flex-1 p-14 overflow-y-auto">
-        <header className="flex justify-between items-center mb-16">
-          <div>
-            <h1 className="text-5xl font-black text-slate-800 uppercase italic">{activeTab}</h1>
+      <div className="student-layout-main">
+        <header className="student-layout-topbar">
+          <p>{activeTabLabel}</p>
+          <div className="student-topbar-actions">
+            <button
+              type="button"
+              onClick={() => setShowChat(true)}
+              className="student-message-button"
+              title="Messages"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </button>
+            <NotificationBell />
+            <button type="button" className="student-user-chip">Teacher</button>
+          </div>
+        </header>
+
+      <main className="teacher-dashboard-content flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto">
+        <header className="flex flex-col gap-4 mb-8 xl:flex-row xl:justify-between xl:items-start">
+          <div className="hidden sm:block">
+            <PageTitle
+              first={activeTab === 'live' ? 'Live' : activeTab === 'tests' ? 'MCQ' : activeTab === 'modules' ? 'Module' : 'Class'}
+              second={activeTab === 'live' ? 'Sessions' : activeTab === 'tests' ? 'Tests' : activeTab === 'modules' ? 'Builder' : 'Roster'}
+              className="mb-0"
+            />
             <div className="flex items-center gap-3 mt-2">
               <p className="text-slate-400 font-bold text-xs">
                 Section: <span className="text-emerald-500">{selectedSection || 'None'}</span>
@@ -592,21 +633,11 @@ const fetchTeacherProfile = useCallback(async () => {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-6">
-            <button 
-              onClick={() => setShowChat(true)} 
-              className="relative p-2 text-slate-500 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition-colors"
-              title="Messages"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-            </button>
-            <NotificationBell />
-            <div className="flex gap-3 bg-white p-3 rounded-full shadow-xl">
+          <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+            <div className="flex max-w-full flex-wrap gap-2 bg-white p-2 rounded-full shadow-xl">
               {teacherInfo?.allocated_sections && Array.isArray(teacherInfo.allocated_sections) && teacherInfo.allocated_sections.length > 0 ? (
                 teacherInfo.allocated_sections.map(sec => (
-                  <button key={sec} onClick={() => setSelectedSection(sec)} className={`px-8 py-3 rounded-full text-[10px] font-black uppercase transition-all ${selectedSection === sec ? 'bg-slate-900 text-white' : 'text-slate-400'}`}>{sec}</button>
+                  <button key={sec} onClick={() => setSelectedSection(sec)} className={`px-4 py-2 rounded-full text-[10px] font-black uppercase transition-all ${selectedSection === sec ? 'bg-slate-900 text-white' : 'text-slate-400'}`}>{sec}</button>
                 ))
               ) : (
                 <p className="text-xs text-slate-400 px-4">No sections allocated</p>
@@ -634,10 +665,10 @@ const fetchTeacherProfile = useCallback(async () => {
             </div>
           )
         ) : activeTab === 'live' ? (
-          <div className="max-w-4xl">
-            <div className="mb-8">
-              <h2 className="text-2xl font-black text-slate-800 mb-2">Scheduled Live Sessions</h2>
-              <p className="text-slate-500">View and manage your upcoming live video sessions with students</p>
+          <div className="w-full">
+            <div className="mb-6">
+              <h2 className="text-xl font-black text-slate-800">Scheduled <span className="text-[#b86753]">Live Sessions</span></h2>
+              <p className="mt-1 text-sm font-semibold text-slate-500">View and manage your upcoming live video sessions with students</p>
             </div>
             <LiveSessionsCalendar userType="teacher" />
           </div>
@@ -1013,9 +1044,9 @@ const fetchTeacherProfile = useCallback(async () => {
                     <button 
                       onClick={handleAddQuestion} 
                       className="w-full bg-emerald-600 text-white p-4 rounded-xl font-black uppercase text-xs hover:bg-emerald-700 transition-colors"
-                      disabled={questions.length >= 20}
+                      disabled={questions.length >= 200}
                     >
-                      {questions.length >= 20 ? 'Maximum Questions Reached' : 'Add This Question'}
+                      {questions.length >= 200 ? 'Maximum Questions Reached' : 'Add This Question'}
                     </button>
                   </div>
                   
@@ -1439,6 +1470,7 @@ const fetchTeacherProfile = useCallback(async () => {
           </div>
         )}
       </main>
+      </div>
       
       {/* Chat Component */}
       {showChat && <Chat onClose={() => setShowChat(false)} />}

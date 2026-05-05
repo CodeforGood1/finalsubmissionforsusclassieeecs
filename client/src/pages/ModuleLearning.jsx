@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import API_BASE_URL from '../config/api';
 
+const JITSI_URL = (import.meta.env.VITE_JITSI_SERVER_URL || 'https://localhost:8443').replace(/\/+$/, '');
+
 // Extract YouTube video ID and return a clean embed URL
 const getYouTubeEmbedUrl = (url) => {
   if (!url) return '';
@@ -19,7 +21,7 @@ function ModuleLearning() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [userName, setUserName] = useState('Student');
+  const [, setUserName] = useState('Student');
 
   // Coding state
   const [code, setCode] = useState('');
@@ -94,11 +96,6 @@ function ModuleLearning() {
     setCodeResults(null);
     setCustomInput('');
     
-    // Set starter code for coding steps
-    const step = steps[currentStepIndex];
-    if (step && step.step_type === 'coding' && step.mcq_data?.starterCode) {
-      setCode(step.mcq_data.starterCode[language] || '// Write your solution here');
-    }
   }, [currentStepIndex, steps]);
 
   useEffect(() => {
@@ -107,7 +104,7 @@ function ModuleLearning() {
     if (step && step.step_type === 'coding' && step.mcq_data?.starterCode) {
       setCode(step.mcq_data.starterCode[language] || '// Write your solution here');
     }
-  }, [language]);
+  }, [language, currentStepIndex, steps]);
 
   const currentStep = steps[currentStepIndex];
   
@@ -279,8 +276,8 @@ function ModuleLearning() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center bg-white p-12 rounded-3xl shadow-lg">
           <p className="text-red-500 font-bold mb-4">Error: {error}</p>
-          <button onClick={() => navigate('/dashboard')} className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold">
-            Return to Dashboard
+          <button onClick={() => navigate('/courses')} className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold">
+            Back to Courses
           </button>
         </div>
       </div>
@@ -428,7 +425,7 @@ function ModuleLearning() {
                     onClick={() => {
                       const rawRoom = currentStep.mcq_data?.roomName || currentStep.content || 'classroom';
                       const cleanRoom = rawRoom.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').substring(0, 50) || 'classroom';
-                      window.open(`https://localhost:8443/${cleanRoom}`, '_blank');
+                      window.open(`${JITSI_URL}/${cleanRoom}`, '_blank');
                     }}
                     className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all"
                   >

@@ -105,11 +105,11 @@ function LiveSessionsCalendar({ userType = 'student' }) {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl p-6 border border-slate-200">
-        <div className="animate-pulse flex space-x-4">
+      <div className="ui-card p-5">
+        <div className="flex space-x-4">
           <div className="flex-1 space-y-4 py-1">
-            <div className="h-4 bg-slate-200 rounded w-3/4"></div>
-            <div className="h-4 bg-slate-200 rounded w-1/2"></div>
+            <div className="skeleton h-4 w-3/4 rounded"></div>
+            <div className="skeleton h-4 w-1/2 rounded"></div>
           </div>
         </div>
       </div>
@@ -117,19 +117,19 @@ function LiveSessionsCalendar({ userType = 'student' }) {
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+    <div className="ui-card overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
+      <div className="bg-[#c26551] px-4 py-3 text-white">
         <div className="flex justify-between items-center">
           <div>
-            <h3 className="font-bold text-lg">Live Sessions</h3>
-            <p className="text-indigo-200 text-sm">{sessions.length} scheduled session{sessions.length !== 1 ? 's' : ''}</p>
+            <h3 className="text-base font-black">Live Sessions</h3>
+            <p className="text-white/55 text-sm">{sessions.length} scheduled session{sessions.length !== 1 ? 's' : ''}</p>
           </div>
           <div className="flex gap-2">
             <button
               onClick={() => setViewMode('list')}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                viewMode === 'list' ? 'bg-white text-indigo-600' : 'bg-white/20 text-white hover:bg-white/30'
+                viewMode === 'list' ? 'bg-white text-[#5f3b25]' : 'bg-white/15 text-white hover:bg-white/25'
               }`}
             >
               List
@@ -137,7 +137,7 @@ function LiveSessionsCalendar({ userType = 'student' }) {
             <button
               onClick={() => setViewMode('calendar')}
               className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                viewMode === 'calendar' ? 'bg-white text-indigo-600' : 'bg-white/20 text-white hover:bg-white/30'
+                viewMode === 'calendar' ? 'bg-white text-[#5f3b25]' : 'bg-white/15 text-white hover:bg-white/25'
               }`}
             >
               Calendar
@@ -148,8 +148,8 @@ function LiveSessionsCalendar({ userType = 'student' }) {
 
       {sessions.length === 0 ? (
         <div className="p-12 text-center">
-          <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-16 h-16 bg-[#f7ebe6] rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-[#b86753]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
           </div>
@@ -163,11 +163,11 @@ function LiveSessionsCalendar({ userType = 'student' }) {
         <div className="divide-y divide-slate-100">
           {/* Upcoming Sessions Alert */}
           {getUpcomingSessions().length > 0 && (
-            <div className="p-4 bg-amber-50 border-b border-amber-100">
+            <div className="p-4 bg-[#fff1ea] border-b border-[#e7eaf0]">
               <p className="text-xs font-bold text-amber-700 uppercase mb-2">Coming Up This Week</p>
               <div className="space-y-2">
                 {getUpcomingSessions().slice(0, 3).map(session => (
-                  <div key={session.id} className="flex items-center justify-between p-3 bg-white rounded-xl border border-amber-200">
+                  <div key={session.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-[#e7eaf0]">
                     <div>
                       <p className="font-bold text-slate-800 text-sm">{session.step_title || session.topic}</p>
                       <p className="text-xs text-slate-500">{formatDate(session.scheduled_time)} at {formatTime(session.scheduled_time)}</p>
@@ -278,13 +278,13 @@ function LiveSessionsCalendar({ userType = 'student' }) {
                 <div
                   key={idx}
                   className={`p-2 min-h-[60px] rounded-lg border transition-all ${
-                    isToday ? 'bg-indigo-50 border-indigo-300' : 
+                    isToday ? 'bg-[#f7ebe6] border-[#b86753]' : 
                     daySessions.length > 0 ? 'bg-purple-50 border-purple-200 cursor-pointer hover:border-purple-400' : 
                     'border-transparent hover:bg-slate-50'
                   }`}
                   onClick={() => daySessions.length > 0 && setSelectedSession(daySessions[0])}
                 >
-                  <div className={`text-xs font-bold ${isToday ? 'text-indigo-600' : 'text-slate-600'}`}>
+                  <div className={`text-xs font-bold ${isToday ? 'text-[#b86753]' : 'text-slate-600'}`}>
                     {day.getDate()}
                   </div>
                   {daySessions.length > 0 && (
@@ -343,7 +343,7 @@ function LiveSessionsCalendar({ userType = 'student' }) {
               className={`w-full py-4 rounded-xl font-bold text-white transition-all ${
                 isSessionLive(selectedSession)
                   ? 'bg-red-600 hover:bg-red-700 animate-pulse'
-                  : 'bg-indigo-600 hover:bg-indigo-700'
+                  : 'bg-[#b86753] hover:bg-[#964f40]'
               }`}
             >
               {isSessionLive(selectedSession) ? 'LIVE - Join Session Now' : 'Open Meeting Room'}

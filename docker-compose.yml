@@ -16,12 +16,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/FRESH-COMPLETE-DATABASE.sql:/docker-entrypoint-initdb.d/01-schema.sql
-      - ./backend/add-module-progress-tracking.sql:/docker-entrypoint-initdb.d/02-modules.sql
-      - ./backend/add-coding-submissions.sql:/docker-entrypoint-initdb.d/03-coding.sql
-      - ./backend/add-inapp-notifications-table.sql:/docker-entrypoint-initdb.d/04-notifications.sql
-      - ./backend/add-chat-tables.sql:/docker-entrypoint-initdb.d/05-chat.sql
-      - ./backend/v2.2.6-multi-section.sql:/docker-entrypoint-initdb.d/06-multi-section.sql
-      - ./backend/notification-system.sql:/docker-entrypoint-initdb.d/07-notification-system.sql
+      - ./backend/notification-system.sql:/docker-entrypoint-initdb.d/02-notification-system.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lms_admin -d sustainable_classroom"]
       interval: 10s

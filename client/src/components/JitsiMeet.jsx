@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 // LOCAL Jitsi server - fully offline, no external connections
-const JITSI_DOMAIN = 'localhost:8443';
-const JITSI_URL = 'https://localhost:8443';
+const JITSI_URL = (import.meta.env.VITE_JITSI_SERVER_URL || 'https://localhost:8443').replace(/\/+$/, '');
+const JITSI_DOMAIN = JITSI_URL.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 
 function JitsiMeet({ roomName, displayName, onClose, isTeacher = false }) {
   const containerRef = useRef(null);
@@ -132,7 +132,7 @@ function JitsiMeet({ roomName, displayName, onClose, isTeacher = false }) {
     return () => {
       mounted = false;
       if (apiRef.current) {
-        try { apiRef.current.dispose(); } catch (e) {}
+        try { apiRef.current.dispose(); } catch { /* suppress error */ }
         apiRef.current = null;
       }
     };
@@ -211,7 +211,7 @@ function Header({ roomName, onClose, connected }) {
       </div>
       <div className="flex items-center gap-2">
         <a
-          href={`https://localhost:8443/${roomName}`}
+          href={`${JITSI_URL}/${roomName}`}
           target="_blank"
           rel="noopener noreferrer"
           className="px-3 py-1.5 bg-slate-700 text-white rounded-lg text-xs font-bold hover:bg-slate-600"

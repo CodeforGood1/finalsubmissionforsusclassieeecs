@@ -1,10 +1,10 @@
 // Database Seed Script - Creates sample data for testing
 
-require('dotenv').config();
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
 const SALT_ROUNDS = 10;
 

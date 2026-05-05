@@ -18,8 +18,8 @@ const getStorageKey = () => {
       if (userData.id) {
         return `timetracker_session_${userData.id}`;
       }
-    } catch (e) {
-      console.warn('[Timer] Failed to parse user data');
+    } catch (err) {
+      console.warn('[Timer] Failed to parse user data:', err);
     }
   }
   return 'timetracker_session_default';
@@ -66,7 +66,9 @@ function TimeTracker() {
         seconds: seconds,
         ts: Date.now()
       }));
-    } catch (e) { /* ignore */ }
+    } catch (err) {
+      console.warn('[Timer] Failed to save local session:', err);
+    }
   }, []);
 
   // Load session from localStorage - NOT USED anymore (always start fresh)
@@ -106,18 +108,14 @@ function TimeTracker() {
       // 0. Get current user ID first
       const userData = localStorage.getItem('user_data');
       let currentUserId = null;
-      let currentStorageKey = 'timetracker_session_default';
       
       try {
         if (userData) {
           const parsed = JSON.parse(userData);
           currentUserId = parsed.id;
-          if (currentUserId) {
-            currentStorageKey = `timetracker_session_${currentUserId}`;
-          }
         }
-      } catch (e) {
-        console.warn('[Timer] Failed to parse user_data:', e);
+      } catch (err) {
+        console.warn('[Timer] Failed to parse user_data:', err);
       }
 
       // 1. Clear ALL timer keys to ensure fresh start (prevents cross-user persistence)

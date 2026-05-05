@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import API_BASE_URL from '../config/api';
 
+const JITSI_URL = (import.meta.env.VITE_JITSI_SERVER_URL || 'https://localhost:8443').replace(/\/+$/, '');
+
 function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
   // Debug logging
   console.log('[ModuleBuilder] Component mounted/updated', {
@@ -162,7 +164,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
         roomName: jitsiData.roomName.replace(/\s+/g, '-').toLowerCase(),
         scheduledTime: jitsiData.scheduledTime,
         duration: jitsiData.duration,
-        meetingUrl: `https://8x8.vc/${jitsiData.roomName.replace(/\s+/g, '-').toLowerCase()}`
+        meetingUrl: `${JITSI_URL}/${jitsiData.roomName.replace(/\s+/g, '-').toLowerCase()}`
       };
     } else if (contentType === 'mcq') {
       // Validate MCQ
@@ -279,6 +281,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
       setTargetSubject(module.subject || '');
       setIsBuilding(true);
     } catch (err) {
+      console.error("Error loading module for editing:", err);
       alert("Failed to load module for editing");
     }
   };
@@ -299,6 +302,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
         alert("Failed to delete module");
       }
     } catch (err) {
+      console.error("Error deleting module:", err);
       alert("Server error");
     }
   };
@@ -551,7 +555,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
   });
 
   return (
-    <div className="max-w-6xl mx-auto space-y-10">
+    <div className="max-w-6xl mx-auto space-y-6">
       {/* Show info if no sections allocated, but still allow module creation */}
       {allocatedSections.length === 0 && !isBuilding && (
         <div className="bg-amber-50 border-2 border-amber-200 rounded-3xl p-8 mb-6">
@@ -569,25 +573,25 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
       
       {/* Always show module builder - works with or without allocations */}
       {!isBuilding ? (
-        <div className="space-y-6">
-          <div className="flex justify-between items-center">
+        <div className="space-y-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Live Modules</h3>
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-2">
               <button 
                 onClick={() => setShowAutoBulkModal(true)} 
-                className="bg-indigo-500 text-white px-6 py-3 rounded-full font-black text-[10px] uppercase shadow-lg hover:bg-indigo-600 transition-colors"
+                className="bg-indigo-500 text-white px-4 py-2.5 rounded-full font-black text-[10px] uppercase shadow-lg hover:bg-indigo-600 transition-colors"
               >
                 Auto Bulk Upload
               </button>
               <button 
                 onClick={() => setShowBulkPdfModal(true)} 
-                className="bg-purple-500 text-white px-6 py-3 rounded-full font-black text-[10px] uppercase shadow-lg hover:bg-purple-600 transition-colors"
+                className="bg-purple-500 text-white px-4 py-2.5 rounded-full font-black text-[10px] uppercase shadow-lg hover:bg-purple-600 transition-colors"
               >
                 Custom Bulk Upload
               </button>
               <button 
                 onClick={() => setIsBuilding(true)} 
-                className="bg-emerald-500 text-white px-6 py-3 rounded-full font-black text-[10px] uppercase shadow-lg hover:bg-emerald-600 transition-colors"
+                className="bg-emerald-500 text-white px-4 py-2.5 rounded-full font-black text-[10px] uppercase shadow-lg hover:bg-emerald-600 transition-colors"
               >
                 Create New Module
               </button>
@@ -603,7 +607,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
               <p className="text-slate-400 mb-4">Click "Create New Module" to build your first learning module</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {existingModules.map(mod => {
                 // Parse sections - could be a JSON string, array, or just the section field
                 let sectionsArray = [];
@@ -614,7 +618,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                 }
                 
                 return (
-                <div key={mod.id} className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                <div key={mod.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
                   <p className="text-[10px] font-black text-emerald-500 uppercase">Module</p>
                   <h4 className="text-lg font-black text-slate-800 uppercase mb-2 truncate">{mod.topic_title}</h4>
                   <div className="flex flex-wrap gap-2 mb-2">
@@ -826,7 +830,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                     <p className="font-bold">Live Session Info:</p>
                     <p>Students will be able to join the Jitsi meeting at the scheduled time.</p>
                     <p className="mt-2 font-mono text-xs">
-                      Meeting URL: https://localhost:8443/{jitsiData.roomName.replace(/\s+/g, '-').toLowerCase() || 'room-name'}
+                      Meeting URL: {JITSI_URL}/{jitsiData.roomName.replace(/\s+/g, '-').toLowerCase() || 'room-name'}
                     </p>
                     <p className="text-xs text-indigo-600 mt-2">✅ Using local Jitsi server (on-premise)</p>
                   </div>

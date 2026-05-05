@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API_BASE_URL from '../config/api';
+import PageTitle from '../components/PageTitle';
 
 export default function TestKnowledge() {
   const navigate = useNavigate();
@@ -15,11 +16,7 @@ export default function TestKnowledge() {
   
   const token = localStorage.getItem('token');
 
-  useEffect(() => {
-    fetchTests();
-  }, []);
-  
-  const fetchTests = async () => {
+  const fetchTests = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/student/tests`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -31,7 +28,11 @@ export default function TestKnowledge() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    fetchTests();
+  }, [fetchTests]);
   
   const startTest = async (testId) => {
     try {
@@ -130,10 +131,10 @@ export default function TestKnowledge() {
               Back to Tests
             </button>
             <button 
-              onClick={() => navigate('/dashboard')}
+              onClick={() => { setShowResult(false); setResult(null); }}
               className="text-slate-400 font-bold text-sm hover:text-slate-600"
             >
-              Go to Dashboard
+              Review Tests
             </button>
           </div>
         </div>
@@ -144,7 +145,7 @@ export default function TestKnowledge() {
   // Taking test screen
   if (takingTest && currentTest) {
     return (
-      <div className="min-h-screen bg-[#fdfdfd] p-8 lg:p-12 font-sans text-slate-800">
+      <div className="min-h-screen bg-[#fdfdfd] p-4 md:p-6 lg:p-8 font-sans text-slate-800">
         <div className="max-w-3xl mx-auto">
           <div className="flex items-center justify-between mb-8">
             <h1 className="text-2xl font-bold">{currentTest.title}</h1>
@@ -207,28 +208,17 @@ export default function TestKnowledge() {
 
   // Main test list screen
   return (
-    <div className="min-h-screen bg-[#fdfdfd] p-8 lg:p-12 font-sans text-slate-800">
+    <div className="min-h-screen bg-[#fdfdfd] p-4 md:p-6 lg:p-8 font-sans text-slate-800">
       <div className="max-w-6xl mx-auto">
-        
-        <button 
-          onClick={() => navigate('/dashboard')}
-          className="flex items-center gap-2 text-slate-400 hover:text-emerald-600 font-medium transition-colors mb-10 text-sm"
-        >
-          Back to Dashboard
-        </button>
-
-        <header className="mb-12">
-          <h1 className="text-3xl font-bold text-slate-900">Test Knowledge</h1>
-          <p className="text-slate-500 mt-2">Complete your assigned tests before the deadline.</p>
-        </header>
+        <PageTitle first="Test" second="Knowledge">Complete your assigned tests before the deadline.</PageTitle>
 
         {/* Pending Tests */}
         {pendingTests.length > 0 && (
           <section className="mb-12">
             <h2 className="text-sm font-black text-emerald-600 uppercase tracking-widest mb-6">Pending Tests</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {pendingTests.map(test => (
-                <div key={test.id} className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+                <div key={test.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
                   <h3 className="text-lg font-bold text-slate-800 mb-2">{test.title}</h3>
                   <p className="text-sm text-slate-500 mb-4">{test.description}</p>
                   <div className="flex items-center justify-between mb-6">
@@ -255,9 +245,9 @@ export default function TestKnowledge() {
         {overdueTests.length > 0 && (
           <section className="mb-12">
             <h2 className="text-sm font-black text-red-600 uppercase tracking-widest mb-6">Overdue Tests</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {overdueTests.map(test => (
-                <div key={test.id} className="bg-red-50 p-8 rounded-[2rem] border-2 border-red-200">
+                <div key={test.id} className="bg-red-50 p-5 rounded-[2rem] border-2 border-red-200">
                   <h3 className="text-lg font-bold text-slate-800 mb-2">{test.title}</h3>
                   <p className="text-sm text-slate-500 mb-4">{test.description}</p>
                   <div className="flex items-center justify-between mb-6">
@@ -284,7 +274,7 @@ export default function TestKnowledge() {
         {completedTests.length > 0 && (
           <section>
             <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6">Completed Tests</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {completedTests.map(test => (
                 <div key={test.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
                   <h3 className="font-bold text-slate-800 mb-2">{test.title}</h3>

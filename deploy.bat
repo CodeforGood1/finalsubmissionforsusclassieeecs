@@ -130,7 +130,7 @@ echo    Status:      %COMPOSE_CMD% -f %COMPOSE_FILE% ps
 echo.
 echo [WARNING] SECURITY: Change default passwords for production use.
 echo.
-echo See README.md and DEPLOYMENT.md for more information.
+echo See README.md for setup, deployment, and troubleshooting.
 echo.
 
 endlocal

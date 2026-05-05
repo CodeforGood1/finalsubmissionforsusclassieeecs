@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import DashboardSidebar from '../components/DashboardSidebar';
 import API_BASE_URL from '../config/api';
 
 function AdminDashboard() {
-  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('student'); // 'student', 'teacher', 'manage-students', 'manage-teachers', 'allocation'
   const [loading, setLoading] = useState(false);
   
@@ -28,10 +27,6 @@ function AdminDashboard() {
     name: '', email: '', password: '', staff_id: '', dept: '' 
   });
   
-  // States for Editing
-  const [editingStudent, setEditingStudent] = useState(null);
-  const [editingTeacher, setEditingTeacher] = useState(null);
-  
   const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
   
@@ -48,7 +43,37 @@ function AdminDashboard() {
   const [profilePicUploading, setProfilePicUploading] = useState(false);
 
   const token = localStorage.getItem('token');
-  const authHeaders = { 'Authorization': `Bearer ${token}` };
+  const authHeaders = useMemo(() => ({ 'Authorization': `Bearer ${token}` }), [token]);
+
+  const fetchTeachers = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/teachers`, { headers: authHeaders });
+      const data = await res.json();
+      setTeachers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Error fetching teachers:", err);
+    }
+  }, [authHeaders]);
+
+  const fetchStudents = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/students`, { headers: authHeaders });
+      const data = await res.json();
+      setStudents(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Error fetching students:", err);
+    }
+  }, [authHeaders]);
+
+  const fetchSections = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/sections`, { headers: authHeaders });
+      const data = await res.json();
+      setAvailableSections(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Error fetching sections:", err);
+    }
+  }, [authHeaders]);
 
   // Load data based on active tab
   useEffect(() => {
@@ -60,37 +85,7 @@ function AdminDashboard() {
     } else if (activeTab === 'manage-students') {
       fetchStudents();
     }
-  }, [activeTab]);
-
-  const fetchTeachers = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/teachers`, { headers: authHeaders });
-      const data = await res.json();
-      setTeachers(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("Error fetching teachers:", err);
-    }
-  };
-
-  const fetchStudents = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/students`, { headers: authHeaders });
-      const data = await res.json();
-      setStudents(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("Error fetching students:", err);
-    }
-  };
-
-  const fetchSections = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/sections`, { headers: authHeaders });
-      const data = await res.json();
-      setAvailableSections(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("Error fetching sections:", err);
-    }
-  };
+  }, [activeTab, fetchTeachers, fetchSections, fetchStudents]);
 
   // Logout handler
   const handleLogout = () => {
@@ -298,6 +293,7 @@ function AdminDashboard() {
         fetchTeachers();
       }
     } catch (err) {
+      console.error("Teacher update error:", err);
       alert("Failed to update teacher");
     }
   };
@@ -316,6 +312,7 @@ function AdminDashboard() {
         fetchTeachers();
       }
     } catch (err) {
+      console.error("Teacher delete error:", err);
       alert("Failed to delete teacher");
     }
   };
@@ -341,6 +338,7 @@ function AdminDashboard() {
         fetchStudents();
       }
     } catch (err) {
+      console.error("Student update error:", err);
       alert("Failed to update student");
     }
   };
@@ -359,6 +357,7 @@ function AdminDashboard() {
         fetchStudents();
       }
     } catch (err) {
+      console.error("Student delete error:", err);
       alert("Failed to delete student");
     }
   };
@@ -499,48 +498,31 @@ function AdminDashboard() {
     input.click();
   };
 
-  const toggleStudentSelection = (studentId) => {
-    if (selectedStudents.includes(studentId)) {
-      setSelectedStudents(selectedStudents.filter(id => id !== studentId));
-    } else {
-      setSelectedStudents([...selectedStudents, studentId]);
-    }
-  };
+  const adminNavItems = [
+    { id: 'student', label: 'Add Student', icon: 'user' },
+    { id: 'teacher', label: 'Add Teacher', icon: 'teacher' },
+    { id: 'manage-students', label: 'Manage Students', icon: 'users' },
+    { id: 'manage-teachers', label: 'Manage Teachers', icon: 'settings' },
+    { id: 'allocation', label: 'Allocations', icon: 'book' }
+  ];
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans">
-      {/* SIDEBAR */}
-      <div className="w-72 bg-slate-900 text-white p-8 flex flex-col">
-        <h2 className="text-2xl font-black mb-10 text-emerald-400 italic">ADMIN PANEL</h2>
-        <nav className="space-y-2 flex-1">
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Registration</p>
-          <button onClick={() => setActiveTab('student')} className={`w-full text-left p-4 rounded-xl font-bold uppercase text-xs transition-all ${activeTab === 'student' ? 'bg-emerald-600 shadow-lg' : 'text-slate-400 hover:text-white'}`}>Add Student</button>
-          <button onClick={() => setActiveTab('teacher')} className={`w-full text-left p-4 rounded-xl font-bold uppercase text-xs transition-all ${activeTab === 'teacher' ? 'bg-emerald-600 shadow-lg' : 'text-slate-400 hover:text-white'}`}>Add Teacher</button>
-          
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 mt-6">Management</p>
-          <button onClick={() => setActiveTab('manage-students')} className={`w-full text-left p-4 rounded-xl font-bold uppercase text-xs transition-all ${activeTab === 'manage-students' ? 'bg-emerald-600 shadow-lg' : 'text-slate-400 hover:text-white'}`}>Manage Students</button>
-          <button onClick={() => setActiveTab('manage-teachers')} className={`w-full text-left p-4 rounded-xl font-bold uppercase text-xs transition-all ${activeTab === 'manage-teachers' ? 'bg-emerald-600 shadow-lg' : 'text-slate-400 hover:text-white'}`}>Manage Teachers</button>
-          <button onClick={() => setActiveTab('allocation')} className={`w-full text-left p-4 rounded-xl font-bold uppercase text-xs transition-all ${activeTab === 'allocation' ? 'bg-emerald-600 shadow-lg' : 'text-slate-400 hover:text-white'}`}>Allocations</button>
-        </nav>
-        
-        {/* Logout Button */}
-        <div className="pt-6 border-t border-slate-700">
-          <button 
-            onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 p-4 rounded-xl font-bold uppercase text-xs bg-red-600 hover:bg-red-700 transition-all shadow-lg"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            Logout
-          </button>
-        </div>
-      </div>
+      <DashboardSidebar
+        title="ADMINDASH"
+        subtitle="Admin panel"
+        navItems={adminNavItems.map((item) => ({
+          ...item,
+          active: activeTab === item.id,
+          onClick: () => setActiveTab(item.id)
+        }))}
+        actions={[{ label: 'Logout', icon: 'logout', danger: true, onClick: handleLogout }]}
+      />
 
       {/* MAIN CONTENT */}
-      <div className="flex-1 p-12">
+      <div className="min-w-0 flex-1 p-4 md:p-8 lg:p-10">
         {activeTab === 'manage-students' ? (
-          <div className="max-w-7xl">
+          <div className="w-full max-w-none">
             <div className="flex items-center justify-between mb-8">
               <h1 className="text-3xl font-black text-slate-800 uppercase italic">Manage <span className="text-emerald-600">Students</span></h1>
               <div className="flex gap-3">
@@ -627,7 +609,7 @@ function AdminDashboard() {
             </div>
           </div>
         ) : activeTab === 'manage-teachers' ? (
-          <div className="max-w-7xl">
+          <div className="w-full max-w-none">
             <div className="flex items-center justify-between mb-8">
               <h1 className="text-3xl font-black text-slate-800 uppercase italic">Manage <span className="text-emerald-600">Teachers</span></h1>
               <div className="flex gap-3">
@@ -712,7 +694,7 @@ function AdminDashboard() {
             </div>
           </div>
         ) : activeTab === 'allocation' ? (
-          <div className="max-w-7xl">
+          <div className="w-full max-w-none">
             <h1 className="text-3xl font-black text-slate-800 uppercase mb-8 italic">Teacher-Section <span className="text-emerald-600">Allocation</span></h1>
             <p className="text-slate-500 mb-6">Assign teachers to class sections. All students in the selected sections will have access to the teacher's content.</p>
             
@@ -731,7 +713,7 @@ function AdminDashboard() {
                           <p className="text-[10px] text-emerald-600 font-bold mb-1">Current Allocations:</p>
                           <div className="flex flex-wrap gap-1">
                             {t.allocated_sections.map(sec => (
-                              <span key={sec} className="inline-flex items-center text-[9px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                              <span key={sec} className="inline-flex items-center text-[9px] bg-sky-100 text-black px-2 py-0.5 rounded-full">
                                 {sec}
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); handleRemoveSection(t.id, sec); }}

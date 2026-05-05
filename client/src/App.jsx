@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Courses from './pages/Courses'
 import Login from './pages/Login'
@@ -12,6 +12,7 @@ import TeacherDashboard from './pages/TeacherDashboard'
 import CoursePlayer from './pages/CoursePlayer'
 import ModuleLearning from './pages/ModuleLearning'
 import TotpSetup from './pages/TotpSetup'
+import StudentLayout from './components/StudentLayout'
 
 // --- THE BOUNCER (Protected Route Logic) ---
 const ProtectedRoute = ({ children, allowedRole }) => {
@@ -30,8 +31,11 @@ const ProtectedRoute = ({ children, allowedRole }) => {
 };
 
 function App() {
+  const location = useLocation();
+
   return (
-    <Routes>
+    <div className="page-transition" key={location.pathname}>
+    <Routes location={location}>
       {/* PUBLIC ROUTE */}
       <Route path="/" element={<Login />} />
 
@@ -74,12 +78,12 @@ function App() {
       />
       
       {/* General Student Protected Routes */}
-      <Route path="/courses" element={<ProtectedRoute allowedRole="student"><Courses /></ProtectedRoute>} />
-      <Route path="/progress" element={<ProtectedRoute allowedRole="student"><ProgressTracker /></ProtectedRoute>} />
-      <Route path="/test" element={<ProtectedRoute allowedRole="student"><TestKnowledge /></ProtectedRoute>} />
-      <Route path="/profile" element={<ProtectedRoute allowedRole="student"><StudentProfile /></ProtectedRoute>} />
-      <Route path="/workbench" element={<ProtectedRoute allowedRole="student"><CodingWorkbench /></ProtectedRoute>} />
-      <Route path="/courses/code" element={<ProtectedRoute allowedRole="student"><CodingWorkbench /></ProtectedRoute>} />
+      <Route path="/courses" element={<ProtectedRoute allowedRole="student"><StudentLayout><Courses /></StudentLayout></ProtectedRoute>} />
+      <Route path="/progress" element={<ProtectedRoute allowedRole="student"><StudentLayout><ProgressTracker /></StudentLayout></ProtectedRoute>} />
+      <Route path="/test" element={<ProtectedRoute allowedRole="student"><StudentLayout><TestKnowledge /></StudentLayout></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute allowedRole="student"><StudentLayout><StudentProfile /></StudentLayout></ProtectedRoute>} />
+      <Route path="/workbench" element={<ProtectedRoute allowedRole="student"><StudentLayout><CodingWorkbench /></StudentLayout></ProtectedRoute>} />
+      <Route path="/courses/code" element={<ProtectedRoute allowedRole="student"><StudentLayout><CodingWorkbench /></StudentLayout></ProtectedRoute>} />
       
       {/* CRITICAL FIX: The Course Player must be protected so only logged-in students see it */}
       <Route 
@@ -106,6 +110,7 @@ function App() {
       {/* CATCH-ALL: Redirect unknown URLs to Login */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </div>
   )
 }
 

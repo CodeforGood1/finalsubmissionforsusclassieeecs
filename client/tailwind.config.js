@@ -8,10 +8,12 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: '#1e40af',   // Blue-900
-        secondary: '#f97316', // Orange-500
-        dark: '#111827',      // Gray-900
-        light: '#f3f4f6'      // Gray-100
+        primary: '#0f1b2d',
+        secondary: '#c2410c',
+        dark: '#111827',
+        light: '#f5f3ef',
+        rust: '#b73b1f',
+        brown: '#5f3b25'
       }
     },
   },

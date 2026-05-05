@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import API_BASE_URL from '../config/api';
+import PageTitle from '../components/PageTitle';
 
 function CodingWorkbench() {
 
@@ -69,17 +70,12 @@ public class Solution {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 lg:p-10 font-sans text-slate-800">
+    <div className="min-h-screen bg-slate-50 p-4 md:p-6 lg:p-8 font-sans text-slate-800">
       <div className="max-w-7xl mx-auto">
         
         {/* HEADER */}
-        <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-black text-slate-900 uppercase italic tracking-tighter">
-              Coding <span className="text-emerald-600">Wrench</span>
-            </h1>
-            <p className="text-slate-400 text-[9px] font-bold uppercase tracking-[0.3em]">Execution Environment</p>
-          </div>
+        <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <PageTitle first="Coding" second="Wrench" eyebrow="Execution Environment" className="mb-0" />
 
           <div className="flex items-center gap-4 bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
             <select 
@@ -103,10 +99,10 @@ public class Solution {
               {isRunning ? 'Running...' : 'Run Code'}
             </button>
           </div>
-        </header>
+        </div>
 
         {/* WORKSPACE */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[75vh]">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 h-[75vh]">
           
           {/* LEFT: EDITOR & STDIN */}
           <div className="flex flex-col gap-6 h-full">

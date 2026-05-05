@@ -153,7 +153,7 @@ CREATE TABLE mcq_tests (
     
     CONSTRAINT fk_tests_teacher FOREIGN KEY (teacher_id) 
         REFERENCES teachers(id) ON DELETE CASCADE,
-    CONSTRAINT chk_total_questions CHECK (total_questions > 0 AND total_questions <= 100),
+    CONSTRAINT chk_total_questions CHECK (total_questions > 0 AND total_questions <= 200),
     CONSTRAINT chk_deadline CHECK (deadline > start_date),
     CONSTRAINT chk_questions_array CHECK (jsonb_typeof(questions) = 'array'),
     CONSTRAINT chk_title_length CHECK (char_length(title) >= 3 AND char_length(title) <= 200)
@@ -937,3 +937,206 @@ BEGIN
     RAISE NOTICE '[OK] In-app notifications table created';
     RAISE NOTICE '[OK] Notification indexes created for performance';
 END $$;
+
+-- ============================================================
+-- PART 14: MODULE PROGRESS, CODING SUBMISSIONS, AND CHAT
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS module_progress (
+    id SERIAL PRIMARY KEY,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    module_id INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+    is_completed BOOLEAN DEFAULT FALSE,
+    completed_at TIMESTAMP,
+    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(student_id, module_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_module_progress_student ON module_progress(student_id);
+CREATE INDEX IF NOT EXISTS idx_module_progress_module ON module_progress(module_id);
+CREATE INDEX IF NOT EXISTS idx_module_progress_completed ON module_progress(is_completed);
+
+CREATE OR REPLACE VIEW v_student_module_progress AS
+SELECT
+    s.id AS student_id,
+    s.name AS student_name,
+    s.reg_no,
+    s.class_dept,
+    s.section,
+    COUNT(DISTINCT m.id) AS total_modules,
+    COUNT(DISTINCT CASE WHEN mp.is_completed = TRUE THEN m.id END) AS completed_modules,
+    COUNT(DISTINCT CASE WHEN mp.is_completed = FALSE OR mp.id IS NULL THEN m.id END) AS pending_modules,
+    CASE
+        WHEN COUNT(DISTINCT m.id) > 0
+        THEN ROUND((COUNT(DISTINCT CASE WHEN mp.is_completed = TRUE THEN m.id END)::NUMERIC / COUNT(DISTINCT m.id)::NUMERIC) * 100, 2)
+        ELSE 0
+    END AS completion_percentage
+FROM students s
+LEFT JOIN modules m ON (
+    UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = UPPER(TRIM(s.class_dept || ' ' || s.section))
+    OR EXISTS (
+        SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.sections, '[]'::jsonb)) AS sec
+        WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(sec, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = UPPER(TRIM(s.class_dept || ' ' || s.section))
+    )
+)
+LEFT JOIN module_progress mp ON m.id = mp.module_id AND mp.student_id = s.id
+GROUP BY s.id, s.name, s.reg_no, s.class_dept, s.section;
+
+CREATE OR REPLACE VIEW v_module_statistics AS
+SELECT
+    m.id AS module_id,
+    m.topic_title,
+    m.section,
+    m.teacher_name,
+    m.step_count,
+    m.created_at,
+    COUNT(DISTINCT s.id) AS total_students,
+    COUNT(DISTINCT CASE WHEN mp.is_completed = TRUE THEN s.id END) AS completed_count,
+    COUNT(DISTINCT CASE WHEN mp.is_completed = FALSE THEN s.id END) AS in_progress_count,
+    COUNT(DISTINCT CASE WHEN mp.id IS NULL THEN s.id END) AS not_started_count,
+    CASE
+        WHEN COUNT(DISTINCT s.id) > 0
+        THEN ROUND((COUNT(DISTINCT CASE WHEN mp.is_completed = TRUE THEN s.id END)::NUMERIC / COUNT(DISTINCT s.id)::NUMERIC) * 100, 2)
+        ELSE 0
+    END AS completion_rate
+FROM modules m
+LEFT JOIN students s ON (
+    UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = UPPER(TRIM(s.class_dept || ' ' || s.section))
+    OR EXISTS (
+        SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.sections, '[]'::jsonb)) AS sec
+        WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(sec, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = UPPER(TRIM(s.class_dept || ' ' || s.section))
+    )
+)
+LEFT JOIN module_progress mp ON m.id = mp.module_id AND mp.student_id = s.id
+GROUP BY m.id, m.topic_title, m.section, m.teacher_name, m.step_count, m.created_at;
+
+CREATE OR REPLACE FUNCTION mark_module_complete(p_student_id INTEGER, p_module_id INTEGER)
+RETURNS BOOLEAN AS $$
+BEGIN
+    INSERT INTO module_progress (student_id, module_id, is_completed, completed_at, last_accessed)
+    VALUES (p_student_id, p_module_id, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ON CONFLICT (student_id, module_id)
+    DO UPDATE SET
+        is_completed = TRUE,
+        completed_at = CURRENT_TIMESTAMP,
+        last_accessed = CURRENT_TIMESTAMP;
+
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION track_module_access(p_student_id INTEGER, p_module_id INTEGER)
+RETURNS BOOLEAN AS $$
+BEGIN
+    INSERT INTO module_progress (student_id, module_id, is_completed, last_accessed)
+    VALUES (p_student_id, p_module_id, FALSE, CURRENT_TIMESTAMP)
+    ON CONFLICT (student_id, module_id)
+    DO UPDATE SET last_accessed = CURRENT_TIMESTAMP;
+
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TABLE IF NOT EXISTS student_submissions (
+    id SERIAL PRIMARY KEY,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    student_email TEXT NOT NULL,
+    module_id INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+    problem_step_index INTEGER DEFAULT 0,
+    submitted_code TEXT NOT NULL,
+    language TEXT NOT NULL,
+    test_cases_passed INTEGER DEFAULT 0,
+    total_test_cases INTEGER DEFAULT 0,
+    score DECIMAL(5,2) DEFAULT 0.00,
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_coding_submissions_student ON student_submissions(student_id);
+CREATE INDEX IF NOT EXISTS idx_coding_submissions_module ON student_submissions(module_id);
+CREATE INDEX IF NOT EXISTS idx_coding_submissions_student_module ON student_submissions(student_id, module_id);
+
+CREATE OR REPLACE VIEW v_student_coding_progress AS
+SELECT
+    ss.student_id,
+    s.name AS student_name,
+    s.email AS student_email,
+    s.class_dept,
+    s.section,
+    ss.module_id,
+    m.topic_title AS module_title,
+    COUNT(DISTINCT ss.id) AS problems_attempted,
+    SUM(ss.test_cases_passed) AS total_test_cases_passed,
+    SUM(ss.total_test_cases) AS total_test_cases,
+    CASE
+        WHEN SUM(ss.total_test_cases) > 0
+        THEN ROUND((SUM(ss.test_cases_passed)::DECIMAL / SUM(ss.total_test_cases)) * 100, 2)
+        ELSE 0
+    END AS coding_completion_percentage
+FROM student_submissions ss
+JOIN students s ON ss.student_id = s.id
+JOIN modules m ON ss.module_id = m.id
+GROUP BY ss.student_id, s.name, s.email, s.class_dept, s.section, ss.module_id, m.topic_title;
+
+CREATE TABLE IF NOT EXISTS chat_rooms (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(50) DEFAULT 'direct',
+    section VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS chat_participants (
+    id SERIAL PRIMARY KEY,
+    room_id INTEGER REFERENCES chat_rooms(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL,
+    user_role VARCHAR(20) NOT NULL,
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(room_id, user_id, user_role)
+);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id SERIAL PRIMARY KEY,
+    room_id INTEGER REFERENCES chat_rooms(id) ON DELETE CASCADE,
+    sender_id INTEGER NOT NULL,
+    sender_role VARCHAR(20) NOT NULL,
+    sender_name VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    message_type VARCHAR(20) DEFAULT 'text',
+    file_url VARCHAR(500),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_deleted BOOLEAN DEFAULT FALSE
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_room ON chat_messages(room_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_participants_user ON chat_participants(user_id, user_role);
+CREATE INDEX IF NOT EXISTS idx_chat_rooms_section ON chat_rooms(section);
+
+CREATE OR REPLACE FUNCTION update_chat_room_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE chat_rooms SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.room_id;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS chat_message_update_room ON chat_messages;
+CREATE TRIGGER chat_message_update_room
+AFTER INSERT ON chat_messages
+FOR EACH ROW EXECUTE FUNCTION update_chat_room_timestamp();
+
+CREATE INDEX IF NOT EXISTS idx_modules_sections ON modules USING GIN (sections);
+CREATE INDEX IF NOT EXISTS idx_tests_sections ON mcq_tests USING GIN (sections);
+
+CREATE OR REPLACE FUNCTION normalize_section(input_section TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+    RETURN UPPER(TRIM(REGEXP_REPLACE(input_section, '\s+', ' ', 'g')));
+END;
+$$;

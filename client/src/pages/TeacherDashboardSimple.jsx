@@ -170,3 +170,36 @@ function TeacherDashboardSimple() {
             backgroundColor: '#ef4444',
             color: 'white',
             padding: '12px 24px',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            marginRight: '12px'
+          }}
+        >
+          Back to Login
+        </button>
+
+        <button
+          onClick={() => {
+            localStorage.clear();
+            navigate('/');
+          }}
+          style={{
+            backgroundColor: '#64748b',
+            color: 'white',
+            padding: '12px 24px',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontWeight: 'bold'
+          }}
+        >
+          Logout
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default TeacherDashboardSimple;

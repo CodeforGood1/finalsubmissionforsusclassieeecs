@@ -244,7 +244,7 @@ if ($composeCmd -eq "docker compose") {
 Write-Host ""
 Print-Warning "SECURITY: Change default passwords for production use."
 Write-Host ""
-Write-Host "See README.md and DEPLOYMENT.md for more information."
+Write-Host "See README.md for setup, deployment, and troubleshooting."
 Write-Host ""
 Write-Host "[COMPLETE] Deployment finished successfully." -ForegroundColor Green
 Write-Host ""

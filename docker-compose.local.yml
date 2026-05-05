@@ -1,5 +1,3 @@
-version: '3.8'
-
 # ============================================================
 # SUSTAINABLE CLASSROOM - LOCAL DEVELOPMENT STACK
 # ============================================================
@@ -25,12 +23,7 @@ services:
       - postgres_local:/var/lib/postgresql/data
       # Auto-initialize schema
       - ./backend/FRESH-COMPLETE-DATABASE.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ./backend/add-module-progress-tracking.sql:/docker-entrypoint-initdb.d/02-modules.sql:ro
-      - ./backend/add-coding-submissions.sql:/docker-entrypoint-initdb.d/03-coding.sql:ro
-      - ./backend/add-inapp-notifications-table.sql:/docker-entrypoint-initdb.d/04-notifications.sql:ro
-      - ./backend/add-chat-tables.sql:/docker-entrypoint-initdb.d/05-chat.sql:ro
-      - ./backend/v2.2.6-multi-section.sql:/docker-entrypoint-initdb.d/06-multi-section.sql:ro
-      - ./backend/notification-system.sql:/docker-entrypoint-initdb.d/07-notification-system.sql:ro
+      - ./backend/notification-system.sql:/docker-entrypoint-initdb.d/02-notification-system.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-lms_admin} -d ${DB_NAME:-sustainable_classroom}"]
       interval: 5s

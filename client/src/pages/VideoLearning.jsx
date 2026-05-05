@@ -9,40 +9,39 @@ const getYouTubeEmbedUrl = (url) => {
   return match ? `https://www.youtube.com/embed/${match[1]}?rel=0&modestbranding=1` : url;
 };
 
+const DEFAULT_VIDEOS = [
+  {
+    id: 'sample-1',
+    title: 'JavaScript Basics',
+    description: 'An introduction to the building blocks of the web. We cover syntax, variables, and how code flows.',
+    url: '/uploads/videos/sample-javascript-basics.mp4',
+    isLocal: true,
+    resources: [{ name: 'JavaScript Guide', link: '/courses' }]
+  },
+  {
+    id: 'sample-2',
+    title: 'Async JS & Promises',
+    description: 'Mastering the art of timing. Learn how JavaScript handles multiple tasks without slowing down.',
+    url: '/uploads/videos/sample-async-promises.mp4',
+    isLocal: true,
+    resources: [{ name: 'Async Programming Guide', link: '/courses' }]
+  },
+  {
+    id: 'sample-3',
+    title: 'DOM Manipulation',
+    description: 'Learn how to reach into your HTML and change things on the fly using JavaScript logic.',
+    url: '/uploads/videos/sample-dom-manipulation.mp4',
+    isLocal: true,
+    resources: [{ name: 'DOM Reference', link: '/courses' }]
+  }
+];
+
 function VideoLearning() {
   const navigate = useNavigate();
   const videoRef = useRef(null);
   const [localVideos, setLocalVideos] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Default sample videos - these will be replaced with local videos from the server
-  const defaultVideos = [
-    {
-      id: 'sample-1',
-      title: 'JavaScript Basics',
-      description: 'An introduction to the building blocks of the web. We cover syntax, variables, and how code flows.',
-      url: '/uploads/videos/sample-javascript-basics.mp4',
-      isLocal: true,
-      resources: [{ name: 'JavaScript Guide', link: '/courses' }]
-    },
-    {
-      id: 'sample-2',
-      title: 'Async JS & Promises',
-      description: 'Mastering the art of timing. Learn how JavaScript handles multiple tasks without slowing down.',
-      url: '/uploads/videos/sample-async-promises.mp4',
-      isLocal: true,
-      resources: [{ name: 'Async Programming Guide', link: '/courses' }]
-    },
-    {
-      id: 'sample-3',
-      title: 'DOM Manipulation',
-      description: 'Learn how to reach into your HTML and change things on the fly using JavaScript logic.',
-      url: '/uploads/videos/sample-dom-manipulation.mp4',
-      isLocal: true,
-      resources: [{ name: 'DOM Reference', link: '/courses' }]
-    }
-  ];
-
   // Fetch videos from local server
   useEffect(() => {
     const fetchVideos = async () => {
@@ -61,14 +60,15 @@ function VideoLearning() {
               url: v.url.startsWith('http') ? v.url : `${API_BASE_URL}${v.url}`
             })));
           } else {
-            setLocalVideos(defaultVideos);
+            setLocalVideos(DEFAULT_VIDEOS);
           }
         } else {
-          setLocalVideos(defaultVideos);
+          setLocalVideos(DEFAULT_VIDEOS);
         }
       } catch (err) {
+        console.error("Error fetching videos:", err);
         console.log('Using default videos (offline mode)');
-        setLocalVideos(defaultVideos);
+        setLocalVideos(DEFAULT_VIDEOS);
       } finally {
         setLoading(false);
       }
@@ -77,7 +77,7 @@ function VideoLearning() {
     fetchVideos();
   }, []);
 
-  const videos = localVideos.length > 0 ? localVideos : defaultVideos;
+  const videos = localVideos.length > 0 ? localVideos : DEFAULT_VIDEOS;
   const [currentIndex, setCurrentIndex] = useState(0);
   const current = videos[currentIndex] || videos[0];
   const progressPercent = videos.length > 0 ? ((currentIndex + 1) / videos.length) * 100 : 0;

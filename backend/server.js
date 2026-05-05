@@ -1,5 +1,5 @@
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 const express = require('express');
 const http = require('http');
 const fs = require('fs');
@@ -660,11 +660,41 @@ app.post('/api/verify-totp', async (req, res) => {
 
 // 4d. Disable TOTP (password-only login)
 app.post('/api/disable-totp', authenticateToken, async (req, res) => {
+  const { code } = req.body;
   const { role } = req.user;
   const userId = req.user.id;
   const table = role === 'student' ? 'students' : 'teachers';
 
+  if (!code || !/^\d{6}$/.test(String(code).trim())) {
+    return res.status(400).json({ error: "Enter the 6-digit authenticator code to disable authentication" });
+  }
+
   try {
+    const userResult = await pool.query(
+      `SELECT totp_secret, totp_enabled FROM ${table} WHERE id = $1`,
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user = userResult.rows[0];
+    if (!user.totp_enabled || !user.totp_secret) {
+      return res.status(400).json({ error: "Authenticator is already disabled" });
+    }
+
+    const verified = speakeasy.totp.verify({
+      secret: user.totp_secret,
+      encoding: 'base32',
+      token: String(code).trim(),
+      window: 2
+    });
+
+    if (!verified) {
+      return res.status(401).json({ error: "Invalid authenticator code" });
+    }
+
     await pool.query(
       `UPDATE ${table} SET totp_enabled = FALSE, totp_secret = NULL WHERE id = $1`,
       [userId]
@@ -1709,7 +1739,7 @@ app.get('/api/teacher/me', authenticateToken, async (req, res) => {
   try {
     // req.user.id comes from the decoded JWT token
     const result = await pool.query(
-      'SELECT id, name, email, staff_id, dept, media, allocated_sections FROM teachers WHERE id = $1', 
+      'SELECT id, name, email, staff_id, dept, media, allocated_sections, totp_enabled FROM teachers WHERE id = $1', 
       [req.user.id]
     );
     
@@ -2216,7 +2246,7 @@ app.delete('/api/storage/files/:type/:filename', authenticateToken, adminOnly, a
 app.get('/api/student/profile', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, name, email, reg_no, class_dept, section, media FROM students WHERE id = $1',
+      'SELECT id, name, email, reg_no, class_dept, section, media, totp_enabled FROM students WHERE id = $1',
       [req.user.id]
     );
 
@@ -3388,9 +3418,14 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
   try {
     const { section, sections, title, description, questions, start_date, deadline } = req.body;
     const teacher_id = req.user.id;
+    const cleanTitle = typeof title === 'string' ? title.trim() : '';
+    const cleanDescription = typeof description === 'string' ? description.trim() : '';
     
-    if (!title || typeof title !== 'string' || title.trim().length < 1) {
+    if (!cleanTitle) {
       return res.status(400).json({ error: "Test title is required" });
+    }
+    if (cleanTitle.length < 3 || cleanTitle.length > 200) {
+      return res.status(400).json({ error: "Test title must be between 3 and 200 characters" });
     }
     if (!questions || !Array.isArray(questions) || questions.length === 0) {
       return res.status(400).json({ error: "At least one question is required" });
@@ -3423,7 +3458,7 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
     `;
     
     const result = await pool.query(query, [
-      teacher_id, teacher_name, targetSections[0], JSON.stringify(targetSections), title, description,
+      teacher_id, teacher_name, targetSections[0], JSON.stringify(targetSections), cleanTitle, cleanDescription,
       JSON.stringify(questions), questions.length, start_date, deadline
     ]);
     
@@ -3448,11 +3483,11 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
         `, [
           student.id,
           'New Test Assigned',
-          `Test "${title}" assigned by ${teacher_name}. Due: ${new Date(deadline).toLocaleDateString()}`,
+          `Test "${cleanTitle}" assigned by ${teacher_name}. Due: ${new Date(deadline).toLocaleDateString()}`,
           `/test`,
           JSON.stringify({
             test_id: test.id,
-            test_title: title,
+            test_title: cleanTitle,
             teacher_name: teacher_name,
             sections: targetSections,
             start_date: start_date,
@@ -3472,8 +3507,8 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
           (student) => ({
             student_name: student.name,
             section: targetSections.join(', '),
-            test_title: title,
-            description: description,
+            test_title: cleanTitle,
+            description: cleanDescription,
             total_questions: questions.length,
             start_date: start_date,
             deadline: deadline
@@ -3490,6 +3525,9 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
     res.status(201).json({ success: true, test, sections: targetSections });
   } catch (err) {
     console.error("Test Creation Error:", err);
+    if (err.code === '23514' && err.constraint === 'chk_title_length') {
+      return res.status(400).json({ error: "Test title must be between 3 and 200 characters" });
+    }
     res.status(500).json({ error: "Failed to create test: " + err.message });
   }
 });

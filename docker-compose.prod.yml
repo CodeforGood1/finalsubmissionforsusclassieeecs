@@ -17,10 +17,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/FRESH-COMPLETE-DATABASE.sql:/docker-entrypoint-initdb.d/01-schema.sql
-      - ./backend/add-module-progress-tracking.sql:/docker-entrypoint-initdb.d/02-modules.sql
-      - ./backend/add-coding-submissions.sql:/docker-entrypoint-initdb.d/03-coding.sql
-      - ./backend/add-inapp-notifications-table.sql:/docker-entrypoint-initdb.d/04-notifications.sql
-      - ./backend/add-chat-tables.sql:/docker-entrypoint-initdb.d/05-chat.sql
+      - ./backend/notification-system.sql:/docker-entrypoint-initdb.d/02-notification-system.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lms_admin -d sustainable_classroom"]
       interval: 10s
@@ -55,7 +52,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@classroom.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
-      SMTP_HOST: ${SMTP_HOST:-mailhog}
+      SMTP_HOST: mailhog
       SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_SECURE: ${SMTP_SECURE:-false}
       SMTP_USER: ${SMTP_USER:-}

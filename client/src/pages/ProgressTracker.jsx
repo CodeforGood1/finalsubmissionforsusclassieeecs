@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import API_BASE_URL from '../config/api';
+import PageTitle from '../components/PageTitle';
 
 export default function ProgressTracker() {
-  const navigate = useNavigate();
   const [progress, setProgress] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -38,56 +37,46 @@ export default function ProgressTracker() {
   const completionRate = totalTests > 0 ? Math.round((testsCompleted / totalTests) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-[#fdfdfd] p-8 lg:p-12 font-sans text-slate-800">
+    <div className="min-h-screen bg-[#fdfdfd] p-4 md:p-6 lg:p-8 font-sans text-slate-800">
       <div className="max-w-4xl mx-auto">
-        <button 
-          onClick={() => navigate('/dashboard')}
-          className="flex items-center gap-2 text-slate-400 hover:text-emerald-600 font-medium transition-colors mb-12 text-sm"
-        >
-          Back to Dashboard
-        </button>
-
-        <header className="mb-12">
-          <h1 className="text-3xl font-bold text-slate-900">Your Growth Journey</h1>
-          <p className="text-slate-500 mt-2">Track your test performance and progress.</p>
-        </header>
+        <PageTitle first="Growth" second="Journey">Track your test performance and progress.</PageTitle>
 
         {/* STATS GRID */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
-          <div className="p-6 bg-white border border-slate-100 rounded-3xl shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+          <div className="p-4 bg-white border border-slate-100 rounded-3xl shadow-sm">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Total Tests</p>
             <div className="flex items-end gap-2 mb-4">
-              <span className="text-4xl font-bold text-slate-800">{totalTests}</span>
+              <span className="text-2xl font-bold text-slate-800">{totalTests}</span>
             </div>
             <div className="w-full h-2 bg-slate-50 rounded-full overflow-hidden">
               <div className="h-full bg-slate-400 transition-all duration-1000" style={{ width: '100%' }}></div>
             </div>
           </div>
           
-          <div className="p-6 bg-white border border-slate-100 rounded-3xl shadow-sm">
+          <div className="p-4 bg-white border border-slate-100 rounded-3xl shadow-sm">
             <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-4">Completed</p>
             <div className="flex items-end gap-2 mb-4">
-              <span className="text-4xl font-bold text-emerald-600">{testsCompleted}</span>
+              <span className="text-2xl font-bold text-emerald-600">{testsCompleted}</span>
             </div>
             <div className="w-full h-2 bg-slate-50 rounded-full overflow-hidden">
               <div className="h-full bg-emerald-500 transition-all duration-1000" style={{ width: `${completionRate}%` }}></div>
             </div>
           </div>
           
-          <div className="p-6 bg-white border border-slate-100 rounded-3xl shadow-sm">
+          <div className="p-4 bg-white border border-slate-100 rounded-3xl shadow-sm">
             <p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-4">Overdue</p>
             <div className="flex items-end gap-2 mb-4">
-              <span className="text-4xl font-bold text-red-600">{overdueTests}</span>
+              <span className="text-2xl font-bold text-red-600">{overdueTests}</span>
             </div>
             <div className="w-full h-2 bg-slate-50 rounded-full overflow-hidden">
               <div className="h-full bg-red-500 transition-all duration-1000" style={{ width: overdueTests > 0 ? '100%' : '0%' }}></div>
             </div>
           </div>
           
-          <div className="p-6 bg-white border border-slate-100 rounded-3xl shadow-sm">
+          <div className="p-4 bg-white border border-slate-100 rounded-3xl shadow-sm">
             <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-4">Avg Score</p>
             <div className="flex items-end gap-2 mb-4">
-              <span className="text-4xl font-bold text-blue-600">{avgScore}%</span>
+              <span className="text-2xl font-bold text-blue-600">{avgScore}%</span>
             </div>
             <div className="w-full h-2 bg-slate-50 rounded-full overflow-hidden">
               <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${avgScore}%` }}></div>
@@ -96,7 +85,7 @@ export default function ProgressTracker() {
         </div>
 
         {/* PROGRESS SUMMARY */}
-        <section className="bg-white border border-slate-100 rounded-[2.5rem] p-8 lg:p-10 shadow-sm">
+        <section className="bg-white border border-slate-100 rounded-[2.5rem] p-5 lg:p-6 shadow-sm">
           <h2 className="text-lg font-bold text-slate-800 mb-8">Progress Summary</h2>
           
           {totalTests === 0 ? (

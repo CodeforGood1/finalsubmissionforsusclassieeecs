@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API_BASE_URL from '../config/api';
 
@@ -11,16 +11,22 @@ function TotpSetup() {
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [successMode, setSuccessMode] = useState('enable');
   const [totpAlreadyEnabled, setTotpAlreadyEnabled] = useState(false);
+  const [disableCode, setDisableCode] = useState('');
+  const [showDisableForm, setShowDisableForm] = useState(false);
+  const [disabling, setDisabling] = useState(false);
 
-  useEffect(() => {
-    checkAndSetupTotp();
-  }, []);
+  const goToDashboard = useCallback(() => {
+    const role = localStorage.getItem('user_role');
+    if (role === 'teacher') navigate('/teacher-dashboard');
+    else navigate('/dashboard');
+  }, [navigate]);
 
-  const checkAndSetupTotp = async () => {
+  const checkAndSetupTotp = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) {
-      navigate('/login');
+      navigate('/');
       return;
     }
 
@@ -59,7 +65,11 @@ function TotpSetup() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigate]);
+
+  useEffect(() => {
+    checkAndSetupTotp();
+  }, [checkAndSetupTotp]);
 
   const handleVerifySetup = async (e) => {
     e.preventDefault();
@@ -68,7 +78,7 @@ function TotpSetup() {
 
     const token = localStorage.getItem('token');
     if (!token) {
-      navigate('/login');
+      navigate('/');
       return;
     }
 
@@ -84,34 +94,31 @@ function TotpSetup() {
       const data = await res.json();
 
       if (data.success) {
+        setSuccessMode('enable');
         setSuccess(true);
-        // Redirect to dashboard after 2 seconds
         setTimeout(() => {
-          const role = localStorage.getItem('user_role');
-          if (role === 'teacher') navigate('/teacher-dashboard');
-          else navigate('/dashboard');
+          goToDashboard();
         }, 2000);
       } else {
         setError(data.error || 'Invalid code, please try again');
         setVerificationCode('');
       }
     } catch (err) {
+      console.error('verification error:', err);
       setError('Verification failed');
     } finally {
       setVerifying(false);
     }
   };
 
-  const handleSkip = () => {
-    const role = localStorage.getItem('user_role');
-    if (role === 'teacher') navigate('/teacher-dashboard');
-    else navigate('/dashboard');
-  };
+  const handleDisableTotp = async (e) => {
+    e.preventDefault();
+    setDisabling(true);
+    setError('');
 
-  const handleDisableTotp = async () => {
     const token = localStorage.getItem('token');
     if (!token) {
-      navigate('/login');
+      navigate('/');
       return;
     }
 
@@ -121,18 +128,31 @@ function TotpSetup() {
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}` 
-        }
+        },
+        body: JSON.stringify({ code: disableCode.trim() })
       });
       const data = await res.json();
 
       if (data.success) {
-        setTotpAlreadyEnabled(false);
-        checkAndSetupTotp(); // Re-run setup
+        setSuccessMode('disable');
+        setSuccess(true);
+        setTimeout(() => {
+          setSuccess(false);
+          setTotpAlreadyEnabled(false);
+          setDisableCode('');
+          setShowDisableForm(false);
+          checkAndSetupTotp();
+        }, 2000);
       } else {
         setError(data.error || 'Failed to disable TOTP');
+        setDisableCode('');
+        setShowDisableForm(true);
       }
     } catch (err) {
+      console.error('Error disabling TOTP:', err);
       setError('Connection failed');
+    } finally {
+      setDisabling(false);
     }
   };
 
@@ -156,8 +176,12 @@ function TotpSetup() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h2 className="text-2xl font-black text-slate-800 uppercase mb-2">Authenticator Enabled!</h2>
-          <p className="text-slate-500 text-sm">Redirecting to dashboard...</p>
+          <h2 className="text-2xl font-black text-slate-800 uppercase mb-2">
+            {successMode === 'disable' ? 'Authenticator Disabled!' : 'Authenticator Enabled!'}
+          </h2>
+          <p className="text-slate-500 text-sm">
+            {successMode === 'disable' ? 'Redirecting to setup...' : 'Redirecting to dashboard...'}
+          </p>
         </div>
       </div>
     );
@@ -172,22 +196,66 @@ function TotpSetup() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
             </svg>
           </div>
-          <h2 className="text-2xl font-black text-slate-800 uppercase mb-2">Already Protected</h2>
-          <p className="text-slate-500 text-sm mb-8">Your account is secured with Microsoft Authenticator</p>
+          <h2 className="text-2xl font-black text-slate-800 uppercase mb-2">Security</h2>
+          <p className="text-slate-500 text-sm mb-8">Authentication is enabled with Microsoft Authenticator</p>
+
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 text-red-600 text-[10px] font-bold rounded-xl uppercase text-center border border-red-100">
+              {error}
+            </div>
+          )}
           
           <div className="space-y-4">
             <button
-              onClick={handleSkip}
+              type="button"
+              onClick={goToDashboard}
               className="w-full rounded-2xl bg-emerald-600 py-4 font-black text-white text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all"
             >
-              Continue to Dashboard
+              Continue
             </button>
-            <button
-              onClick={handleDisableTotp}
-              className="text-[9px] font-black text-red-500 uppercase tracking-widest hover:text-red-600"
-            >
-              Disable Authenticator (Use Email OTP)
-            </button>
+
+            {!showDisableForm ? (
+              <button
+                type="button"
+                onClick={() => setShowDisableForm(true)}
+                className="w-full rounded-2xl bg-red-600 py-4 font-black text-white text-[10px] uppercase tracking-widest hover:bg-red-700 transition-all"
+              >
+                Disable Authentication
+              </button>
+            ) : (
+              <form onSubmit={handleDisableTotp} className="rounded-2xl border border-red-100 bg-red-50 p-4">
+              <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-red-600">
+                Disable Authenticator
+              </p>
+              <input
+                type="text"
+                maxLength="6"
+                required
+                value={disableCode}
+                placeholder="Enter current 6-digit code"
+                className="mb-3 w-full rounded-xl border border-red-100 bg-white p-4 text-center text-xl font-black tracking-[0.3em] outline-none focus:border-red-400"
+                onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, ''))}
+              />
+              <button
+                type="submit"
+                disabled={disabling || disableCode.length !== 6}
+                className="w-full rounded-xl bg-red-600 py-3 font-black text-white text-[10px] uppercase tracking-widest hover:bg-red-700 disabled:opacity-50"
+              >
+                {disabling ? 'Disabling...' : 'Disable Authenticator'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDisableForm(false);
+                  setDisableCode('');
+                  setError('');
+                }}
+                className="mt-3 text-[9px] font-black uppercase tracking-widest text-red-400 hover:text-red-600"
+              >
+                Cancel
+              </button>
+            </form>
+            )}
           </div>
         </div>
       </div>
@@ -204,8 +272,8 @@ function TotpSetup() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
           </div>
-          <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Setup Authenticator</h2>
-          <p className="text-slate-500 text-xs mt-2">Works offline - no internet needed for login!</p>
+          <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Security</h2>
+          <p className="text-slate-500 text-xs mt-2">Authentication is disabled. Set up Microsoft Authenticator or continue without it.</p>
         </div>
 
         {error && (
@@ -213,6 +281,14 @@ function TotpSetup() {
             {error}
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={goToDashboard}
+          className="mb-6 w-full rounded-2xl bg-slate-900 py-4 font-black text-white text-[10px] uppercase tracking-widest hover:bg-black transition-all"
+        >
+          Continue
+        </button>
 
         {/* Instructions */}
         <div className="mb-6 space-y-3">
@@ -270,10 +346,9 @@ function TotpSetup() {
           </button>
         </form>
 
-        {/* Skip Option */}
         <button
           type="button"
-          onClick={handleSkip}
+          onClick={goToDashboard}
           className="mt-6 text-[9px] font-black text-slate-400 uppercase tracking-widest block w-full text-center hover:text-slate-600"
         >
           Skip for now

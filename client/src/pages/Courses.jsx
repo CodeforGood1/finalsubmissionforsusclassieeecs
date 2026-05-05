@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API_BASE_URL from '../config/api';
+import PageTitle from '../components/PageTitle';
 
 function Courses() {
   const navigate = useNavigate();
@@ -79,10 +80,11 @@ function Courses() {
     return { text: 'Not Started', color: 'slate' };
   };
 
-  const subjectColors = ['emerald', 'blue', 'purple', 'amber', 'rose', 'teal', 'indigo', 'orange'];
+  const subjectColors = ['brown', 'brown', 'brown', 'brown', 'brown', 'brown', 'brown', 'brown'];
   const getSubjectColor = (idx) => subjectColors[idx % subjectColors.length];
 
   const colorClasses = {
+    brown: { bg: 'bg-[#fffaf4]', border: 'border-[#dccbbd]', text: 'text-[#5f3b25]', icon: 'bg-[#b86753]', bar: 'bg-[#b86753]', hover: 'hover:border-[#b86753]' },
     emerald: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', icon: 'bg-emerald-500', bar: 'bg-emerald-500', hover: 'hover:border-emerald-400' },
     blue: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', icon: 'bg-blue-500', bar: 'bg-blue-500', hover: 'hover:border-blue-400' },
     purple: { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', icon: 'bg-purple-500', bar: 'bg-purple-500', hover: 'hover:border-purple-400' },
@@ -96,27 +98,19 @@ function Courses() {
   // ============ SUBJECT VIEW ============
   if (!selectedSubject) {
     return (
-      <div className="min-h-screen bg-[#f8fafc] p-6 lg:p-12 text-slate-900 font-sans">
+      <div className="min-h-screen bg-[#f8fafc] p-4 md:p-6 lg:p-8 text-slate-900 font-sans">
         <div className="max-w-6xl mx-auto">
-          <button 
-            onClick={() => navigate('/dashboard')}
-            className="mb-8 flex items-center gap-2 text-slate-500 hover:text-emerald-600 font-semibold transition-all text-sm group"
-          >
-            <span className="group-hover:-translate-x-1 transition-transform">←</span> Back to Dashboard
-          </button>
-
-          <header className="mb-8">
-            <h1 className="text-4xl font-black tracking-tight text-slate-900">My Subjects</h1>
-            <p className="text-slate-500 mt-2 text-lg">
+          <PageTitle first="My" second="Subjects">
+            <span>
               {modules.length} module{modules.length !== 1 ? 's' : ''} across {subjectGroups.length} subject{subjectGroups.length !== 1 ? 's' : ''}
-            </p>
-          </header>
+            </span>
+          </PageTitle>
 
           {/* Resume Learning Banner */}
           {resumeModule && (
             <div 
               onClick={() => navigate(`/learning/${resumeModule.id}`)}
-              className="mb-10 cursor-pointer group relative overflow-hidden rounded-[2rem] bg-slate-900 text-white p-8 shadow-lg hover:shadow-2xl transition-all"
+              className="mb-8 cursor-pointer group relative overflow-hidden rounded-[2rem] bg-slate-900 text-white p-5 md:p-6 shadow-lg hover:shadow-2xl transition-all"
             >
               <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
@@ -137,13 +131,13 @@ function Courses() {
           )}
 
           {/* Tools Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
             <div
               onClick={() => navigate('/courses/code')}
-              className="group cursor-pointer p-6 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md hover:border-emerald-300 transition-all"
+              className="group cursor-pointer p-4 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md hover:border-[#b86753] transition-all"
             >
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 flex items-center justify-center rounded-xl group-hover:bg-emerald-500 group-hover:text-white transition-all">
+                <div className="w-10 h-10 bg-emerald-50 text-emerald-600 flex items-center justify-center rounded-xl group-hover:bg-emerald-500 group-hover:text-white transition-all">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                   </svg>
@@ -156,10 +150,10 @@ function Courses() {
             </div>
             <div
               onClick={() => navigate('/test')}
-              className="group cursor-pointer p-6 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md hover:border-purple-300 transition-all"
+              className="group cursor-pointer p-4 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md hover:border-[#b86753] transition-all"
             >
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-purple-50 text-purple-600 flex items-center justify-center rounded-xl group-hover:bg-purple-500 group-hover:text-white transition-all">
+                <div className="w-10 h-10 bg-purple-50 text-purple-600 flex items-center justify-center rounded-xl group-hover:bg-purple-500 group-hover:text-white transition-all">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                   </svg>
@@ -174,14 +168,14 @@ function Courses() {
 
           {/* Subject Cards */}
           <section>
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6">Browse by Subject</h3>
+            <h3 className="section-label mb-4">Browse by Subject</h3>
             
             {loading ? (
               <div className="py-20 text-center text-slate-400 font-medium italic animate-pulse">
                 Loading your subjects...
               </div>
             ) : subjectGroups.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {subjectGroups.map((group, idx) => {
                   const color = getSubjectColor(idx);
                   const c = colorClasses[color];
@@ -192,7 +186,7 @@ function Courses() {
                     <div
                       key={group.name}
                       onClick={() => setSelectedSubject(group.name)}
-                      className={`group cursor-pointer p-6 rounded-3xl ${c.bg} border-2 ${c.border} ${c.hover} transition-all hover:shadow-md`}
+                      className={`group cursor-pointer p-5 rounded-3xl ${c.bg} border-2 ${c.border} ${c.hover} transition-all hover:shadow-md`}
                     >
                       <div className="flex items-start justify-between mb-4">
                         <div className={`w-12 h-12 ${c.icon} text-white rounded-2xl flex items-center justify-center font-black text-lg`}>
@@ -243,23 +237,23 @@ function Courses() {
   const c = colorClasses[color];
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] p-6 lg:p-12 text-slate-900 font-sans">
+    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-6 lg:p-8 text-slate-900 font-sans">
       <div className="max-w-6xl mx-auto">
         {/* Back to Subjects */}
         <button 
           onClick={() => setSelectedSubject(null)}
-          className="mb-8 flex items-center gap-2 text-slate-500 hover:text-emerald-600 font-semibold transition-all text-sm group"
+          className="mb-6 flex items-center gap-2 text-slate-500 hover:text-[#b86753] font-semibold transition-all text-sm group"
         >
           <span className="group-hover:-translate-x-1 transition-transform">←</span> Back to Subjects
         </button>
 
-        <header className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+        <header className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
           <div>
             <div className="flex items-center gap-3 mb-2">
               <div className={`w-10 h-10 ${c.icon} text-white rounded-xl flex items-center justify-center font-black`}>
                 {selectedSubject.charAt(0)}
               </div>
-              <h1 className="text-3xl font-black tracking-tight text-slate-900">{selectedSubject}</h1>
+              <h1 className="text-2xl font-black tracking-tight text-slate-900">{selectedSubject}</h1>
             </div>
             <p className="text-slate-500">{subjectModules.length} module{subjectModules.length !== 1 ? 's' : ''}</p>
           </div>
