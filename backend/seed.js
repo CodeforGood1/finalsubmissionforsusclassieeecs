@@ -8,8 +8,13 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
 const SALT_ROUNDS = 10;
 
+if (!process.env.DATABASE_URL) {
+  console.error('DATABASE_URL is required. Run setup first or set DATABASE_URL in the root .env file.');
+  process.exit(1);
+}
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://lms_user:lms_password@localhost:5432/lms_db',
+  connectionString: process.env.DATABASE_URL,
   ...(process.env.DB_SSL === 'true' ? { ssl: { rejectUnauthorized: false } } : {})
 });
 

@@ -25,6 +25,12 @@ function Print-Error { Write-Host "[ERROR] $args" -ForegroundColor Red }
 function Print-Info { Write-Host "[INFO] $args" -ForegroundColor Blue }
 function Print-Warning { Write-Host "[WARNING] $args" -ForegroundColor Yellow }
 
+function New-Secret([int]$Length = 32) {
+    $bytes = New-Object byte[] $Length
+    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    return [Convert]::ToBase64String($bytes).TrimEnd("=").Replace("+", "A").Replace("/", "B")
+}
+
 # Check prerequisites
 Write-Host "[INFO] Checking prerequisites..." -ForegroundColor White
 
@@ -59,12 +65,12 @@ if (-not (Test-Path ".env")) {
     Print-Warning ".env file not found. Creating default..."
     @"
 # Database
-DB_PASSWORD=CHANGEME
+DB_PASSWORD=$(New-Secret 24)
 
-# Authentication - CHANGE THESE BEFORE FIRST USE
-JWT_SECRET=CHANGEME
+# Authentication
+JWT_SECRET=$(New-Secret 48)
 ADMIN_EMAIL=admin@classroom.local
-ADMIN_PASSWORD=CHANGEME
+ADMIN_PASSWORD=$(New-Secret 18)
 
 # Email Configuration
 SMTP_HOST=mailhog
@@ -77,8 +83,9 @@ EMAIL_FROM_ADDRESS=noreply@classroom.local
 # Jitsi Configuration
 JITSI_PUBLIC_URL=https://localhost:8443
 DOCKER_HOST_ADDRESS=127.0.0.1
-JICOFO_AUTH_PASSWORD=jicofopassword
-JVB_AUTH_PASSWORD=jvbpassword
+JICOFO_AUTH_PASSWORD=$(New-Secret 24)
+JICOFO_COMPONENT_SECRET=$(New-Secret 24)
+JVB_AUTH_PASSWORD=$(New-Secret 24)
 
 # Production Settings
 GITHUB_REPOSITORY=susclass/sustainable-classroom

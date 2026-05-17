@@ -24,6 +24,14 @@ print_error() { echo "[ERROR] $1"; }
 print_info() { echo "[INFO] $1"; }
 print_warning() { echo "[WARNING] $1"; }
 
+new_secret() {
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -base64 "$1" | tr -d '\n' | tr '+/' 'AB' | tr -d '='
+    else
+        LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"
+    fi
+}
+
 # Check prerequisites
 echo "[INFO] Checking prerequisites..."
 
@@ -59,12 +67,12 @@ if [ ! -f .env ]; then
         # Create default .env
         cat > .env << EOF
 # Database
-DB_PASSWORD=CHANGEME
+DB_PASSWORD=$(new_secret 24)
 
-# Authentication - CHANGE THESE BEFORE FIRST USE
-JWT_SECRET=CHANGEME
+# Authentication
+JWT_SECRET=$(new_secret 48)
 ADMIN_EMAIL=admin@classroom.local
-ADMIN_PASSWORD=CHANGEME
+ADMIN_PASSWORD=$(new_secret 18)
 
 # Email Configuration
 # For Gmail: SMTP_HOST=smtp.gmail.com, SMTP_PORT=587, SMTP_SECURE=true
@@ -78,8 +86,9 @@ EMAIL_FROM_ADDRESS=noreply@classroom.local
 # Jitsi Configuration
 JITSI_PUBLIC_URL=https://localhost:8443
 DOCKER_HOST_ADDRESS=127.0.0.1
-JICOFO_AUTH_PASSWORD=jicofopassword
-JVB_AUTH_PASSWORD=jvbpassword
+JICOFO_AUTH_PASSWORD=$(new_secret 24)
+JICOFO_COMPONENT_SECRET=$(new_secret 24)
+JVB_AUTH_PASSWORD=$(new_secret 24)
 
 # Production Settings (for prod mode)
 GITHUB_REPOSITORY=susclass/sustainable-classroom

@@ -39,6 +39,8 @@ temp_instructions.md
 uploads/
 backend/uploads/
 backend/data/
+backups/
+backend/backups/
 client/uploads/
 
 # Logs

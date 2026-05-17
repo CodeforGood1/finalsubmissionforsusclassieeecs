@@ -524,7 +524,7 @@ function AdminDashboard() {
         {activeTab === 'manage-students' ? (
           <div className="w-full max-w-none">
             <div className="flex items-center justify-between mb-8">
-              <h1 className="text-3xl font-black text-slate-800 uppercase italic">Manage <span className="text-emerald-600">Students</span></h1>
+              <h1 className="text-3xl font-black text-slate-800 uppercase">Manage <span className="text-emerald-600">Students</span></h1>
               <div className="flex gap-3">
                 <button 
                   onClick={() => handleCSVUpload('student')} 
@@ -611,7 +611,7 @@ function AdminDashboard() {
         ) : activeTab === 'manage-teachers' ? (
           <div className="w-full max-w-none">
             <div className="flex items-center justify-between mb-8">
-              <h1 className="text-3xl font-black text-slate-800 uppercase italic">Manage <span className="text-emerald-600">Teachers</span></h1>
+              <h1 className="text-3xl font-black text-slate-800 uppercase">Manage <span className="text-emerald-600">Teachers</span></h1>
               <div className="flex gap-3">
                 <button 
                   onClick={() => handleCSVUpload('teacher')} 
@@ -695,7 +695,7 @@ function AdminDashboard() {
           </div>
         ) : activeTab === 'allocation' ? (
           <div className="w-full max-w-none">
-            <h1 className="text-3xl font-black text-slate-800 uppercase mb-8 italic">Teacher-Section <span className="text-emerald-600">Allocation</span></h1>
+            <h1 className="text-3xl font-black text-slate-800 uppercase mb-8">Teacher-Section <span className="text-emerald-600">Allocation</span></h1>
             <p className="text-slate-500 mb-6">Assign teachers to class sections. All students in the selected sections will have access to the teacher's content.</p>
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -801,7 +801,7 @@ function AdminDashboard() {
                     </button>
                   </div>
                 ) : (
-                  <div className="h-64 flex items-center justify-center text-slate-300 font-black uppercase italic">
+                  <div className="h-64 flex items-center justify-center text-slate-300 font-black uppercase">
                     Select a teacher
                   </div>
                 )}
@@ -810,7 +810,7 @@ function AdminDashboard() {
           </div>
         ) : (
           <div>
-            <h1 className="text-3xl font-black text-slate-800 uppercase mb-8 italic">New <span className="text-emerald-600">{activeTab}</span></h1>
+            <h1 className="text-3xl font-black text-slate-800 uppercase mb-8">New <span className="text-emerald-600">{activeTab}</span></h1>
             <form onSubmit={handleRegister} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* Identity */}
               <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 space-y-4">
@@ -917,7 +917,7 @@ function AdminDashboard() {
                   ))}
                 </div>
               ) : (
-                <p className="text-slate-400 text-sm italic">No sections selected</p>
+                <p className="text-slate-400 text-sm">No sections selected</p>
               )}
             </div>
             

@@ -177,7 +177,7 @@ export default function StudentProfile() {
           {/* RIGHT: ACCOUNT DETAILS */}
           <div className="md:col-span-2 space-y-10">
             <section className="bg-white border border-slate-100 p-10 rounded-[3rem] shadow-sm">
-              <h2 className="text-xs font-black text-slate-900 uppercase tracking-[0.2em] mb-8 italic">Account Integrity</h2>
+              <h2 className="text-xs font-black text-slate-900 uppercase tracking-[0.2em] mb-8">Account Integrity</h2>
               <div className="space-y-6">
                 <div className="p-6 bg-slate-50 rounded-2xl">
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Official Email</label>

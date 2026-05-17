@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import API_BASE_URL from '../config/api';
 import PageTitle from '../components/PageTitle';
 
 export default function TestKnowledge() {
-  const navigate = useNavigate();
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [takingTest, setTakingTest] = useState(null);

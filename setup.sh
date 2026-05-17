@@ -4,6 +4,7 @@ set -eu
 STACK="local"
 RESET="false"
 START_APP="false"
+SKIP_PORT_CHECK="false"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -19,8 +20,12 @@ while [ "$#" -gt 0 ]; do
       START_APP="true"
       shift
       ;;
+    --skip-port-check)
+      SKIP_PORT_CHECK="true"
+      shift
+      ;;
     -h|--help)
-      echo "Usage: ./setup.sh [--stack local|full|prod] [--reset] [--start-app]"
+      echo "Usage: ./setup.sh [--stack local|full|prod] [--reset] [--start-app] [--skip-port-check]"
       exit 0
       ;;
     *)
@@ -64,6 +69,54 @@ get_env_value() {
   grep "^$1=" .env | head -n 1 | cut -d= -f2-
 }
 
+get_env_value_or_default() {
+  value="$(get_env_value "$1" || true)"
+  if [ -z "$value" ]; then
+    echo "$2"
+  else
+    echo "$value"
+  fi
+}
+
+port_in_use() {
+  port="$1"
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1
+  elif command -v ss >/dev/null 2>&1; then
+    ss -ltn | awk '{print $4}' | grep -Eq "[:.]${port}$"
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]${port}$"
+  else
+    return 1
+  fi
+}
+
+assert_ports_available() {
+  [ "$SKIP_PORT_CHECK" = "true" ] && return 0
+  busy=""
+  for port in "$@"; do
+    if port_in_use "$port"; then
+      busy="$busy $port"
+    fi
+  done
+
+  [ -z "$busy" ] && return 0
+
+  echo ""
+  echo "[setup] One or more required ports are already in use:"
+  for port in $busy; do
+    echo "  Port $port"
+  done
+  echo ""
+  echo "Non-technical fix:"
+  echo "  1. Close the app using the port, or restart Docker Desktop."
+  echo "  2. If you cannot close it, edit .env and change the matching HOST_*_PORT value."
+  echo "     Example: HOST_POSTGRES_PORT=15432"
+  echo "  3. If HOST_POSTGRES_PORT changes, also update DATABASE_URL to use that port."
+  echo "  4. Run setup again."
+  exit 1
+}
+
 if [ ! -f .env ]; then
   [ -f .env.example ] || { echo ".env.example was not found." >&2; exit 1; }
   cp .env.example .env
@@ -77,6 +130,7 @@ if [ ! -f .env ]; then
   set_env_value "JICOFO_AUTH_PASSWORD" "$(new_secret 24)"
   set_env_value "JICOFO_COMPONENT_SECRET" "$(new_secret 24)"
   set_env_value "JVB_AUTH_PASSWORD" "$(new_secret 24)"
+  set_env_value "HOST_POSTGRES_PORT" "5432"
   set_env_value "DATABASE_URL" "postgresql://${DB_USER_DEFAULT}:${DB_PASSWORD}@localhost:5432/${DB_NAME_DEFAULT}"
 
   echo "[setup] Created .env with generated local secrets."
@@ -88,6 +142,20 @@ if [ "$RESET" = "true" ]; then
   echo "[setup] Resetting database volume for $COMPOSE_FILE..."
   docker compose -f "$COMPOSE_FILE" down -v --remove-orphans
 fi
+
+PORTS=""
+if [ "$STACK" = "local" ]; then
+  PORTS="$(get_env_value_or_default HOST_POSTGRES_PORT 5432)"
+fi
+if [ "$START_APP" = "true" ]; then
+  if [ "$STACK" = "full" ] || [ "$STACK" = "prod" ]; then
+    PORTS="$PORTS $(get_env_value_or_default HOST_HTTP_PORT 80) $(get_env_value_or_default HOST_BACKEND_PORT 5000)"
+  else
+    PORTS="$PORTS $(get_env_value_or_default HOST_SMTP_PORT 1025)"
+  fi
+  PORTS="$PORTS $(get_env_value_or_default HOST_MAILHOG_WEB_PORT 8025) $(get_env_value_or_default HOST_JITSI_HTTPS_PORT 8443) $(get_env_value_or_default HOST_JITSI_COLIBRI_PORT 4443)"
+fi
+assert_ports_available $PORTS
 
 echo "[setup] Starting $STACK stack database..."
 if [ "$START_APP" = "true" ]; then

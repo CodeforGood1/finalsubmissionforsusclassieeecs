@@ -19,6 +19,7 @@ const QRCode = require('qrcode');
 const localStorageService = require('./localStorageService');
 const localEmailService = require('./localEmailService');
 const { executeCode, MAX_TIMEOUT_MS, MAX_MEMORY_MB } = require('./local-code-executor');
+const backupService = require('./backupService');
 
 // --- INPUT VALIDATION HELPERS ---
 const VALID_ROLES = ['student', 'teacher'];
@@ -27,6 +28,10 @@ const MAX_STEPS = 50;
 const MAX_QUESTIONS = 200;
 const MAX_TEST_CASES = 20;
 const MAX_CODE_SIZE = 50000;
+const MAX_TEXT_CONTENT_SIZE = 20000;
+const MAX_RESOURCE_URL_SIZE = 2048;
+const MAX_SECTIONS_PER_ASSIGNMENT = 100;
+const VALID_STEP_TYPES = new Set(['text', 'video', 'pdf', 'jitsi', 'mcq', 'coding', 'code']);
 
 function sanitizeRole(role) {
   const r = (role || 'student').toLowerCase().trim();
@@ -43,37 +48,247 @@ function isPositiveInt(v) {
   return Number.isFinite(n) && n > 0;
 }
 
-const ADMIN_PASSWORD_FILE = path.resolve(__dirname, 'data', 'admin-password.txt');
+const ADMIN_PASSWORD_HASH_FILE = path.resolve(__dirname, 'data', 'admin-password.hash');
+const LEGACY_ADMIN_PASSWORD_FILE = path.resolve(__dirname, 'data', 'admin-password.txt');
 
-function loadAdminPasswordOverride() {
-  if (!fs.existsSync(ADMIN_PASSWORD_FILE)) {
-    return;
+function cleanText(value, maxLength = 255) {
+  if (typeof value !== 'string') return '';
+  return value.trim().slice(0, maxLength);
+}
+
+function requireText(value, fieldName, maxLength) {
+  const cleaned = cleanText(value, maxLength);
+  if (cleaned.length < 1) {
+    return { error: `${fieldName} is required` };
   }
+  return { value: cleaned };
+}
 
-  try {
-    const savedPassword = fs.readFileSync(ADMIN_PASSWORD_FILE, 'utf8').replace(/\r?\n+$/, '');
-    if (savedPassword) {
-      process.env.ADMIN_PASSWORD = savedPassword;
-      console.log('[ADMIN] Loaded persisted admin password override');
+function parseMaybeJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_) {
+        return [];
+      }
     }
-  } catch (error) {
-    console.error('[ADMIN] Failed to load persisted admin password:', error);
+    return [trimmed];
   }
+  return [];
 }
 
-function saveAdminPasswordOverride(newPassword) {
+function normalizeSectionList(sections, section) {
+  const source = parseMaybeJsonArray(sections);
+  if (source.length === 0 && section) source.push(section);
+
+  const normalized = [];
+  const seen = new Set();
+  for (const item of source) {
+    if (typeof item !== 'string') continue;
+    const cleaned = item.trim().replace(/\s+/g, ' ').slice(0, 60);
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      normalized.push(cleaned);
+    }
+  }
+
+  if (normalized.length === 0) {
+    return { error: 'At least one section is required' };
+  }
+  if (normalized.length > MAX_SECTIONS_PER_ASSIGNMENT) {
+    return { error: `Too many sections (max ${MAX_SECTIONS_PER_ASSIGNMENT})` };
+  }
+  return { value: normalized };
+}
+
+function parseMaybeJson(value, fallback) {
+  if (typeof value !== 'string') return value ?? fallback;
   try {
-    fs.mkdirSync(path.dirname(ADMIN_PASSWORD_FILE), { recursive: true });
-    fs.writeFileSync(ADMIN_PASSWORD_FILE, `${newPassword}\n`, 'utf8');
-    process.env.ADMIN_PASSWORD = newPassword;
-    return true;
-  } catch (error) {
-    console.error('[ADMIN] Failed to persist admin password:', error);
-    return false;
+    return JSON.parse(value);
+  } catch (_) {
+    return fallback;
   }
 }
 
-loadAdminPasswordOverride();
+function isFutureDateTime(value) {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) && date.getTime() >= Date.now() - 60000;
+}
+
+function validateModuleSteps(rawSteps) {
+  const steps = parseMaybeJson(rawSteps, []);
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return { error: 'At least one step is required' };
+  }
+  if (steps.length > MAX_STEPS) {
+    return { error: `Too many steps (max ${MAX_STEPS})` };
+  }
+
+  const normalizedSteps = [];
+  for (let index = 0; index < steps.length; index++) {
+    const step = steps[index] || {};
+    const type = cleanText(step.type, 30).toLowerCase();
+    const fallbackHeader = cleanText(
+      step.title || step.name || (typeof step.data === 'string' ? step.data : '') || `${type || 'Module'} step`,
+      100
+    );
+    const header = cleanText(step.header, 100) || fallbackHeader;
+
+    if (!VALID_STEP_TYPES.has(type)) {
+      return { error: `Step ${index + 1} has an unsupported type` };
+    }
+    if (!header) {
+      return { error: `Step ${index + 1} needs a title` };
+    }
+
+    if (type === 'mcq') {
+      const data = step.data || {};
+      const fields = ['question', 'a', 'b', 'c', 'd'];
+      for (const field of fields) {
+        if (!cleanText(data[field], field === 'question' ? 500 : 200)) {
+          return { error: `Step ${index + 1} MCQ ${field} is required` };
+        }
+      }
+      if (!['A', 'B', 'C', 'D'].includes(cleanText(data.correct, 1).toUpperCase())) {
+        return { error: `Step ${index + 1} MCQ correct answer must be A, B, C, or D` };
+      }
+      normalizedSteps.push({
+        ...step,
+        type,
+        header,
+        data: {
+          question: cleanText(data.question, 500),
+          a: cleanText(data.a, 200),
+          b: cleanText(data.b, 200),
+          c: cleanText(data.c, 200),
+          d: cleanText(data.d, 200),
+          correct: cleanText(data.correct, 1).toUpperCase()
+        }
+      });
+      continue;
+    }
+
+    if (type === 'jitsi') {
+      const data = step.data || {};
+      const roomName = cleanText(data.roomName, 50).replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
+      if (!roomName) {
+        return { error: `Step ${index + 1} live session room name is required` };
+      }
+      if (!data.scheduledTime || !isFutureDateTime(data.scheduledTime)) {
+        return { error: `Step ${index + 1} live session must be scheduled for now or a future time` };
+      }
+      const duration = Math.min(180, Math.max(15, parseInt(data.duration, 10) || 60));
+      normalizedSteps.push({
+        ...step,
+        type,
+        header,
+        data: {
+          ...data,
+          roomName,
+          scheduledTime: data.scheduledTime,
+          duration
+        }
+      });
+      continue;
+    }
+
+    if (type === 'coding') {
+      const data = step.data || {};
+      if (!cleanText(data.description, 2000)) {
+        return { error: `Step ${index + 1} coding problem description is required` };
+      }
+      const testCases = Array.isArray(data.testCases) ? data.testCases : [];
+      if (testCases.length > MAX_TEST_CASES) {
+        return { error: `Step ${index + 1} has too many test cases (max ${MAX_TEST_CASES})` };
+      }
+      normalizedSteps.push({
+        ...step,
+        type,
+        header,
+        data: {
+          ...data,
+          description: cleanText(data.description, 2000),
+          timeLimit: Math.min(MAX_TIMEOUT_MS, Math.max(1000, parseInt(data.timeLimit, 10) || 5000)),
+          memoryLimit: Math.min(MAX_MEMORY_MB, Math.max(16, parseInt(data.memoryLimit, 10) || 64)),
+          testCases
+        }
+      });
+      continue;
+    }
+
+    if (type === 'text') {
+      const data = String(step.data || '');
+      if (data.length > MAX_TEXT_CONTENT_SIZE) {
+        return { error: `Step ${index + 1} text content is too large (max ${MAX_TEXT_CONTENT_SIZE} characters)` };
+      }
+      normalizedSteps.push({ ...step, type, header, data: cleanText(data, MAX_TEXT_CONTENT_SIZE) });
+      continue;
+    }
+
+    if (type === 'video' || type === 'pdf') {
+      const data = cleanText(step.data, MAX_RESOURCE_URL_SIZE);
+      if (!data) {
+        return { error: `Step ${index + 1} ${type.toUpperCase()} URL is required` };
+      }
+      if (!/^https?:\/\//i.test(data) && !data.startsWith('/uploads/')) {
+        return { error: `Step ${index + 1} ${type.toUpperCase()} URL must be an http(s) URL or uploaded file path` };
+      }
+      normalizedSteps.push({ ...step, type, header, data });
+      continue;
+    }
+
+    if (type === 'code') {
+      const data = String(step.data || '');
+      if (data.length > MAX_CODE_SIZE) {
+        return { error: `Step ${index + 1} code sample is too large (max ${MAX_CODE_SIZE} characters)` };
+      }
+      normalizedSteps.push({ ...step, type, header, data });
+      continue;
+    }
+
+    normalizedSteps.push({ ...step, type, header });
+  }
+
+  return { value: normalizedSteps };
+}
+
+function validateMcqQuestions(rawQuestions) {
+  const questions = parseMaybeJson(rawQuestions, []);
+  if (!Array.isArray(questions) || questions.length === 0) {
+    return { error: 'At least one question is required' };
+  }
+  if (questions.length > MAX_QUESTIONS) {
+    return { error: `Too many questions (max ${MAX_QUESTIONS})` };
+  }
+
+  const normalized = questions.map((question, index) => {
+    const clean = {
+      question: cleanText(question?.question, 500),
+      a: cleanText(question?.a, 200),
+      b: cleanText(question?.b, 200),
+      c: cleanText(question?.c, 200),
+      d: cleanText(question?.d, 200),
+      correct: cleanText(question?.correct, 1).toUpperCase()
+    };
+    const missingField = ['question', 'a', 'b', 'c', 'd'].find((field) => !clean[field]);
+    if (missingField) {
+      throw new Error(`Question ${index + 1} ${missingField} is required`);
+    }
+    if (!['A', 'B', 'C', 'D'].includes(clean.correct)) {
+      throw new Error(`Question ${index + 1} correct answer must be A, B, C, or D`);
+    }
+    return clean;
+  });
+
+  return { value: normalized };
+}
 
 // Initialize local storage directories
 localStorageService.ensureUploadDirs();
@@ -86,6 +301,7 @@ const { upload, createUploader } = localStorageService;
 const bulkUpload = createUploader({ maxFiles: 200 });
 
 const app = express();
+const isDev = process.env.NODE_ENV !== 'production';
 
 // Trust proxy for rate limiting behind nginx/docker
 app.set('trust proxy', 1);
@@ -101,24 +317,29 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: isDev ? ["'self'", "'unsafe-inline'"] : ["'self'"],
+      scriptSrc: isDev ? ["'self'", "'unsafe-inline'", "'unsafe-eval'"] : ["'self'"],
       imgSrc: ["'self'", "data:", "blob:"],
       mediaSrc: ["'self'", "blob:"],
       connectSrc: ["'self'", "http://localhost:*", "ws://localhost:*", "http://*:5000", "ws://*:5000"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       frameSrc: ["'self'", "https://www.youtube.com", "https://youtube.com", "https://localhost:8443", "https://localhost:*"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"],
       upgradeInsecureRequests: null,
     },
   },
   crossOriginEmbedderPolicy: false,
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-  hsts: false,
+  hsts: !isDev,
 }));
 
-// Rate limiting - disabled in development for easier testing
-const isDev = process.env.NODE_ENV !== 'production';
+app.use((req, res, next) => {
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=(), payment=()');
+  next();
+});
 
 // Rate limiting - general API protection (MUCH higher limits for on-premise)
 const generalLimiter = rateLimit({
@@ -157,6 +378,52 @@ const authLimiter = rateLimit({
     // If email provided, use email+IP combo. Otherwise just IP.
     return email ? `${email.toLowerCase()}:${ip}` : ip;
   }
+});
+
+const codeExecutionLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: isDev ? 120 : 20,
+  message: { error: 'Too many code execution requests. Please wait a minute and try again.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => isDev,
+  keyGenerator: (req) => `${req.user?.role || 'anon'}:${req.user?.id || req.ip || 'unknown'}`
+});
+
+const allowedStateChangeOrigins = (() => {
+  const origins = new Set([
+    'http://localhost',
+    'http://127.0.0.1',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:5000',
+    'http://127.0.0.1:5000',
+  ]);
+  [process.env.FRONTEND_URL, process.env.VITE_API_URL].filter(Boolean).forEach((origin) => {
+    try {
+      origins.add(new URL(origin).origin);
+    } catch (_) {
+      // Ignore malformed optional env values.
+    }
+  });
+  return origins;
+})();
+
+app.use('/api/', (req, res, next) => {
+  if (isDev || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    return next();
+  }
+  const origin = req.get('origin');
+  if (!origin) return next();
+
+  try {
+    const normalizedOrigin = new URL(origin).origin;
+    if (allowedStateChangeOrigins.has(normalizedOrigin)) return next();
+  } catch (_) {
+    // Fall through to rejection.
+  }
+
+  return res.status(403).json({ error: 'Cross-site request blocked' });
 });
 
 // Apply general rate limiting to all API routes
@@ -294,6 +561,13 @@ if (!JWT_SECRET) {
   console.error('[FATAL] JWT_SECRET environment variable is not set. Exiting.');
   process.exit(1);
 }
+if (
+  process.env.NODE_ENV === 'production' &&
+  (JWT_SECRET.length < 32 || /test|change|secret|default/i.test(JWT_SECRET))
+) {
+  console.error('[FATAL] JWT_SECRET must be a strong production secret (32+ chars, not a default/test value).');
+  process.exit(1);
+}
 
 // --- DATABASE CONNECTION (LOCAL POSTGRESQL) ---
 // On-premise: Connect to local PostgreSQL server with optimized pool settings
@@ -307,13 +581,127 @@ const pool = new Pool({
   ...(process.env.DB_SSL === 'true' ? { ssl: { rejectUnauthorized: false } } : {})
 });
 
+async function readAdminHashFromDisk() {
+  try {
+    if (fs.existsSync(ADMIN_PASSWORD_HASH_FILE)) {
+      return fs.readFileSync(ADMIN_PASSWORD_HASH_FILE, 'utf8').trim();
+    }
+  } catch (error) {
+    console.error('[ADMIN] Failed to read admin hash file:', error.message);
+  }
+  return '';
+}
+
+async function writeAdminHashToDisk(passwordHash) {
+  try {
+    fs.mkdirSync(path.dirname(ADMIN_PASSWORD_HASH_FILE), { recursive: true });
+    fs.writeFileSync(ADMIN_PASSWORD_HASH_FILE, `${passwordHash}\n`, { mode: 0o600 });
+  } catch (error) {
+    console.error('[ADMIN] Failed to persist admin password hash:', error.message);
+  }
+}
+
+async function getBootstrapAdminHash() {
+  if (process.env.NODE_ENV === 'test' && process.env.ADMIN_PASSWORD) {
+    return bcrypt.hash(process.env.ADMIN_PASSWORD, SALT_ROUNDS);
+  }
+
+  const diskHash = await readAdminHashFromDisk();
+  if (diskHash) return diskHash;
+  if (process.env.ADMIN_PASSWORD_HASH) return process.env.ADMIN_PASSWORD_HASH.trim();
+
+  let bootstrapPassword = process.env.ADMIN_PASSWORD;
+  if (!bootstrapPassword && fs.existsSync(LEGACY_ADMIN_PASSWORD_FILE)) {
+    try {
+      bootstrapPassword = fs.readFileSync(LEGACY_ADMIN_PASSWORD_FILE, 'utf8').replace(/\r?\n+$/, '');
+      console.warn('[ADMIN] Migrating legacy plaintext admin password file to hashed storage.');
+    } catch (error) {
+      console.error('[ADMIN] Failed to read legacy admin password file:', error.message);
+    }
+  }
+
+  if (!bootstrapPassword) return '';
+
+  if (process.env.NODE_ENV === 'production' && bootstrapPassword.length < 12) {
+    console.warn('[ADMIN] ADMIN_PASSWORD should be at least 12 characters in production.');
+  }
+
+  const hash = await bcrypt.hash(bootstrapPassword, SALT_ROUNDS);
+  await writeAdminHashToDisk(hash);
+  return hash;
+}
+
+async function initializeAdminAccount() {
+  const email = (process.env.ADMIN_EMAIL || 'admin@classroom.local').toLowerCase().trim();
+  const passwordHash = await getBootstrapAdminHash();
+  if (!passwordHash) {
+    console.warn('[ADMIN] No ADMIN_PASSWORD or ADMIN_PASSWORD_HASH configured. Admin login will fail until configured.');
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS admin_accounts (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  if (passwordHash) {
+    await pool.query(
+      `INSERT INTO admin_accounts (email, password_hash)
+       VALUES ($1, $2)
+       ON CONFLICT (email) DO NOTHING`,
+      [email, passwordHash]
+    );
+  }
+}
+
+async function verifyAdminCredentials(email, password) {
+  const normalizedEmail = cleanText(email, 150).toLowerCase();
+  const configuredEmail = (process.env.ADMIN_EMAIL || 'admin@classroom.local').toLowerCase().trim();
+  if (!normalizedEmail || normalizedEmail !== configuredEmail || typeof password !== 'string') {
+    return false;
+  }
+
+  try {
+    const result = await pool.query('SELECT password_hash FROM admin_accounts WHERE LOWER(email) = LOWER($1)', [normalizedEmail]);
+    if (result.rows.length > 0) {
+      return bcrypt.compare(password, result.rows[0].password_hash);
+    }
+  } catch (error) {
+    console.error('[ADMIN] Admin credential lookup failed:', error.message);
+  }
+
+  return false;
+}
+
+async function updateAdminPassword(newPassword) {
+  const email = (process.env.ADMIN_EMAIL || 'admin@classroom.local').toLowerCase().trim();
+  const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  await pool.query(
+    `INSERT INTO admin_accounts (email, password_hash, updated_at)
+     VALUES ($1, $2, CURRENT_TIMESTAMP)
+     ON CONFLICT (email)
+     DO UPDATE SET password_hash = EXCLUDED.password_hash, updated_at = CURRENT_TIMESTAMP`,
+    [email, passwordHash]
+  );
+  await writeAdminHashToDisk(passwordHash);
+}
+
 // --- SIMPLE IN-MEMORY CACHE ---
 // Lightweight cache for frequently accessed data (teacher allocations, student sections)
 const cache = {
   data: new Map(),
   ttl: 5 * 60 * 1000, // 5 minutes default TTL
+  maxEntries: parseInt(process.env.CACHE_MAX_ENTRIES, 10) || 500,
   
   set(key, value, ttlMs = this.ttl) {
+    if (this.data.size >= this.maxEntries && !this.data.has(key)) {
+      const oldestKey = this.data.keys().next().value;
+      if (oldestKey) this.data.delete(oldestKey);
+    }
     this.data.set(key, {
       value,
       expiry: Date.now() + ttlMs
@@ -344,7 +732,7 @@ const cache = {
 };
 
 // Clean expired cache entries every 5 minutes
-setInterval(() => {
+const cacheCleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [key, item] of cache.data.entries()) {
     if (now > item.expiry) {
@@ -352,6 +740,9 @@ setInterval(() => {
     }
   }
 }, 5 * 60 * 1000);
+if (typeof cacheCleanupTimer.unref === 'function') {
+  cacheCleanupTimer.unref();
+}
 
 console.log('[DATABASE] Connecting to PostgreSQL...');
 console.log('[DATABASE] SSL:', process.env.DB_SSL === 'true' ? 'Enabled' : 'Disabled (on-premise mode)');
@@ -360,9 +751,20 @@ console.log('[CACHE] In-memory cache initialized (5 min TTL)');
 // Initialize notification service
 notificationService.initializeNotificationService(pool);
 
-// Auto-create module_completion table if it doesn't exist
-(async () => {
+// Auto-create required tables/views if they do not exist
+const databaseReady = (async () => {
   try {
+    await initializeAdminAccount();
+    console.log('admin account table ready');
+
+    await pool.query('ALTER TABLE teachers DROP CONSTRAINT IF EXISTS chk_name_length');
+    await pool.query('ALTER TABLE teachers ADD CONSTRAINT chk_name_length CHECK (char_length(name) >= 1)');
+    await pool.query('ALTER TABLE students DROP CONSTRAINT IF EXISTS chk_name_length');
+    await pool.query('ALTER TABLE students ADD CONSTRAINT chk_name_length CHECK (char_length(name) >= 1)');
+    await pool.query('ALTER TABLE mcq_tests DROP CONSTRAINT IF EXISTS chk_title_length');
+    await pool.query('ALTER TABLE mcq_tests ADD CONSTRAINT chk_title_length CHECK (char_length(title) >= 1 AND char_length(title) <= 200)');
+    console.log('database input length constraints updated');
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS module_completion (
         id SERIAL PRIMARY KEY,
@@ -427,6 +829,9 @@ notificationService.initializeNotificationService(pool);
     console.error('[WARNING] Database table setup error:', err.message);
   }
 })();
+app.locals.databaseReady = databaseReady;
+
+backupService.initializeBackupService();
 
 // --- LOCAL STORAGE CONFIGURATION (ON-PREMISE) ---
 // Serve uploaded files statically
@@ -467,25 +872,29 @@ const sendEmailAsync = async (mailOptions) => {
   return localEmailService.sendEmail(mailOptions);
 };
 
-// 1. Admin Login (Env based)
-app.post('/api/admin/login', (req, res) => {
+// 1. Admin Login (database-backed password hash)
+app.post('/api/admin/login', async (req, res) => {
   const { email, password } = req.body;
-  if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
-    const token = jwt.sign({ email, role: 'admin' }, JWT_SECRET, { expiresIn: '24h' });
-    res.json({ success: true, token });
-  } else {
-    res.status(401).json({ success: false, message: "Invalid Admin Credentials" });
+  try {
+    if (await verifyAdminCredentials(email, password)) {
+      const token = jwt.sign({ email: cleanText(email, 150).toLowerCase(), role: 'admin' }, JWT_SECRET, { expiresIn: '24h' });
+      return res.json({ success: true, token });
+    }
+    return res.status(401).json({ success: false, message: "Invalid Admin Credentials" });
+  } catch (error) {
+    console.error('[ADMIN] Login error:', error.message);
+    return res.status(500).json({ error: 'Admin login failed' });
   }
 });
 
-app.post('/api/admin/change-password', authLimiter, (req, res) => {
+app.post('/api/admin/change-password', authLimiter, async (req, res) => {
   const { currentPassword, newPassword } = req.body;
 
   if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
     return res.status(400).json({ error: 'currentPassword and newPassword are required' });
   }
 
-  if (currentPassword !== process.env.ADMIN_PASSWORD) {
+  if (!(await verifyAdminCredentials(process.env.ADMIN_EMAIL, currentPassword))) {
     return res.status(401).json({ error: 'Current admin password is incorrect' });
   }
 
@@ -497,7 +906,10 @@ app.post('/api/admin/change-password', authLimiter, (req, res) => {
     return res.status(400).json({ error: 'Password cannot contain line breaks' });
   }
 
-  if (!saveAdminPasswordOverride(newPassword)) {
+  try {
+    await updateAdminPassword(newPassword);
+  } catch (error) {
+    console.error('[ADMIN] Failed to update admin password:', error.message);
     return res.status(500).json({ error: 'Failed to save the new admin password' });
   }
 
@@ -995,8 +1407,8 @@ app.post('/api/admin/register-teacher', authenticateToken, adminOnly, async (req
   
   // Validate required fields
   const trimmedName = name ? name.trim() : '';
-  if (!trimmedName || trimmedName.length < 2) {
-    return res.status(400).json({ error: "Name must be at least 2 characters long" });
+  if (!trimmedName) {
+    return res.status(400).json({ error: "Name is required" });
   }
   if (trimmedName.length > 100) {
     return res.status(400).json({ error: "Name too long (max 100 characters)" });
@@ -1079,9 +1491,9 @@ app.post('/api/admin/register-student', authenticateToken, adminOnly, async (req
   
   try {
     // Validate required fields
-    if (!name || typeof name !== 'string' || name.trim().length < 2) {
-      console.log("[ERROR] Name must be at least 2 characters long");
-      return res.status(400).json({ error: "Name must be at least 2 characters long" });
+    if (!name || typeof name !== 'string' || name.trim().length < 1) {
+      console.log("[ERROR] Name is required");
+      return res.status(400).json({ error: "Name is required" });
     }
     if (name.trim().length > 100) {
       return res.status(400).json({ error: "Name too long (max 100 characters)" });
@@ -1792,6 +2204,15 @@ app.get('/api/admin/system-status', authenticateToken, adminOnly, async (req, re
   }
 });
 
+app.get('/api/admin/backups/status', authenticateToken, adminOnly, (req, res) => {
+  res.json(backupService.getBackupStatus());
+});
+
+app.post('/api/admin/backups/run', authenticateToken, adminOnly, async (req, res) => {
+  const result = await backupService.runDatabaseBackup('manual');
+  res.status(result.success ? 200 : 500).json(result);
+});
+
 
 // 8. Fetch Teacher Profile (for Dashboard)
 app.get('/api/teacher/me', authenticateToken, async (req, res) => {
@@ -1969,22 +2390,15 @@ app.post('/api/teacher/upload-module-pdfs', authenticateToken, upload.array('pdf
     const { section, sections, subject, topic } = req.body;
     const teacherId = req.user.id;
     
-    // Validate inputs
-    if (!subject || typeof subject !== 'string' || subject.trim().length < 1) {
-      return res.status(400).json({ error: "Subject is required" });
-    }
-    if (!topic || typeof topic !== 'string' || topic.trim().length < 1) {
-      return res.status(400).json({ error: "Module topic/title is required" });
-    }
-    
-    // Support both single section and multiple sections
-    const targetSections = sections && Array.isArray(sections) && sections.length > 0 
-      ? sections 
-      : (section ? [section] : []);
-    
-    if (targetSections.length === 0) {
-      return res.status(400).json({ error: "At least one section is required" });
-    }
+    const subjectResult = requireText(subject, 'Subject', 60);
+    if (subjectResult.error) return res.status(400).json({ error: subjectResult.error });
+    const topicResult = requireText(topic, 'Module topic/title', 100);
+    if (topicResult.error) return res.status(400).json({ error: topicResult.error });
+    const sectionResult = normalizeSectionList(sections, section);
+    if (sectionResult.error) return res.status(400).json({ error: sectionResult.error });
+    const cleanSubject = subjectResult.value;
+    const cleanTopic = topicResult.value;
+    const targetSections = sectionResult.value;
     
     // Validate all files are PDFs
     const nonPdfFiles = req.files.filter(f => f.mimetype !== 'application/pdf');
@@ -1996,7 +2410,7 @@ app.post('/api/teacher/upload-module-pdfs', authenticateToken, upload.array('pdf
     const steps = req.files.map((file, index) => {
       const fileUrl = `/uploads/documents/${file.filename}`;
       // Use original filename (without extension) as step header
-      const stepHeader = file.originalname.replace(/\.pdf$/i, '');
+      const stepHeader = cleanText(file.originalname.replace(/\.pdf$/i, ''), 100) || `Step ${index + 1}`;
       
       return {
         type: 'pdf',
@@ -2024,8 +2438,8 @@ app.post('/api/teacher/upload-module-pdfs', authenticateToken, upload.array('pdf
     const values = [
       targetSections[0], 
       JSON.stringify(targetSections), 
-      subject, 
-      topic, 
+      cleanSubject, 
+      cleanTopic, 
       teacherId, 
       teacherName, 
       steps.length, 
@@ -2055,14 +2469,14 @@ app.post('/api/teacher/upload-module-pdfs', authenticateToken, upload.array('pdf
         `, [
           student.id,
           'New Module Available',
-          `${teacherName} published "${topic}" with ${steps.length} PDF documents. Start learning now!`,
+          `${teacherName} published "${cleanTopic}" with ${steps.length} PDF documents. Start learning now!`,
           `/learning/${moduleId}`,
           JSON.stringify({
             module_id: moduleId,
-            module_title: topic,
+            module_title: cleanTopic,
             teacher_name: teacherName,
             sections: targetSections,
-            subject: subject,
+            subject: cleanSubject,
             step_count: steps.length,
             content_type: 'pdf'
           })
@@ -2103,22 +2517,15 @@ app.post('/api/teacher/upload-module-mixed', authenticateToken, bulkUpload.array
     const { section, sections, subject, topic, stepCount } = req.body;
     const teacherId = req.user.id;
     
-    // Validate inputs
-    if (!subject || typeof subject !== 'string' || subject.trim().length < 1) {
-      return res.status(400).json({ error: "Subject is required" });
-    }
-    if (!topic || typeof topic !== 'string' || topic.trim().length < 1) {
-      return res.status(400).json({ error: "Module topic/title is required" });
-    }
-    
-    // Support both single section and multiple sections
-    const targetSections = sections && Array.isArray(sections) && sections.length > 0 
-      ? sections 
-      : (section ? [section] : []);
-    
-    if (targetSections.length === 0) {
-      return res.status(400).json({ error: "At least one section is required" });
-    }
+    const subjectResult = requireText(subject, 'Subject', 60);
+    if (subjectResult.error) return res.status(400).json({ error: subjectResult.error });
+    const topicResult = requireText(topic, 'Module topic/title', 100);
+    if (topicResult.error) return res.status(400).json({ error: topicResult.error });
+    const sectionResult = normalizeSectionList(sections, section);
+    if (sectionResult.error) return res.status(400).json({ error: sectionResult.error });
+    const cleanSubject = subjectResult.value;
+    const cleanTopic = topicResult.value;
+    const targetSections = sectionResult.value;
     
     // Separate files by type and get custom step names
     const pdfFiles = [];
@@ -2126,7 +2533,7 @@ app.post('/api/teacher/upload-module-mixed', authenticateToken, bulkUpload.array
     const unsupportedFiles = [];
     
     req.files.forEach((file, index) => {
-      const stepName = req.body[`stepName_${index}`] || file.originalname.replace(/\.(pdf|mp4|webm|ogg|mov|avi|mkv)$/i, '');
+      const stepName = cleanText(req.body[`stepName_${index}`] || file.originalname.replace(/\.(pdf|mp4|webm|ogg|mov|avi|mkv)$/i, ''), 100) || `Step ${index + 1}`;
       
       if (file.mimetype === 'application/pdf') {
         pdfFiles.push({ file, stepName });
@@ -2191,8 +2598,8 @@ app.post('/api/teacher/upload-module-mixed', authenticateToken, bulkUpload.array
     const values = [
       targetSections[0], 
       JSON.stringify(targetSections), 
-      subject, 
-      topic, 
+      cleanSubject, 
+      cleanTopic, 
       teacherId, 
       teacherName, 
       steps.length, 
@@ -2222,14 +2629,14 @@ app.post('/api/teacher/upload-module-mixed', authenticateToken, bulkUpload.array
         `, [
           student.id,
           'New Module Available',
-          `${teacherName} published "${topic}" with ${pdfFiles.length} PDFs and ${videoFiles.length} videos. Start learning now!`,
+          `${teacherName} published "${cleanTopic}" with ${pdfFiles.length} PDFs and ${videoFiles.length} videos. Start learning now!`,
           `/learning/${moduleId}`,
           JSON.stringify({
             module_id: moduleId,
-            module_title: topic,
+            module_title: cleanTopic,
             teacher_name: teacherName,
             sections: targetSections,
-            subject: subject,
+            subject: cleanSubject,
             step_count: steps.length,
             pdf_count: pdfFiles.length,
             video_count: videoFiles.length,
@@ -2482,34 +2889,19 @@ app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
     const { section, sections, subject, topic, steps } = req.body;
     const teacherId = req.user.id;
 
-    if (!subject || typeof subject !== 'string' || subject.trim().length < 1) {
-      return res.status(400).json({ error: "Subject is required" });
-    }
-    if (subject.trim().length > 60) {
-      return res.status(400).json({ error: "Subject too long (max 60 characters)" });
-    }
-    if (!topic || typeof topic !== 'string' || topic.trim().length < 1) {
-      return res.status(400).json({ error: "Topic title is required" });
-    }
-    if (topic.trim().length > 100) {
-      return res.status(400).json({ error: "Topic title too long (max 100 characters)" });
-    }
-    if (!steps || !Array.isArray(steps) || steps.length === 0) {
-      return res.status(400).json({ error: "At least one step is required" });
-    }
-    if (steps.length > MAX_STEPS) {
-      return res.status(400).json({ error: `Too many steps (max ${MAX_STEPS})` });
-    }
+    const subjectResult = requireText(subject, 'Subject', 60);
+    if (subjectResult.error) return res.status(400).json({ error: subjectResult.error });
+    const topicResult = requireText(topic, 'Topic title', 100);
+    if (topicResult.error) return res.status(400).json({ error: topicResult.error });
+    const sectionResult = normalizeSectionList(sections, section);
+    if (sectionResult.error) return res.status(400).json({ error: sectionResult.error });
+    const stepsResult = validateModuleSteps(steps);
+    if (stepsResult.error) return res.status(400).json({ error: stepsResult.error });
 
-    // Support both single section and multiple sections
-    // If sections array is provided, use it. Otherwise use single section
-    const targetSections = sections && Array.isArray(sections) && sections.length > 0 
-      ? sections 
-      : (section ? [section] : []);
-    
-    if (targetSections.length === 0) {
-      return res.status(400).json({ error: "At least one section is required" });
-    }
+    const cleanSubject = subjectResult.value;
+    const cleanTopic = topicResult.value;
+    const targetSections = sectionResult.value;
+    const cleanSteps = stepsResult.value;
 
     // Get teacher name for display
     const teacherResult = await pool.query('SELECT name FROM teachers WHERE id = $1', [teacherId]);
@@ -2522,7 +2914,7 @@ app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
       RETURNING id
     `;
-    const values = [targetSections[0], JSON.stringify(targetSections), subject, topic, teacherId, teacherName, steps.length, JSON.stringify(steps)];
+    const values = [targetSections[0], JSON.stringify(targetSections), cleanSubject, cleanTopic, teacherId, teacherName, cleanSteps.length, JSON.stringify(cleanSteps)];
     
     const result = await pool.query(query, values);
     const moduleId = result.rows[0].id;
@@ -2546,15 +2938,15 @@ app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
         `, [
           student.id,
           'New Module Available',
-          `${teacherName} published "${topic}". Start learning now!`,
+          `${teacherName} published "${cleanTopic}". Start learning now!`,
           `/learning/${moduleId}`,
           JSON.stringify({
             module_id: moduleId,
-            module_title: topic,
+            module_title: cleanTopic,
             teacher_name: teacherName,
             sections: targetSections,
-            subject: subject,
-            step_count: steps.length
+            subject: cleanSubject,
+            step_count: cleanSteps.length
           })
         ]);
       }
@@ -2569,10 +2961,10 @@ app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
           (student) => ({
             student_name: student.name,
             section: targetSections.join(', '),
-            topic_title: topic,
-            subject: subject,
+            topic_title: cleanTopic,
+            subject: cleanSubject,
             teacher_name: teacherName,
-            step_count: steps.length
+            step_count: cleanSteps.length
           }),
           { module_id: moduleId, teacher_id: teacherId }
         );
@@ -2667,10 +3059,21 @@ app.put('/api/teacher/module/:moduleId', authenticateToken, async (req, res) => 
     const moduleId = req.params.moduleId;
     const { topic, subject, steps, section, sections } = req.body;
     const teacherId = req.user.id;
+
+    if (!isPositiveInt(moduleId)) {
+      return res.status(400).json({ error: 'Invalid module ID' });
+    }
+
+    const topicResult = requireText(topic, 'Topic title', 100);
+    if (topicResult.error) return res.status(400).json({ error: topicResult.error });
+    const subjectResult = requireText(subject, 'Subject', 60);
+    if (subjectResult.error) return res.status(400).json({ error: subjectResult.error });
+    const stepsResult = validateModuleSteps(steps);
+    if (stepsResult.error) return res.status(400).json({ error: stepsResult.error });
     
     // Verify teacher owns this module
     const checkOwner = await pool.query(
-      'SELECT id FROM modules WHERE id = $1 AND teacher_id = $2',
+      'SELECT id, section, sections FROM modules WHERE id = $1 AND teacher_id = $2',
       [moduleId, teacherId]
     );
     
@@ -2678,13 +3081,11 @@ app.put('/api/teacher/module/:moduleId', authenticateToken, async (req, res) => 
       return res.status(403).json({ error: "Not authorized to edit this module" });
     }
     
-    // Handle sections - support both single section and multiple sections array
-    let sectionsArray = [];
-    if (sections && Array.isArray(sections)) {
-      sectionsArray = sections;
-    } else if (section) {
-      sectionsArray = [section];
-    }
+    const sectionResult = normalizeSectionList(sections, section || checkOwner.rows[0].section);
+    if (sectionResult.error) return res.status(400).json({ error: sectionResult.error });
+
+    const sectionsArray = sectionResult.value;
+    const cleanSteps = stepsResult.value;
     
     // Update module with sections support
     const query = `
@@ -2699,9 +3100,14 @@ app.put('/api/teacher/module/:moduleId', authenticateToken, async (req, res) => 
       RETURNING id
     `;
     const primarySection = sectionsArray.length > 0 ? sectionsArray[0] : (section || '');
-    const params = [topic, subject, JSON.stringify(steps), steps.length, primarySection, JSON.stringify(sectionsArray), moduleId];
+    const params = [topicResult.value, subjectResult.value, JSON.stringify(cleanSteps), cleanSteps.length, primarySection, JSON.stringify(sectionsArray), moduleId];
     
     await pool.query(query, params);
+
+    const oldSections = parseMaybeJsonArray(checkOwner.rows[0].sections);
+    if (oldSections.length === 0 && checkOwner.rows[0].section) oldSections.push(checkOwner.rows[0].section);
+    [...new Set([...oldSections, ...sectionsArray])].forEach((s) => cache.invalidate(`modules_section_${String(s).toLowerCase()}`));
+
     res.json({ success: true, message: "Module updated successfully", sections: sectionsArray });
   } catch (err) {
     console.error("Module Update Error:", err);
@@ -2716,6 +3122,10 @@ app.put('/api/teacher/module/:moduleId/section', authenticateToken, async (req, 
     const { section, sections } = req.body;
     const teacherId = req.user.id;
     
+    if (!isPositiveInt(moduleId)) {
+      return res.status(400).json({ error: 'Invalid module ID' });
+    }
+
     // Verify teacher owns this module
     const checkOwner = await pool.query(
       'SELECT id FROM modules WHERE id = $1 AND teacher_id = $2',
@@ -2726,15 +3136,11 @@ app.put('/api/teacher/module/:moduleId/section', authenticateToken, async (req, 
       return res.status(403).json({ error: "Not authorized to edit this module" });
     }
     
-    // Handle sections - support both single section and multiple sections array
-    let sectionsArray = [];
-    if (sections && Array.isArray(sections)) {
-      sectionsArray = sections;
-    } else if (section) {
-      sectionsArray = [section];
-    }
+    const sectionResult = normalizeSectionList(sections, section);
+    if (sectionResult.error) return res.status(400).json({ error: sectionResult.error });
     
-    const primarySection = sectionsArray.length > 0 ? sectionsArray[0] : '';
+    const sectionsArray = sectionResult.value;
+    const primarySection = sectionsArray[0];
     
     await pool.query(
       'UPDATE modules SET section = $1, sections = $2 WHERE id = $3', 
@@ -3315,7 +3721,7 @@ app.get('/api/teacher/module/:moduleId/coding-submissions', authenticateToken, a
 });
 
 // NEW ENDPOINT: Execute code without saving (for "Run" button)
-app.post('/api/student/execute-code', authenticateToken, async (req, res) => {
+app.post('/api/student/execute-code', authenticateToken, codeExecutionLimiter, async (req, res) => {
     try {
         const { code, language, stdin } = req.body;
 
@@ -3349,7 +3755,7 @@ app.post('/api/student/execute-code', authenticateToken, async (req, res) => {
     }
 });
 
-app.post('/api/student/submit-code', authenticateToken, async (req, res) => {
+app.post('/api/student/submit-code', authenticateToken, codeExecutionLimiter, async (req, res) => {
     try {
         const { moduleId, code, language, testCases } = req.body;
         const studentId = req.user.id;
@@ -3381,8 +3787,13 @@ app.post('/api/student/submit-code', authenticateToken, async (req, res) => {
           `SELECT m.id, m.steps FROM modules m
            JOIN students s ON s.id = $2
            WHERE m.id = $1 AND (
-             UPPER(TRIM(m.section)) = UPPER(TRIM(s.class_dept || ' ' || s.section))
-             OR m.sections @> to_jsonb(UPPER(TRIM(s.class_dept || ' ' || s.section)))::jsonb
+             UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) =
+               UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s.class_dept || ' ' || s.section, '[-_]', ' ', 'g'), ' +', ' ', 'g')))
+             OR EXISTS (
+               SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.sections, '[]'::jsonb)) AS sec
+               WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(sec, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) =
+                 UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s.class_dept || ' ' || s.section, '[-_]', ' ', 'g'), ' +', ' ', 'g')))
+             )
            )`,
           [moduleId, studentId]
         );
@@ -3483,27 +3894,32 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
     if (!cleanTitle) {
       return res.status(400).json({ error: "Test title is required" });
     }
-    if (cleanTitle.length < 3 || cleanTitle.length > 200) {
-      return res.status(400).json({ error: "Test title must be between 3 and 200 characters" });
+    if (cleanTitle.length > 200) {
+      return res.status(400).json({ error: "Test title too long (max 200 characters)" });
     }
-    if (!questions || !Array.isArray(questions) || questions.length === 0) {
-      return res.status(400).json({ error: "At least one question is required" });
-    }
-    if (questions.length > MAX_QUESTIONS) {
-      return res.status(400).json({ error: `Too many questions (max ${MAX_QUESTIONS})` });
+    let cleanQuestions;
+    try {
+      const questionResult = validateMcqQuestions(questions);
+      if (questionResult.error) return res.status(400).json({ error: questionResult.error });
+      cleanQuestions = questionResult.value;
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
     }
     if (!deadline) {
       return res.status(400).json({ error: "Deadline is required" });
     }
-
-    // Support both single section and multiple sections
-    const targetSections = sections && Array.isArray(sections) && sections.length > 0 
-      ? sections 
-      : (section ? [section] : []);
-    
-    if (targetSections.length === 0) {
-      return res.status(400).json({ error: "At least one section is required" });
+    const startDate = start_date ? new Date(start_date) : new Date();
+    const deadlineDate = new Date(deadline);
+    if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(deadlineDate.getTime())) {
+      return res.status(400).json({ error: "Invalid start date or deadline" });
     }
+    if (deadlineDate <= startDate) {
+      return res.status(400).json({ error: "Deadline must be after start date" });
+    }
+
+    const sectionResult = normalizeSectionList(sections, section);
+    if (sectionResult.error) return res.status(400).json({ error: sectionResult.error });
+    const targetSections = sectionResult.value;
     
     // Get teacher name
     const teacherResult = await pool.query('SELECT name FROM teachers WHERE id = $1', [teacher_id]);
@@ -3518,7 +3934,7 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
     
     const result = await pool.query(query, [
       teacher_id, teacher_name, targetSections[0], JSON.stringify(targetSections), cleanTitle, cleanDescription,
-      JSON.stringify(questions), questions.length, start_date, deadline
+      JSON.stringify(cleanQuestions), cleanQuestions.length, startDate.toISOString(), deadlineDate.toISOString()
     ]);
     
     const test = result.rows[0];
@@ -3551,7 +3967,7 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
             sections: targetSections,
             start_date: start_date,
             deadline: deadline,
-            total_questions: questions.length
+            total_questions: cleanQuestions.length
           })
         ]);
       }
@@ -3568,9 +3984,9 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
             section: targetSections.join(', '),
             test_title: cleanTitle,
             description: cleanDescription,
-            total_questions: questions.length,
-            start_date: start_date,
-            deadline: deadline
+            total_questions: cleanQuestions.length,
+            start_date: startDate.toISOString(),
+            deadline: deadlineDate.toISOString()
           }),
           { test_id: test.id, teacher_id: teacher_id }
         );
@@ -3585,7 +4001,7 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error("Test Creation Error:", err);
     if (err.code === '23514' && err.constraint === 'chk_title_length') {
-      return res.status(400).json({ error: "Test title must be between 3 and 200 characters" });
+      return res.status(400).json({ error: "Test title is required and must be 200 characters or fewer" });
     }
     res.status(500).json({ error: "Failed to create test: " + err.message });
   }
@@ -3644,6 +4060,29 @@ app.put('/api/teacher/test/:testId', authenticateToken, async (req, res) => {
     const testId = req.params.testId;
     const { title, description, questions, section, sections, start_date, deadline } = req.body;
     const teacherId = req.user.id;
+
+    if (!isPositiveInt(testId)) {
+      return res.status(400).json({ error: 'Invalid test ID' });
+    }
+    const cleanTitle = cleanText(title, 200);
+    if (!cleanTitle) return res.status(400).json({ error: 'Test title is required' });
+    const cleanDescription = cleanText(description || '', 2000);
+    let cleanQuestions;
+    try {
+      const questionResult = validateMcqQuestions(questions);
+      if (questionResult.error) return res.status(400).json({ error: questionResult.error });
+      cleanQuestions = questionResult.value;
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+    const startDate = start_date ? new Date(start_date) : new Date();
+    const deadlineDate = new Date(deadline);
+    if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(deadlineDate.getTime())) {
+      return res.status(400).json({ error: 'Invalid start date or deadline' });
+    }
+    if (deadlineDate <= startDate) {
+      return res.status(400).json({ error: 'Deadline must be after start date' });
+    }
     
     // Verify teacher owns this test
     const checkOwner = await pool.query(
@@ -3655,15 +4094,11 @@ app.put('/api/teacher/test/:testId', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: "Not authorized to edit this test" });
     }
     
-    // Handle sections - support both single section and multiple sections array
-    let sectionsArray = [];
-    if (sections && Array.isArray(sections)) {
-      sectionsArray = sections;
-    } else if (section) {
-      sectionsArray = [section];
-    }
+    const sectionResult = normalizeSectionList(sections, section);
+    if (sectionResult.error) return res.status(400).json({ error: sectionResult.error });
     
-    const primarySection = sectionsArray.length > 0 ? sectionsArray[0] : '';
+    const sectionsArray = sectionResult.value;
+    const primarySection = sectionsArray[0];
     
     // Update test
     const query = `
@@ -3681,14 +4116,14 @@ app.put('/api/teacher/test/:testId', authenticateToken, async (req, res) => {
     `;
     
     const params = [
-      title, 
-      description, 
-      JSON.stringify(questions), 
-      questions.length, 
+      cleanTitle, 
+      cleanDescription, 
+      JSON.stringify(cleanQuestions), 
+      cleanQuestions.length, 
       primarySection, 
       JSON.stringify(sectionsArray),
-      start_date,
-      deadline,
+      startDate.toISOString(),
+      deadlineDate.toISOString(),
       testId
     ];
     
@@ -3706,6 +4141,10 @@ app.put('/api/teacher/test/:testId/section', authenticateToken, async (req, res)
     const testId = req.params.testId;
     const { section, sections } = req.body;
     const teacherId = req.user.id;
+
+    if (!isPositiveInt(testId)) {
+      return res.status(400).json({ error: 'Invalid test ID' });
+    }
     
     // Verify teacher owns this test
     const checkOwner = await pool.query(
@@ -3717,15 +4156,10 @@ app.put('/api/teacher/test/:testId/section', authenticateToken, async (req, res)
       return res.status(403).json({ error: "Not authorized to edit this test" });
     }
     
-    // Handle sections - support both single section and multiple sections array
-    let sectionsArray = [];
-    if (sections && Array.isArray(sections)) {
-      sectionsArray = sections;
-    } else if (section) {
-      sectionsArray = [section];
-    }
-    
-    const primarySection = sectionsArray.length > 0 ? sectionsArray[0] : '';
+    const sectionResult = normalizeSectionList(sections, section);
+    if (sectionResult.error) return res.status(400).json({ error: sectionResult.error });
+    const sectionsArray = sectionResult.value;
+    const primarySection = sectionsArray[0];
     
     await pool.query(
       'UPDATE mcq_tests SET section = $1, sections = $2 WHERE id = $3', 
@@ -3901,10 +4335,6 @@ app.post('/api/student/test/submit', authenticateToken, async (req, res) => {
     const { test_id, answers, time_taken } = req.body;
     const student_id = req.user.id;
     
-    console.log("=== TEST SUBMISSION DEBUG ===");
-    console.log("Test ID:", test_id);
-    console.log("Student Answers:", answers);
-    
     // Get student info
     const studentResult = await pool.query(
       'SELECT name, reg_no FROM students WHERE id = $1',
@@ -3928,40 +4358,40 @@ app.post('/api/student/test/submit', authenticateToken, async (req, res) => {
     }
     
     const { questions, total_questions, deadline } = testResult.rows[0];
-    console.log("Test Questions:", questions);
+    const parsedQuestions = parseMaybeJson(questions, []);
+    const submittedAnswers = parseMaybeJson(answers, {});
+    if (!Array.isArray(parsedQuestions) || parsedQuestions.length === 0) {
+      return res.status(400).json({ error: "Test has no valid questions" });
+    }
+    if (!submittedAnswers || typeof submittedAnswers !== 'object' || Array.isArray(submittedAnswers)) {
+      return res.status(400).json({ error: "Answers must be an object keyed by question number" });
+    }
     
     // CALCULATE SCORE IN BACKEND (more reliable than SQL trigger)
     let correct_count = 0;
     
-    for (let i = 0; i < questions.length; i++) {
-      const question = questions[i];
-      const studentAnswer = answers[i.toString()]; // answers is {"0": 1, "1": 2, ...} (index-based)
+    for (let i = 0; i < parsedQuestions.length; i++) {
+      const question = parsedQuestions[i];
+      const studentAnswer = submittedAnswers[i.toString()]; // answers is {"0": "A", "1": "B", ...}
       // Support both 'correct' and 'correctAnswer' field names
       const correctAnswer = question.correct !== undefined ? question.correct : question.correctAnswer;
-      
-      console.log(`Q${i}: Student="${studentAnswer}" vs Correct="${correctAnswer}"`);
-      
+
       // Compare as numbers or strings (case-insensitive for strings)
       const studentVal = typeof studentAnswer === 'number' ? studentAnswer : String(studentAnswer || '').toUpperCase().trim();
       const correctVal = typeof correctAnswer === 'number' ? correctAnswer : String(correctAnswer || '').toUpperCase().trim();
       
       if (studentVal === correctVal) {
         correct_count++;
-        console.log(`  [MATCH]`);
-      } else {
-        console.log(`  [NO MATCH]`);
       }
     }
     
     const score = correct_count;
-    const percentage = total_questions > 0 ? ((correct_count / total_questions) * 100).toFixed(2) : 0;
+    const totalQuestions = Number(total_questions) || parsedQuestions.length;
+    const percentage = totalQuestions > 0 ? ((correct_count / totalQuestions) * 100).toFixed(2) : 0;
     
     // Check if late submission
     const isLate = new Date() > new Date(deadline);
     const status = isLate ? 'late' : 'completed';
-    
-    console.log(`Final Score: ${score}/${total_questions} = ${percentage}%`);
-    console.log("=== END DEBUG ===");
     
     // Insert submission with calculated score
     const query = `

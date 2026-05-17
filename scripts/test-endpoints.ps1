@@ -225,14 +225,6 @@ function Get-TokenFromLogin {
 }
 
 function Resolve-AdminPassword {
-    $overridePath = Join-Path $RepoRoot 'backend\data\admin-password.txt'
-    if (Test-Path -LiteralPath $overridePath) {
-        $override = (Get-Content -LiteralPath $overridePath -Raw).Trim()
-        if (-not [string]::IsNullOrWhiteSpace($override)) {
-            return $override
-        }
-    }
-
     $envPath = Join-Path $RepoRoot '.env'
     if (Test-Path -LiteralPath $envPath) {
         $line = Get-Content -LiteralPath $envPath | Where-Object { $_ -match '^ADMIN_PASSWORD=' } | Select-Object -First 1
@@ -241,7 +233,7 @@ function Resolve-AdminPassword {
         }
     }
 
-    return 'admin123'
+    throw "Admin password was not supplied and ADMIN_PASSWORD was not found in .env. Re-run with -AdminPassword."
 }
 
 $tempFiles = @()

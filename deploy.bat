@@ -43,15 +43,20 @@ echo [SUCCESS] Docker Compose installed
 
 REM Check if .env exists
 if not exist .env (
-    echo [WARNING] .env file not found. Creating default...
+    echo [WARNING] .env file not found. Creating from template...
+    if exist .env.example (
+        copy .env.example .env >nul
+        echo [INFO] Created .env from .env.example. Run setup.ps1 for generated secrets before production use.
+        goto env_done
+    )
     (
         echo # Database
-        echo DB_PASSWORD=CHANGEME
+        echo DB_PASSWORD=replace-with-generated-db-password
         echo.
-        echo # Authentication - CHANGE THESE BEFORE FIRST USE
-        echo JWT_SECRET=CHANGEME
+        echo # Authentication
+        echo JWT_SECRET=replace-with-generated-jwt-secret
         echo ADMIN_EMAIL=admin@classroom.local
-        echo ADMIN_PASSWORD=CHANGEME
+        echo ADMIN_PASSWORD=replace-with-generated-admin-password
         echo.
         echo # Email Configuration
         echo SMTP_HOST=mailhog
@@ -64,8 +69,9 @@ if not exist .env (
         echo # Jitsi Configuration
         echo JITSI_PUBLIC_URL=https://localhost:8443
         echo DOCKER_HOST_ADDRESS=127.0.0.1
-        echo JICOFO_AUTH_PASSWORD=jicofopassword
-        echo JVB_AUTH_PASSWORD=jvbpassword
+        echo JICOFO_AUTH_PASSWORD=replace-with-generated-jicofo-password
+        echo JICOFO_COMPONENT_SECRET=replace-with-generated-jicofo-secret
+        echo JVB_AUTH_PASSWORD=replace-with-generated-jvb-password
         echo.
         echo # Production Settings
         echo GITHUB_REPOSITORY=susclass/sustainable-classroom
@@ -75,6 +81,7 @@ if not exist .env (
 ) else (
     echo [SUCCESS] .env file exists
 )
+:env_done
 
 echo.
 echo [INFO] Starting Docker deployment...

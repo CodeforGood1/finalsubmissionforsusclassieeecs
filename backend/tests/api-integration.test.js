@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 // Mock setup
 jest.mock('nodemailer', () => ({
   createTransport: jest.fn(() => ({
+    verify: jest.fn().mockResolvedValue(true),
     sendMail: jest.fn().mockResolvedValue({ messageId: 'test-message-id' })
   }))
 }));
@@ -28,7 +29,7 @@ let db;
 let app;
 const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-testing-only';
 const ADMIN_EMAIL = 'admin@test.com';
-const ADMIN_PASSWORD = 'admin123';
+const ADMIN_PASSWORD = 'test-admin-password-123';
 
 beforeAll(async () => {
   // Set test environment variables
@@ -251,10 +252,39 @@ beforeAll(async () => {
           // Just return success, no actual tracking in test DB
           return { rows: [{ track_module_access: 1 }], rowCount: 1 };
         }
+
+        if (/^\s*ALTER TABLE\b/i.test(query) && /\bCONSTRAINT\b/i.test(query)) {
+          return { rows: [], rowCount: 0 };
+        }
+
+        if (/^\s*CREATE OR REPLACE VIEW\b/i.test(query)) {
+          return { rows: [], rowCount: 0 };
+        }
         
-        // Handle PostgreSQL-specific section access check with @> jsonb operator
-        if (query.includes('@>') && query.includes('to_jsonb') && query.includes('modules m')) {
+        // Handle PostgreSQL-specific section access checks that use JSONB functions
+        if (query.includes('modules m') && query.includes('JOIN students s') && query.includes('jsonb_array_elements_text')) {
           // Simplified access check for SQLite: just check section match
+          const sqliteParams = params.map(p => {
+            if (p instanceof Date) return p.toISOString();
+            if (typeof p === 'boolean') return p ? 1 : 0;
+            if (typeof p === 'object' && p !== null) return JSON.stringify(p);
+            return p;
+          });
+          try {
+            const stmt = db.prepare(`SELECT m.id FROM modules m
+              JOIN students s ON s.id = ?
+              WHERE m.id = ? AND (
+                UPPER(TRIM(m.section)) = UPPER(TRIM(COALESCE(s.class_dept,'') || ' ' || COALESCE(s.section,'')))
+              )`);
+            const rows = stmt.all(sqliteParams[1], sqliteParams[0]);
+            return { rows, rowCount: rows.length };
+          } catch (e) {
+            return { rows: [], rowCount: 0 };
+          }
+        }
+
+        if (query.includes('@>') && query.includes('to_jsonb') && query.includes('modules m')) {
+          // Simplified access check for older PostgreSQL JSONB containment queries
           const sqliteParams = params.map(p => {
             if (p instanceof Date) return p.toISOString();
             if (typeof p === 'boolean') return p ? 1 : 0;
@@ -277,10 +307,12 @@ beforeAll(async () => {
         // Convert PostgreSQL syntax to SQLite
         let sqliteQuery = query
           .replace(/\$(\d+)/g, '?')
+          .replace(/\bSERIAL PRIMARY KEY\b/g, 'INTEGER PRIMARY KEY AUTOINCREMENT')
           .replace(/RETURNING \*/g, '')
           .replace(/RETURNING id/g, '')
           .replace(/NOW\(\)/g, "datetime('now')")
           .replace(/CURRENT_TIMESTAMP/g, "datetime('now')")
+          .replace(/DEFAULT datetime\('now'\)/g, 'DEFAULT CURRENT_TIMESTAMP')
           .replace(/CURRENT_DATE - INTERVAL '30 days'/g, "date('now', '-30 days')")
           .replace(/::jsonb/g, '')
           .replace(/::json/g, '')
@@ -355,6 +387,7 @@ beforeAll(async () => {
   // Now require the app (after mocks are set up)
   delete require.cache[require.resolve('../server.js')];
   app = require('../server.js');
+  await app.locals.databaseReady;
 });
 
 afterAll(() => {

@@ -8,6 +8,17 @@ import DashboardSidebar from '../components/DashboardSidebar';
 import PageTitle from '../components/PageTitle';
 import API_BASE_URL from '../config/api';
 
+const toLocalDateTimeInputValue = (date = new Date()) => {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+};
+
+const isPastDateTime = (value) => {
+  if (!value) return false;
+  const selected = new Date(value);
+  return Number.isFinite(selected.getTime()) && selected.getTime() < Date.now() - 60000;
+};
+
 function TeacherDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('students');
@@ -36,6 +47,7 @@ function TeacherDashboard() {
     start_date: '',
     deadline: ''
   });
+  const [minDateTime, setMinDateTime] = useState(toLocalDateTimeInputValue());
   const [questions, setQuestions] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState({
     question: '',
@@ -248,6 +260,13 @@ const fetchTeacherProfile = useCallback(async () => {
   useEffect(() => {
     fetchStudents();
   }, [selectedSection, fetchStudents]);
+
+  useEffect(() => {
+    const updateMinDateTime = () => setMinDateTime(toLocalDateTimeInputValue());
+    updateMinDateTime();
+    const timer = setInterval(updateMinDateTime, 60000);
+    return () => clearInterval(timer);
+  }, []);
   
   // Fetch tests when Tests tab is active
   const fetchTests = useCallback(async () => {
@@ -385,13 +404,18 @@ const fetchTeacherProfile = useCallback(async () => {
       return;
     }
 
-    if (cleanTitle.length < 3 || cleanTitle.length > 200) {
-      alert("Test title must be between 3 and 200 characters");
+    if (cleanTitle.length > 200) {
+      alert("Test title must be 200 characters or fewer");
       return;
     }
     
     if (!testForm.start_date || !testForm.deadline) {
       alert("Please select both start date and deadline");
+      return;
+    }
+
+    if (isPastDateTime(testForm.start_date) || isPastDateTime(testForm.deadline)) {
+      alert("Start date and deadline cannot be in the past");
       return;
     }
     
@@ -400,8 +424,8 @@ const fetchTeacherProfile = useCallback(async () => {
       return;
     }
     
-    if (questions.length < 5) {
-      alert("Please add at least 5 questions to create a test");
+    if (questions.length < 1) {
+      alert("Please add at least 1 question to create a test");
       return;
     }
 
@@ -915,11 +939,11 @@ const fetchTeacherProfile = useCallback(async () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-xs font-bold text-slate-600 mb-2 block">Start Date & Time</label>
-                      <input type="datetime-local" className="w-full p-4 bg-slate-50 rounded-xl font-bold" value={testForm.start_date} onChange={e => setTestForm({...testForm, start_date: e.target.value})} />
+                      <input type="datetime-local" min={minDateTime} className="w-full p-4 bg-slate-50 rounded-xl font-bold" value={testForm.start_date} onChange={e => setTestForm({...testForm, start_date: e.target.value, deadline: testForm.deadline && new Date(testForm.deadline) <= new Date(e.target.value) ? '' : testForm.deadline})} />
                     </div>
                     <div>
                       <label className="text-xs font-bold text-slate-600 mb-2 block">Deadline (End Date & Time)</label>
-                      <input type="datetime-local" className="w-full p-4 bg-slate-50 rounded-xl font-bold" value={testForm.deadline} onChange={e => setTestForm({...testForm, deadline: e.target.value})} />
+                      <input type="datetime-local" min={testForm.start_date || minDateTime} className="w-full p-4 bg-slate-50 rounded-xl font-bold" value={testForm.deadline} onChange={e => setTestForm({...testForm, deadline: e.target.value})} />
                     </div>
                   </div>
                   
@@ -1054,7 +1078,7 @@ const fetchTeacherProfile = useCallback(async () => {
                     <div className="mt-6 space-y-2">
                       <div className="flex justify-between items-center mb-3 p-3 bg-emerald-50 rounded-xl">
                         <span className="text-sm font-bold text-emerald-700">
-                          {questions.length} question{questions.length !== 1 ? 's' : ''} added - {questions.length >= 5 ? 'Ready to create test' : `Add ${5 - questions.length} more (minimum 5 required)`}
+                          {questions.length} question{questions.length !== 1 ? 's' : ''} added - {questions.length >= 1 ? 'Ready to create test' : 'Add 1 question'}
                         </span>
                         <button
                           onClick={() => {
@@ -1106,14 +1130,14 @@ const fetchTeacherProfile = useCallback(async () => {
                       !testForm.title.trim() || 
                       !testForm.start_date || 
                       !testForm.deadline || 
-                      questions.length < 5 || 
+                      questions.length < 1 || 
                       selectedSectionsForTest.length === 0
                     }
                     className={`flex-1 p-4 rounded-xl font-black uppercase text-xs transition-all ${
                       !testForm.title.trim() || 
                       !testForm.start_date || 
                       !testForm.deadline || 
-                      questions.length < 5 || 
+                      questions.length < 1 || 
                       selectedSectionsForTest.length === 0
                         ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
                         : 'bg-slate-900 text-white hover:bg-slate-800 cursor-pointer'
@@ -1225,7 +1249,7 @@ const fetchTeacherProfile = useCallback(async () => {
                           ))}
                         </div>
                       ) : (
-                        <div className="h-32 flex items-center justify-center text-slate-300 text-sm italic">
+                        <div className="h-32 flex items-center justify-center text-slate-300 text-sm">
                           Select a department first
                         </div>
                       )}
@@ -1252,7 +1276,7 @@ const fetchTeacherProfile = useCallback(async () => {
                           </div>
                         </div>
                       ) : (
-                        <div className="h-32 flex items-center justify-center text-slate-300 text-sm italic">
+                        <div className="h-32 flex items-center justify-center text-slate-300 text-sm">
                           Make selections to see summary
                         </div>
                       )}
@@ -1313,7 +1337,7 @@ const fetchTeacherProfile = useCallback(async () => {
                           </div>
                         </div>
                       ) : (
-                        <div className="h-32 flex items-center justify-center text-slate-300 text-sm italic">
+                        <div className="h-32 flex items-center justify-center text-slate-300 text-sm">
                           Select a subject to see classes
                         </div>
                       )}

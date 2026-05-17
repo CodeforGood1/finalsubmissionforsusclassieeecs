@@ -29,6 +29,18 @@ const DEFAULT_TIMEOUT_MS = 5000;
 let activeExecutions = 0;
 const MAX_CONCURRENT = 10;
 
+function tryAcquireExecutionSlot() {
+  if (activeExecutions >= MAX_CONCURRENT) {
+    return false;
+  }
+  activeExecutions += 1;
+  return true;
+}
+
+function releaseExecutionSlot() {
+  activeExecutions = Math.max(0, activeExecutions - 1);
+}
+
 /**
  * Execute code locally with enforced sandboxing
  * @param {string} code - Source code to execute
@@ -53,10 +65,9 @@ async function executeCode(code, language, stdin = '', limits = {}) {
   }
 
   // --- Concurrency guard ---
-  if (activeExecutions >= MAX_CONCURRENT) {
+  if (!tryAcquireExecutionSlot()) {
     return { stdout: '', stderr: 'Server busy — too many concurrent executions. Try again shortly.', error: true };
   }
-  activeExecutions++;
 
   // Clamp user-supplied limits to hard ceilings
   const timeoutMs = Math.min(
@@ -72,7 +83,7 @@ async function executeCode(code, language, stdin = '', limits = {}) {
   const tempDir = path.join(TMP_DIR, sessionId);
 
   const cleanup = () => {
-    activeExecutions--;
+    releaseExecutionSlot();
     try {
       if (fs.existsSync(tempDir)) {
         fs.rmSync(tempDir, { recursive: true, force: true });
@@ -108,10 +119,10 @@ async function executeCode(code, language, stdin = '', limits = {}) {
       case 'java': {
         const classMatch = code.match(/public\s+class\s+(\w+)/);
         const className = classMatch ? classMatch[1] : 'Main';
-        // Sanitize class name to prevent path traversal
-        if (!/^[A-Za-z_]\w{0,63}$/.test(className)) {
+        // Only support the class names used by LMS starter templates.
+        if (!['Main', 'Solution'].includes(className)) {
           cleanup();
-          return { stdout: '', stderr: 'Invalid Java class name', error: true };
+          return { stdout: '', stderr: 'Java class name must be Main or Solution', error: true };
         }
         sourceFile = path.join(tempDir, `${className}.java`);
         fs.writeFileSync(sourceFile, code);
@@ -164,6 +175,15 @@ function runProcess(cmd, args, cwd, timeoutMs, maxOutput, stdin = '') {
     let stdout = '';
     let stderr = '';
     let killed = false;
+    let settled = false;
+    let killTimer;
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (killTimer) clearTimeout(killTimer);
+      resolve(result);
+    };
 
     const child = spawn(cmd, args, {
       cwd,
@@ -204,18 +224,18 @@ function runProcess(cmd, args, cwd, timeoutMs, maxOutput, stdin = '') {
     });
 
     child.on('error', (err) => {
-      resolve({ stdout, stderr: err.message, error: true });
+      finish({ stdout, stderr: err.message, error: true });
     });
 
     child.on('close', (exitCode, signal) => {
       if (signal === 'SIGTERM' || signal === 'SIGKILL' || killed) {
-        resolve({
+        finish({
           stdout: stdout.slice(0, 500),
-          stderr: `Execution terminated — exceeded time (${timeoutMs / 1000}s) or output limit`,
+          stderr: `Execution terminated - exceeded time (${timeoutMs / 1000}s) or output limit`,
           error: true,
         });
       } else {
-        resolve({
+        finish({
           stdout: stdout || '',
           stderr: stderr || '',
           error: exitCode !== 0,
@@ -230,12 +250,15 @@ function runProcess(cmd, args, cwd, timeoutMs, maxOutput, stdin = '') {
     child.stdin.end();
 
     // Safety kill after timeout (in case 'timeout' option doesn't fire)
-    setTimeout(() => {
+    killTimer = setTimeout(() => {
       if (!child.killed) {
         killed = true;
         killTree(child);
       }
     }, timeoutMs + 1000);
+    if (typeof killTimer.unref === 'function') {
+      killTimer.unref();
+    }
   });
 }
 
@@ -244,7 +267,11 @@ function killTree(child) {
   try {
     if (os.platform() === 'win32') {
       // On Windows, use taskkill to kill the process tree
-      spawn('taskkill', ['/pid', child.pid.toString(), '/T', '/F'], { stdio: 'ignore' });
+      const killer = spawn('taskkill', ['/pid', child.pid.toString(), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true
+      });
+      if (typeof killer.unref === 'function') killer.unref();
     } else {
       // On Unix, kill the process group
       process.kill(-child.pid, 'SIGKILL');

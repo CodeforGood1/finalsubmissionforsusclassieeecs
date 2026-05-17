@@ -171,7 +171,7 @@ function Courses() {
             <h3 className="section-label mb-4">Browse by Subject</h3>
             
             {loading ? (
-              <div className="py-20 text-center text-slate-400 font-medium italic animate-pulse">
+              <div className="py-20 text-center text-slate-400 font-medium animate-pulse">
                 Loading your subjects...
               </div>
             ) : subjectGroups.length > 0 ? (

@@ -3,10 +3,12 @@
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 // Email queue for offline/retry scenarios
 const emailQueue = [];
 const EMAIL_QUEUE_FILE = path.join(__dirname, 'data', 'email-queue.json');
+const EMAIL_QUEUE_VERSION = 'enc-v1';
 
 // Ensure data directory exists
 const ensureDataDir = () => {
@@ -14,6 +16,41 @@ const ensureDataDir = () => {
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }
+};
+
+const getQueueEncryptionKey = () => {
+  const secret = process.env.EMAIL_QUEUE_SECRET || process.env.JWT_SECRET || 'local-email-queue-development-key';
+  return crypto.createHash('sha256').update(secret).digest();
+};
+
+const encryptQueuePayload = (payload) => {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', getQueueEncryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(JSON.stringify(payload), 'utf8'), cipher.final()]);
+  return {
+    version: EMAIL_QUEUE_VERSION,
+    iv: iv.toString('base64'),
+    tag: cipher.getAuthTag().toString('base64'),
+    data: encrypted.toString('base64')
+  };
+};
+
+const decryptQueuePayload = (payload) => {
+  if (!payload || payload.version !== EMAIL_QUEUE_VERSION) {
+    return Array.isArray(payload) ? payload : [];
+  }
+
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    getQueueEncryptionKey(),
+    Buffer.from(payload.iv, 'base64')
+  );
+  decipher.setAuthTag(Buffer.from(payload.tag, 'base64'));
+  const decrypted = Buffer.concat([
+    decipher.update(Buffer.from(payload.data, 'base64')),
+    decipher.final()
+  ]).toString('utf8');
+  return JSON.parse(decrypted);
 };
 
 // Create transporter based on environment
@@ -44,6 +81,7 @@ const createTransporter = () => {
 };
 
 let transporter = null;
+let queueTimer = null;
 
 // Initialize email service
 const initializeEmailService = () => {
@@ -65,7 +103,12 @@ const initializeEmailService = () => {
     loadEmailQueue();
     
     // Process queue periodically
-    setInterval(processEmailQueue, 60000); // Every minute
+    if (!queueTimer) {
+      queueTimer = setInterval(processEmailQueue, 60000); // Every minute
+      if (typeof queueTimer.unref === 'function') {
+        queueTimer.unref();
+      }
+    }
     
   } catch (err) {
     console.error('[LOCAL EMAIL] Failed to initialize:', err.message);
@@ -230,7 +273,7 @@ const processEmailQueue = async () => {
 const saveEmailQueue = () => {
   try {
     ensureDataDir();
-    fs.writeFileSync(EMAIL_QUEUE_FILE, JSON.stringify(emailQueue, null, 2));
+    fs.writeFileSync(EMAIL_QUEUE_FILE, JSON.stringify(encryptQueuePayload(emailQueue), null, 2), { mode: 0o600 });
   } catch (err) {
     console.error('[LOCAL EMAIL] Failed to save queue:', err.message);
   }
@@ -241,7 +284,7 @@ const loadEmailQueue = () => {
   try {
     if (fs.existsSync(EMAIL_QUEUE_FILE)) {
       const data = fs.readFileSync(EMAIL_QUEUE_FILE, 'utf8');
-      const loaded = JSON.parse(data);
+      const loaded = decryptQueuePayload(JSON.parse(data));
       emailQueue.push(...loaded);
       console.log(`[LOCAL EMAIL] Loaded ${loaded.length} queued emails`);
     }

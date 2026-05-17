@@ -219,7 +219,7 @@ function VideoLearning() {
             {/* WELLBEING WIDGET */}
             <div className="p-6 rounded-2xl bg-amber-50/50 border border-amber-100">
                <h4 className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-2">Wellbeing Tip</h4>
-               <p className="text-xs text-amber-800/70 italic leading-relaxed">
+               <p className="text-xs text-amber-800/70 leading-relaxed">
                  Finished a video? Rest your eyes by looking at something 20 feet away for 20 seconds.
                </p>
             </div>

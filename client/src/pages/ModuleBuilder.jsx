@@ -2,6 +2,18 @@ import React, { useState, useEffect, useCallback } from 'react';
 import API_BASE_URL from '../config/api';
 
 const JITSI_URL = (import.meta.env.VITE_JITSI_SERVER_URL || 'https://localhost:8443').replace(/\/+$/, '');
+const EMPTY_MCQ = { question: '', a: '', b: '', c: '', d: '', correct: 'A' };
+
+const toLocalDateTimeInputValue = (date = new Date()) => {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+};
+
+const isPastDateTime = (value) => {
+  if (!value) return false;
+  const selected = new Date(value);
+  return Number.isFinite(selected.getTime()) && selected.getTime() < Date.now() - 60000;
+};
 
 function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
   // Debug logging
@@ -19,9 +31,11 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
   const [topicTitle, setTopicTitle] = useState("");
   const [contentType, setContentType] = useState("text");
   const [editingModuleId, setEditingModuleId] = useState(null);
+  const [editingStepIndex, setEditingStepIndex] = useState(null);
   const [targetSection, setTargetSection] = useState(selectedSection || ""); // Section for this module
   const [targetSubject, setTargetSubject] = useState(""); // Subject for this module
   const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [minDateTime, setMinDateTime] = useState(toLocalDateTimeInputValue());
   
   // Bulk module steps upload state (supports PDFs and videos)
   const [showBulkPdfModal, setShowBulkPdfModal] = useState(false);
@@ -53,7 +67,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
   const [textData, setTextData] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [videoFile, setVideoFile] = useState(null);
-  const [mcqData, setMcqData] = useState({ question: '', a: '', b: '', c: '', d: '', correct: 'A' });
+  const [mcqData, setMcqData] = useState(EMPTY_MCQ);
   const [codeStarter, setCodeStarter] = useState("// Write your solution code here");
   
   // Jitsi Live Video State
@@ -75,13 +89,20 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
     testCases: [{ id: 1, input: "", expected: "", isHidden: false }],
     allowedLanguages: ["java", "python", "javascript", "cpp"],
     timeLimit: 5000,
-    memoryLimit: 256
+    memoryLimit: 128
   });
 
   // Update targetSection when selectedSection changes
   useEffect(() => {
     if (selectedSection) setTargetSection(selectedSection);
   }, [selectedSection]);
+
+  useEffect(() => {
+    const updateMinDateTime = () => setMinDateTime(toLocalDateTimeInputValue());
+    updateMinDateTime();
+    const timer = setInterval(updateMinDateTime, 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   const fetchModules = useCallback(async () => {
     if (!authHeaders) return;
@@ -137,10 +158,34 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
     }
   };
 
+  const resetStepInputs = () => {
+    setTopicTitle("");
+    setTextData("");
+    setVideoUrl("");
+    setVideoFile(null);
+    setMcqData(EMPTY_MCQ);
+    setJitsiData({ roomName: "", scheduledTime: "", duration: 60 });
+    setEditingStepIndex(null);
+    setCodingProblem({
+      description: "",
+      starterCode: {
+        java: "import java.util.*;\n\npublic class Solution {\n  public static void main(String[] args) {\n    Scanner in = new Scanner(System.in);\n    // Write your code here\n  }\n}",
+        python: "# Write your solution here\n",
+        javascript: "// Write your solution here\n",
+        cpp: "#include <iostream>\nusing namespace std;\n\nint main() {\n  // Write your code here\n  return 0;\n}"
+      },
+      testCases: [{ id: 1, input: "", expected: "", isHidden: false }],
+      allowedLanguages: ["java", "python", "javascript", "cpp"],
+      timeLimit: 5000,
+      memoryLimit: 128
+    });
+  };
+
   const addStepToQueue = async () => {
-    if (!topicTitle) return alert("Please enter a Topic Header first.");
+    const cleanTopicTitle = topicTitle.trim();
+    if (!cleanTopicTitle) return alert("Please enter a Topic Header first.");
     
-    console.log("Adding step:", contentType, "Topic:", topicTitle);
+    console.log("Adding step:", contentType, "Topic:", cleanTopicTitle);
     
     let stepData;
     
@@ -158,28 +203,38 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
       }
     } else if (contentType === 'jitsi') {
       // Validate Jitsi live video
-      if (!jitsiData.roomName) return alert("Please provide a room name for the live session");
+      const roomName = jitsiData.roomName.trim().replace(/\s+/g, '-').toLowerCase();
+      if (!roomName) return alert("Please provide a room name for the live session");
       if (!jitsiData.scheduledTime) return alert("Please set a scheduled time for the live session");
+      if (isPastDateTime(jitsiData.scheduledTime)) return alert("Live sessions cannot be scheduled in the past");
       stepData = {
-        roomName: jitsiData.roomName.replace(/\s+/g, '-').toLowerCase(),
+        roomName,
         scheduledTime: jitsiData.scheduledTime,
         duration: jitsiData.duration,
-        meetingUrl: `${JITSI_URL}/${jitsiData.roomName.replace(/\s+/g, '-').toLowerCase()}`
+        meetingUrl: `${JITSI_URL}/${roomName}`
       };
     } else if (contentType === 'mcq') {
       // Validate MCQ
-      if (!mcqData.question) return alert("Please add a question");
-      if (!mcqData.a || !mcqData.b || !mcqData.c || !mcqData.d) return alert("Please fill all answer options");
-      stepData = mcqData;
+      const cleanMcq = {
+        question: mcqData.question.trim(),
+        a: mcqData.a.trim(),
+        b: mcqData.b.trim(),
+        c: mcqData.c.trim(),
+        d: mcqData.d.trim(),
+        correct: mcqData.correct
+      };
+      if (!cleanMcq.question) return alert("Please add a question");
+      if (!cleanMcq.a || !cleanMcq.b || !cleanMcq.c || !cleanMcq.d) return alert("Please fill all answer options");
+      stepData = cleanMcq;
     } else if (contentType === 'coding') {
       // Validate coding problem
-      if (!codingProblem.description) return alert("Please add a problem description");
+      if (!codingProblem.description.trim()) return alert("Please add a problem description");
       // Test cases are optional - if provided, expected output is required
       const filledTestCases = codingProblem.testCases.filter(tc => tc.input || tc.expected);
       if (filledTestCases.length > 0 && filledTestCases.some(tc => !tc.expected)) {
         return alert("Test cases with input must have an expected output");
       }
-      stepData = codingProblem;
+      stepData = { ...codingProblem, description: codingProblem.description.trim() };
     } else if (contentType === 'code') {
       // Code example - don't require content, use default starter code
       stepData = codeStarter || "// Write your code here";
@@ -188,32 +243,22 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
       stepData = textData || "Sample text content";
     }
 
-    const newStep = { type: contentType, header: topicTitle, data: stepData, id: Date.now() };
+    const newStep = {
+      type: contentType,
+      header: cleanTopicTitle,
+      data: stepData,
+      id: editingStepIndex !== null ? moduleQueue[editingStepIndex]?.id || Date.now() : Date.now()
+    };
     console.log("Adding step to queue:", newStep);
-    setModuleQueue([...moduleQueue, newStep]);
+    if (editingStepIndex !== null) {
+      setModuleQueue(moduleQueue.map((step, idx) => idx === editingStepIndex ? newStep : step));
+    } else {
+      setModuleQueue([...moduleQueue, newStep]);
+    }
     
-    alert("Step added to module! Add more steps or publish the full module.");
+    alert(editingStepIndex !== null ? "Step updated!" : "Step added to module!");
     
-    // Reset inputs but keep topic title if user wants to add more steps to same topic
-    setTopicTitle(""); // Clear topic title too so they enter new one for next step
-    setTextData(""); 
-    setVideoUrl(""); 
-    setVideoFile(null);
-    setMcqData({ question: '', a: '', b: '', c: '', d: '', correct: 'A' });
-    setJitsiData({ roomName: "", scheduledTime: "", duration: 60 });
-    setCodingProblem({
-      description: "",
-      starterCode: {
-        java: "import java.util.*;\n\npublic class Solution {\n  public static void main(String[] args) {\n    Scanner in = new Scanner(System.in);\n    // Write your code here\n  }\n}",
-        python: "# Write your solution here\n",
-        javascript: "// Write your solution here\n",
-        cpp: "#include <iostream>\nusing namespace std;\n\nint main() {\n  // Write your code here\n  return 0;\n}"
-      },
-      testCases: [{ id: 1, input: "", expected: "", isHidden: false }],
-      allowedLanguages: ["java", "python", "javascript", "cpp"],
-      timeLimit: 5000,
-      memoryLimit: 256
-    });
+    resetStepInputs();
   };
 
   const handleUploadFullModule = async () => {
@@ -225,8 +270,10 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
       console.log("ERROR: Roadmap is empty!");
       return alert("Roadmap is empty! Please add at least one step first.");
     }
-    if (!targetSection) return alert("Please select a section for this module!");
-    if (!targetSubject) return alert("Please select a subject for this module!");
+    const cleanTargetSection = targetSection.trim();
+    const cleanTargetSubject = targetSubject.trim();
+    if (!cleanTargetSection) return alert("Please select a section for this module!");
+    if (!cleanTargetSubject) return alert("Please select a subject for this module!");
     
     try {
       const url = editingModuleId 
@@ -239,9 +286,10 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
         method,
         headers: authHeaders(),
         body: JSON.stringify({ 
-            section: targetSection,
-            subject: targetSubject,
-            topic: moduleQueue[0].header, 
+            section: cleanTargetSection,
+            sections: [cleanTargetSection],
+            subject: cleanTargetSubject,
+            topic: moduleQueue[0].header?.trim(), 
             steps: moduleQueue 
         })
       });
@@ -253,8 +301,10 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
         setModuleQueue([]); 
         setIsBuilding(false); 
         setEditingModuleId(null);
+        setEditingStepIndex(null);
         setTargetSection(selectedSection || "");
         setTargetSubject("");
+        resetStepInputs();
         fetchModules();
       } else {
         console.error("Upload error:", data);
@@ -273,9 +323,14 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
       });
       const module = await res.json();
       
-      setTopicTitle(module.topic_title);
-      setModuleQueue(module.steps);
+      const parsedSteps = typeof module.steps === 'string' ? JSON.parse(module.steps || '[]') : (module.steps || []);
+      setTopicTitle("");
+      setModuleQueue(parsedSteps.map((step, index) => ({
+        ...step,
+        id: step.id || `${moduleId}-${index}-${Date.now()}`
+      })));
       setEditingModuleId(moduleId);
+      setEditingStepIndex(null);
       // Also load section and subject for editing
       setTargetSection(module.section || '');
       setTargetSubject(module.subject || '');
@@ -284,6 +339,49 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
       console.error("Error loading module for editing:", err);
       alert("Failed to load module for editing");
     }
+  };
+
+  const handleEditQueuedStep = (index) => {
+    const step = moduleQueue[index];
+    if (!step) return;
+
+    if (!['text', 'video', 'jitsi', 'mcq', 'coding', 'code'].includes(step.type)) {
+      setModuleQueue(moduleQueue.map((item, idx) => idx === index ? { ...item, header: prompt('Step title', item.header) || item.header } : item));
+      return;
+    }
+
+    setEditingStepIndex(index);
+    setContentType(step.type);
+    setTopicTitle(step.header || "");
+
+    if (step.type === 'text') {
+      setTextData(typeof step.data === 'string' ? step.data : "");
+    } else if (step.type === 'video') {
+      setVideoUrl(typeof step.data === 'string' ? step.data : "");
+      setVideoFile(null);
+    } else if (step.type === 'jitsi') {
+      setJitsiData({
+        roomName: step.data?.roomName || "",
+        scheduledTime: step.data?.scheduledTime || "",
+        duration: step.data?.duration || 60
+      });
+    } else if (step.type === 'mcq') {
+      setMcqData({ ...EMPTY_MCQ, ...(step.data || {}) });
+    } else if (step.type === 'coding') {
+      setCodingProblem({
+        ...codingProblem,
+        ...(step.data || {}),
+        testCases: step.data?.testCases?.length ? step.data.testCases : [{ id: 1, input: "", expected: "", isHidden: false }]
+      });
+    } else if (step.type === 'code') {
+      setCodeStarter(typeof step.data === 'string' ? step.data : "");
+    }
+  };
+
+  const handleRemoveQueuedStep = (index) => {
+    if (!confirm("Remove this step from the module?")) return;
+    setModuleQueue(moduleQueue.filter((_, idx) => idx !== index));
+    if (editingStepIndex === index) resetStepInputs();
   };
 
   const handleDeleteModule = async (moduleId) => {
@@ -590,7 +688,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                 Custom Bulk Upload
               </button>
               <button 
-                onClick={() => setIsBuilding(true)} 
+                onClick={() => { setEditingModuleId(null); setModuleQueue([]); resetStepInputs(); setIsBuilding(true); }} 
                 className="bg-emerald-500 text-white px-4 py-2.5 rounded-full font-black text-[10px] uppercase shadow-lg hover:bg-emerald-600 transition-colors"
               >
                 Create New Module
@@ -806,6 +904,7 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
                       <input 
                         type="datetime-local" 
                         className="w-full p-4 bg-slate-50 rounded-xl border-2 border-indigo-300"
+                        min={minDateTime}
                         value={jitsiData.scheduledTime}
                         onChange={e => setJitsiData({...jitsiData, scheduledTime: e.target.value})}
                       />
@@ -1029,8 +1128,13 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
 
               <div className="flex gap-4">
                 <button onClick={addStepToQueue} disabled={uploadingVideo} className="flex-1 bg-emerald-100 text-emerald-700 p-6 rounded-2xl font-black uppercase text-xs hover:bg-emerald-200 disabled:opacity-50">
-                  {uploadingVideo ? 'Uploading...' : 'Add Step to Queue'}
+                  {uploadingVideo ? 'Uploading...' : editingStepIndex !== null ? 'Update Step' : 'Add Step to Queue'}
                 </button>
+                {editingStepIndex !== null && (
+                  <button onClick={resetStepInputs} className="px-6 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-xs hover:bg-slate-200">
+                    Cancel Step Edit
+                  </button>
+                )}
                 <button 
                   onClick={() => {
                     console.log("Publish button clicked - moduleQueue:", moduleQueue);
@@ -1067,13 +1171,32 @@ function ModuleBuilder({ selectedSection, authHeaders, allocatedSections }) {
              )}
              <div className="space-y-3">
               {moduleQueue.map((s, i) => (
-                  <div key={s.id} className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                  <div key={s.id || i} className={`p-4 bg-white/5 rounded-2xl border ${editingStepIndex === i ? 'border-emerald-400' : 'border-white/10'}`}>
                       <p className="text-[10px] text-emerald-500 font-black uppercase">{s.type}</p>
                       <p className="text-xs font-bold truncate">{i+1}. {s.header}</p>
+                      {s.type === 'mcq' && s.data?.question && (
+                        <p className="mt-2 truncate text-[10px] text-slate-300">{s.data.question}</p>
+                      )}
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleEditQueuedStep(i)}
+                          className="flex-1 rounded-lg bg-white/10 px-2 py-2 text-[9px] font-black uppercase text-white hover:bg-white/20"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveQueuedStep(i)}
+                          className="flex-1 rounded-lg bg-red-500/20 px-2 py-2 text-[9px] font-black uppercase text-red-200 hover:bg-red-500/30"
+                        >
+                          Remove
+                        </button>
+                      </div>
                   </div>
               ))}
              </div>
-             <button onClick={() => {setIsBuilding(false); setModuleQueue([]); setEditingModuleId(null);}} className="w-full mt-6 text-red-500 text-[10px] font-black uppercase p-4">Discard</button>
+             <button onClick={() => {setIsBuilding(false); setModuleQueue([]); setEditingModuleId(null); resetStepInputs();}} className="w-full mt-6 text-red-500 text-[10px] font-black uppercase p-4">Discard</button>
           </div>
         </div>
       )}

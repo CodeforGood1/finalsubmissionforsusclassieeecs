@@ -15,10 +15,10 @@ services:
     container_name: lms-db
     environment:
       POSTGRES_USER: ${DB_USER:-lms_admin}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-CHANGEME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
       POSTGRES_DB: ${DB_NAME:-sustainable_classroom}
     ports:
-      - "5432:5432"
+      - "${HOST_POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_local:/var/lib/postgresql/data
       # Auto-initialize schema
@@ -39,8 +39,8 @@ services:
     image: mailhog/mailhog:latest
     container_name: lms-mail
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "${HOST_SMTP_PORT:-1025}:1025"
+      - "${HOST_MAILHOG_WEB_PORT:-8025}:8025"
     networks:
       - lms-local
 
@@ -51,7 +51,7 @@ services:
     image: jitsi/web:stable-8719
     container_name: lms-jitsi-web
     ports:
-      - "8443:443"
+      - "${HOST_JITSI_HTTPS_PORT:-8443}:443"
     environment:
       - ENABLE_AUTH=0
       - ENABLE_GUESTS=1
@@ -91,10 +91,10 @@ services:
       - ENABLE_LOBBY=1
       - ENABLE_XMPP_WEBSOCKET=1
       - JICOFO_AUTH_USER=focus
-      - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD:-CHANGEME}
-      - JICOFO_COMPONENT_SECRET=${JICOFO_COMPONENT_SECRET:-CHANGEME}
+      - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD:?Set JICOFO_AUTH_PASSWORD in .env}
+      - JICOFO_COMPONENT_SECRET=${JICOFO_COMPONENT_SECRET:?Set JICOFO_COMPONENT_SECRET in .env}
       - JVB_AUTH_USER=jvb
-      - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD:-CHANGEME}
+      - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD:?Set JVB_AUTH_PASSWORD in .env}
       - PUBLIC_URL=https://localhost:8443
       - TZ=UTC
       - XMPP_AUTH_DOMAIN=auth.meet.jitsi
@@ -121,8 +121,8 @@ services:
       - ENABLE_AUTH=0
       - ENABLE_AUTO_OWNER=1
       - JICOFO_AUTH_USER=focus
-      - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD:-CHANGEME}
-      - JICOFO_COMPONENT_SECRET=${JICOFO_COMPONENT_SECRET:-CHANGEME}
+      - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD:?Set JICOFO_AUTH_PASSWORD in .env}
+      - JICOFO_COMPONENT_SECRET=${JICOFO_COMPONENT_SECRET:?Set JICOFO_COMPONENT_SECRET in .env}
       - TZ=UTC
       - XMPP_AUTH_DOMAIN=auth.meet.jitsi
       - XMPP_DOMAIN=meet.jitsi
@@ -141,12 +141,12 @@ services:
     image: jitsi/jvb:stable-8719
     container_name: lms-jitsi-jvb
     ports:
-      - "10000:10000/udp"
-      - "4443:4443"
+      - "${HOST_JITSI_JVB_UDP_PORT:-10000}:10000/udp"
+      - "${HOST_JITSI_COLIBRI_PORT:-4443}:4443"
     environment:
       - DOCKER_HOST_ADDRESS=127.0.0.1
       - JVB_AUTH_USER=jvb
-      - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD:-CHANGEME}
+      - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD:?Set JVB_AUTH_PASSWORD in .env}
       - JVB_BREWERY_MUC=jvbbrewery
       - JVB_PORT=10000
       - JVB_STUN_SERVERS=stun.l.google.com:19302,stun1.l.google.com:19302

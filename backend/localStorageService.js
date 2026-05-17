@@ -27,15 +27,17 @@ const ensureUploadDirs = () => {
   return UPLOAD_BASE_DIR;
 };
 
-// Generate unique filename with timestamp and random string
+const EXTENSION_ALLOWLIST = new Set([
+  '.jpg', '.jpeg', '.png', '.gif', '.webp',
+  '.mp4', '.webm', '.mov', '.avi', '.mkv',
+  '.pdf', '.csv', '.doc', '.docx'
+]);
+
+// Generate unique filename using only server-side random data.
 const generateFilename = (originalname) => {
-  const timestamp = Date.now();
-  const randomString = crypto.randomBytes(8).toString('hex');
-  const ext = path.extname(originalname).toLowerCase();
-  const baseName = path.basename(originalname, ext)
-    .replace(/[^a-zA-Z0-9]/g, '-')
-    .substring(0, 50);
-  return `${timestamp}-${randomString}-${baseName}${ext}`;
+  const ext = path.extname(originalname || '').toLowerCase();
+  const safeExt = EXTENSION_ALLOWLIST.has(ext) ? ext : '';
+  return `${Date.now()}-${crypto.randomBytes(16).toString('hex')}${safeExt}`;
 };
 
 // Allowed file types
@@ -94,15 +96,40 @@ const createUploader = (options = {}) => {
 // Default uploader instance
 const upload = createUploader();
 
+const sanitizeStoredFilename = (filename) => {
+  const cleanName = path.basename(filename || '');
+  const newRandomName = /^[0-9]+-[a-f0-9]{32}\.[a-z0-9]+$/i;
+  const legacyRandomName = /^[0-9]+-[a-f0-9]{16}(?:-[a-zA-Z0-9-]{1,50})?\.[a-z0-9]+$/i;
+  if (!newRandomName.test(cleanName) && !legacyRandomName.test(cleanName)) {
+    throw new Error('Invalid filename');
+  }
+  return cleanName;
+};
+
+const sanitizeStorageType = (type = 'images') => {
+  if (!['images', 'videos', 'documents', 'temp'].includes(type)) {
+    throw new Error('Invalid storage type');
+  }
+  return type;
+};
+
 // Get public URL for a file
 const getFileUrl = (filename, type = 'images') => {
   // Returns relative URL that will be served by Express or nginx
-  return `/uploads/${type}/${filename}`;
+  return `/uploads/${sanitizeStorageType(type)}/${sanitizeStoredFilename(filename)}`;
 };
 
 // Get absolute file path
 const getFilePath = (filename, type = 'images') => {
-  return path.join(UPLOAD_BASE_DIR, type, filename);
+  const safeType = sanitizeStorageType(type);
+  const safeName = sanitizeStoredFilename(filename);
+  const filePath = path.join(UPLOAD_BASE_DIR, safeType, safeName);
+  const resolvedBase = path.resolve(UPLOAD_BASE_DIR, safeType);
+  const resolvedFile = path.resolve(filePath);
+  if (!resolvedFile.startsWith(resolvedBase + path.sep)) {
+    throw new Error('Invalid file path');
+  }
+  return resolvedFile;
 };
 
 // Delete file
@@ -247,6 +274,8 @@ module.exports = {
   listFiles,
   getDiskUsage,
   generateFilename,
+  sanitizeStoredFilename,
+  sanitizeStorageType,
   UPLOAD_BASE_DIR,
   ALLOWED_IMAGE_TYPES,
   ALLOWED_VIDEO_TYPES,

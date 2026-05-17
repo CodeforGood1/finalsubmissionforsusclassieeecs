@@ -48,6 +48,7 @@ DROP TABLE IF EXISTS mcq_tests CASCADE;
 DROP TABLE IF EXISTS modules CASCADE;
 DROP TABLE IF EXISTS students CASCADE;
 DROP TABLE IF EXISTS teachers CASCADE;
+DROP TABLE IF EXISTS admin_accounts CASCADE;
 
 DO $$ 
 BEGIN
@@ -62,6 +63,17 @@ DO $$
 BEGIN
     RAISE NOTICE 'Step 2: Creating core tables...';
 END $$;
+
+-- Table 0: ADMIN_ACCOUNTS
+CREATE TABLE admin_accounts (
+    id SERIAL PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_admin_email_format CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
+);
 
 -- Table 1: TEACHERS
 CREATE TABLE teachers (
@@ -80,7 +92,7 @@ CREATE TABLE teachers (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     CONSTRAINT chk_email_format CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
-    CONSTRAINT chk_name_length CHECK (char_length(name) >= 2)
+    CONSTRAINT chk_name_length CHECK (char_length(name) >= 1)
 );
 
 -- Table 2: STUDENTS
@@ -100,7 +112,7 @@ CREATE TABLE students (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     CONSTRAINT chk_email_format CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
-    CONSTRAINT chk_name_length CHECK (char_length(name) >= 2)
+    CONSTRAINT chk_name_length CHECK (char_length(name) >= 1)
 );
 
 -- Table 3: MODULES
@@ -156,7 +168,7 @@ CREATE TABLE mcq_tests (
     CONSTRAINT chk_total_questions CHECK (total_questions > 0 AND total_questions <= 200),
     CONSTRAINT chk_deadline CHECK (deadline > start_date),
     CONSTRAINT chk_questions_array CHECK (jsonb_typeof(questions) = 'array'),
-    CONSTRAINT chk_title_length CHECK (char_length(title) >= 3 AND char_length(title) <= 200)
+    CONSTRAINT chk_title_length CHECK (char_length(title) >= 1 AND char_length(title) <= 200)
 );
 
 -- Table 5: TEST_SUBMISSIONS (Student test results)
