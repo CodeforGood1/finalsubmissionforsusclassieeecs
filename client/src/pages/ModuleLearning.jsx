@@ -38,6 +38,7 @@ function ModuleLearning() {
   const [codeSubmitted, setCodeSubmitted] = useState(false);
   const [codeResults, setCodeResults] = useState(null);
   const [customInput, setCustomInput] = useState('');
+  const [reportingModule, setReportingModule] = useState(false);
 
   const langMap = {
     java: { name: "java", version: "15.0.2" },
@@ -230,6 +231,37 @@ function ModuleLearning() {
     }
   };
 
+  const handleReportModule = async () => {
+    if (reportingModule) return;
+    const reason = window.prompt('Report this module', 'Content issue or unsafe material');
+    if (!reason || !reason.trim()) return;
+
+    setReportingModule(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/reports`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          targetType: 'module',
+          targetId: moduleId,
+          reason: reason.trim(),
+          details: currentStep ? `Step ${currentStepIndex + 1}: ${currentStep.step_header || currentStep.step_type || 'content'}` : '',
+          stepIndex: currentStepIndex
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to report module');
+      alert('Report submitted.');
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setReportingModule(false);
+    }
+  };
+
   const handleNext = async () => {
     // Mark current step as complete
     try {
@@ -316,7 +348,20 @@ function ModuleLearning() {
 
       <main className="max-w-6xl mx-auto p-6">
         {/* Module Title */}
-        <h1 className="text-2xl font-bold text-slate-800 mb-6">{module?.topic_title || 'Learning Module'}</h1>
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-2xl font-bold text-slate-800">{module?.topic_title || 'Learning Module'}</h1>
+          <button
+            type="button"
+            onClick={handleReportModule}
+            disabled={reportingModule}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50 disabled:opacity-50"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v4m0 4h.01M5.07 19h13.86a2 2 0 001.74-2.99L13.74 4a2 2 0 00-3.48 0L3.33 16.01A2 2 0 005.07 19z" />
+            </svg>
+            {reportingModule ? 'Reporting' : 'Report Module'}
+          </button>
+        </div>
 
         {/* Step Navigation */}
         <div className="flex gap-2 mb-8 overflow-x-auto pb-2">

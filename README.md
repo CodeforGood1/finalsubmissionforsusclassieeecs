@@ -2,6 +2,8 @@
 
 Offline-first Learning Management System for schools. It supports admin, teacher, and student workflows; module creation; PDF/video content; MCQ tests; coding submissions; progress tracking; in-app notifications; email capture with MailHog; chat; and live sessions with self-hosted Jitsi.
 
+Students can report assigned modules and visible chat messages for admin review in the Admin Dashboard.
+
 ## 1. Directory Structure
 
 ```text
@@ -278,11 +280,11 @@ http://localhost:5173
 | Role | Email | Password |
 | --- | --- | --- |
 | Admin | `admin@classroom.local` | Printed by `setup.ps1` / `setup.sh` |
-| Teacher | `susclass.global+sarah.teacher@gmail.com` | `password123` |
-| Teacher | `susclass.global+emmanuel.teacher@gmail.com` | `password123` |
-| Student | `susclass.global+amara@gmail.com` | `student123` |
-| Student | `susclass.global+chidi@gmail.com` | `student123` |
-| Student | `susclass.global+seun@gmail.com` | `student123` |
+| Teacher | `susclass.global+sarah.teacher@gmail.com` | `Teacher@1234` |
+| Teacher | `susclass.global+emmanuel.teacher@gmail.com` | `Teacher@1234` |
+| Student | `susclass.global+amara@gmail.com` | `Student@1234` |
+| Student | `susclass.global+chidi@gmail.com` | `Student@1234` |
+| Student | `susclass.global+seun@gmail.com` | `Student@1234` |
 
 ## 8. Useful Local Commands
 

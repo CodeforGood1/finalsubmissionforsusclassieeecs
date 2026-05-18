@@ -34,6 +34,8 @@ const MAX_TEXT_CONTENT_SIZE = 20000;
 const MAX_RESOURCE_URL_SIZE = 2048;
 const MAX_SECTIONS_PER_ASSIGNMENT = 100;
 const VALID_STEP_TYPES = new Set(['text', 'video', 'pdf', 'jitsi', 'mcq', 'coding', 'code']);
+const REPORT_TARGET_TYPES = new Set(['chat_message', 'module']);
+const REPORT_STATUSES = new Set(['open', 'reviewing', 'resolved', 'dismissed']);
 
 function sanitizeRole(role) {
   const r = (role || 'student').toLowerCase().trim();
@@ -643,6 +645,7 @@ app.use((req, res, next) => {
     { pattern: /^\/api\/student\/execute-code$/, limit: 128 * 1024 },
     { pattern: /^\/api\/student\/submit-code$/, limit: 256 * 1024 },
     { pattern: /^\/api\/(login|verify-totp|password-reset\/request|password-reset\/confirm|admin\/login|admin\/change-password)$/, limit: 32 * 1024 },
+    { pattern: /^\/api\/reports(?:\/|$)/, limit: 64 * 1024 },
     { pattern: /^\/api\/teacher\/(upload-module|test\/create)$/, limit: 1024 * 1024 },
     { pattern: /^\/api\/teacher\/(module|test)\//, limit: 1024 * 1024 },
   ];
@@ -1016,6 +1019,28 @@ async function teacherCanAccessStudent(teacherId, studentId) {
   return Boolean(result.rows[0]?.can_access);
 }
 
+async function getStudentAccessibleModule(studentId, moduleId) {
+  if (!isPositiveInt(studentId) || !isPositiveInt(moduleId)) return null;
+  const result = await pool.query(
+    `SELECT m.id, m.topic_title, m.teacher_id, m.teacher_name, m.subject, m.section
+     FROM modules m
+     JOIN students s ON s.id = $2
+     WHERE m.id = $1 AND (
+       UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) =
+         UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s.class_dept || ' ' || s.section, '[-_]', ' ', 'g'), ' +', ' ', 'g')))
+       OR m.section = 'ALL'
+       OR EXISTS (
+         SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.sections, '[]'::jsonb)) AS sec
+         WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(sec, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) =
+           UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s.class_dept || ' ' || s.section, '[-_]', ' ', 'g'), ' +', ' ', 'g')))
+       )
+     )
+     LIMIT 1`,
+    [moduleId, studentId]
+  );
+  return result.rows[0] || null;
+}
+
 async function readAdminHashFromDisk() {
   try {
     if (fs.existsSync(ADMIN_PASSWORD_HASH_FILE)) {
@@ -1251,6 +1276,27 @@ const databaseReady = (async () => {
     await pool.query('CREATE INDEX IF NOT EXISTS idx_teacher_student_allocations_teacher ON teacher_student_allocations(teacher_id)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_teacher_student_allocations_student ON teacher_student_allocations(student_id)');
     console.log('teacher allocation tables ready');
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS content_reports (
+        id SERIAL PRIMARY KEY,
+        reporter_role VARCHAR(20) NOT NULL,
+        reporter_id INTEGER NOT NULL,
+        target_type VARCHAR(40) NOT NULL,
+        target_id INTEGER NOT NULL,
+        reason TEXT NOT NULL,
+        details TEXT,
+        status VARCHAR(20) NOT NULL DEFAULT 'open',
+        target_context JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        reviewed_at TIMESTAMP,
+        reviewed_by TEXT
+      )
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_content_reports_status_created ON content_reports(status, created_at DESC)');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_content_reports_target ON content_reports(target_type, target_id)');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_content_reports_reporter ON content_reports(reporter_role, reporter_id)');
+    console.log('content report table ready');
 
     await pool.query('ALTER TABLE teachers DROP CONSTRAINT IF EXISTS chk_name_length');
     await pool.query('ALTER TABLE teachers ADD CONSTRAINT chk_name_length CHECK (char_length(name) >= 1)');
@@ -3845,7 +3891,7 @@ app.get('/api/student/module/:moduleId', authenticateToken, async (req, res) => 
     const studentSection = `${class_dept} ${section}`.toUpperCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
     
     const result = await pool.query(
-      `SELECT steps FROM modules WHERE id = $1 AND (
+      `SELECT id, topic_title, subject, teacher_name, steps FROM modules WHERE id = $1 AND (
         UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) = $2
         OR section = 'ALL'
         OR EXISTS (
@@ -3875,6 +3921,10 @@ app.get('/api/student/module/:moduleId', authenticateToken, async (req, res) => 
     // Handle both old format (title/content) and new format (header/data)
     const formattedSteps = steps.map((step, index) => ({
       id: index + 1,
+      module_id: result.rows[0].id,
+      topic_title: result.rows[0].topic_title,
+      subject: result.rows[0].subject,
+      teacher_name: result.rows[0].teacher_name,
       step_type: step.type, // 'video', 'text', 'mcq', 'coding', 'jitsi', 'code', 'quiz', 'pdf'
       step_header: step.header || step.title, // Support both formats
       content: step.type === 'video' ? (step.data || step.content) : 
@@ -5412,6 +5462,169 @@ if (process.env.ENABLE_DEV_ENDPOINTS === 'true' || process.env.NODE_ENV !== 'pro
     }
   });
 }
+
+app.post('/api/reports', authenticateToken, async (req, res) => {
+  try {
+    const { targetType, targetId, reason, details, stepIndex } = req.body;
+    const normalizedTargetType = cleanText(targetType, 40).toLowerCase();
+    const cleanReason = cleanText(reason, 1000);
+    const cleanDetails = cleanText(details, 1000);
+
+    if (!REPORT_TARGET_TYPES.has(normalizedTargetType)) {
+      return res.status(400).json({ error: 'Invalid report target type' });
+    }
+    if (!isPositiveInt(targetId)) {
+      return res.status(400).json({ error: 'Invalid report target ID' });
+    }
+    if (!cleanReason) {
+      return res.status(400).json({ error: 'Report reason is required' });
+    }
+
+    const numericTargetId = parseInt(targetId, 10);
+    const context = {};
+
+    if (normalizedTargetType === 'module') {
+      if (req.user.role !== 'student') {
+        return res.status(403).json({ error: 'Only students can report modules' });
+      }
+      const module = await getStudentAccessibleModule(req.user.id, numericTargetId);
+      if (!module) {
+        return res.status(404).json({ error: 'Module not found or not assigned to you' });
+      }
+      context.module = {
+        id: module.id,
+        title: module.topic_title,
+        teacher_id: module.teacher_id,
+        teacher_name: module.teacher_name,
+        subject: module.subject,
+        section: module.section,
+        step_index: Number.isFinite(parseInt(stepIndex, 10)) ? parseInt(stepIndex, 10) : null
+      };
+    }
+
+    if (normalizedTargetType === 'chat_message') {
+      const messageResult = await pool.query(
+        `SELECT cm.id, cm.room_id, cm.sender_id, cm.sender_role, cm.sender_name, cm.message, cm.created_at
+         FROM chat_messages cm
+         JOIN chat_participants cp ON cp.room_id = cm.room_id
+         WHERE cm.id = $1
+           AND cp.user_id = $2
+           AND cp.user_role = $3
+           AND cm.is_deleted = FALSE
+         LIMIT 1`,
+        [numericTargetId, req.user.id, req.user.role]
+      );
+      const message = messageResult.rows[0];
+      if (!message) {
+        return res.status(404).json({ error: 'Message not found or not visible to you' });
+      }
+      if (message.sender_id === req.user.id && message.sender_role === req.user.role) {
+        return res.status(400).json({ error: 'You cannot report your own message' });
+      }
+      context.chat_message = {
+        id: message.id,
+        room_id: message.room_id,
+        sender_id: message.sender_id,
+        sender_role: message.sender_role,
+        sender_name: message.sender_name,
+        preview: cleanText(message.message, 500),
+        created_at: message.created_at
+      };
+    }
+
+    const result = await pool.query(
+      `INSERT INTO content_reports
+       (reporter_role, reporter_id, target_type, target_id, reason, details, target_context)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [
+        req.user.role,
+        req.user.id || 0,
+        normalizedTargetType,
+        numericTargetId,
+        cleanReason,
+        cleanDetails || null,
+        JSON.stringify(context)
+      ]
+    );
+
+    res.status(201).json({
+      success: true,
+      reportId: result.rows[0]?.id,
+      created_at: result.rows[0]?.created_at
+    });
+  } catch (err) {
+    console.error('Create content report error:', err);
+    res.status(500).json({ error: 'Failed to submit report' });
+  }
+});
+
+app.get('/api/admin/reports', authenticateToken, adminOnly, async (req, res) => {
+  try {
+    const status = cleanText(req.query.status || 'open', 20).toLowerCase();
+    const limit = Math.min(Math.max(parseInt(req.query.limit || '100', 10) || 100, 1), 200);
+    const params = [];
+    let where = '';
+
+    if (REPORT_STATUSES.has(status)) {
+      params.push(status);
+      where = 'WHERE status = $1';
+    }
+
+    params.push(limit);
+    const result = await pool.query(
+      `SELECT *
+       FROM content_reports
+       ${where}
+       ORDER BY created_at DESC
+       LIMIT $${params.length}`,
+      params
+    );
+
+    res.json(result.rows.map((row) => ({
+      ...row,
+      target_context: typeof row.target_context === 'string'
+        ? (() => {
+            try { return JSON.parse(row.target_context); } catch (_) { return {}; }
+          })()
+        : row.target_context
+    })));
+  } catch (err) {
+    console.error('List reports error:', err);
+    res.status(500).json({ error: 'Failed to load reports' });
+  }
+});
+
+app.patch('/api/admin/reports/:reportId', authenticateToken, adminOnly, async (req, res) => {
+  try {
+    const reportId = req.params.reportId;
+    const status = cleanText(req.body.status, 20).toLowerCase();
+
+    if (!isPositiveInt(reportId)) {
+      return res.status(400).json({ error: 'Invalid report ID' });
+    }
+    if (!REPORT_STATUSES.has(status)) {
+      return res.status(400).json({ error: 'Invalid report status' });
+    }
+
+    const result = await pool.query(
+      `UPDATE content_reports
+       SET status = $1, reviewed_at = CURRENT_TIMESTAMP, reviewed_by = $2
+       WHERE id = $3
+       RETURNING *`,
+      [status, req.user.email || 'admin', reportId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    res.json({ success: true, report: result.rows[0] });
+  } catch (err) {
+    console.error('Update report error:', err);
+    res.status(500).json({ error: 'Failed to update report' });
+  }
+});
 
 // Send deadline reminders for upcoming tests (can be called via cron job)
 app.post('/api/admin/send-deadline-reminders', authenticateToken, async (req, res) => {

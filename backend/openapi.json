@@ -152,6 +152,52 @@
         }
       }
     },
+    "/api/reports": {
+      "post": {
+        "summary": "Submit a content report for an assigned module or visible chat message",
+        "responses": {
+          "201": {
+            "description": "Report created"
+          },
+          "400": {
+            "description": "Invalid report"
+          },
+          "403": {
+            "description": "Reporter cannot access this target"
+          }
+        }
+      }
+    },
+    "/api/admin/reports": {
+      "get": {
+        "summary": "List content reports for admin review",
+        "responses": {
+          "200": {
+            "description": "Report list"
+          }
+        }
+      }
+    },
+    "/api/admin/reports/{reportId}": {
+      "patch": {
+        "summary": "Update content report review status",
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Report updated"
+          }
+        }
+      }
+    },
     "/api/teacher/upload-module": {
       "post": {
         "summary": "Create or publish a teacher module",

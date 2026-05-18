@@ -401,7 +401,7 @@ describe('Authentication & OTP', () => {
   let testStudent, testTeacher;
   
   beforeAll(async () => {
-    const hashedPass = await bcrypt.hash('password123', 10);
+    const hashedPass = await bcrypt.hash('Student@1234', 10);
     
     const insertStudent = db.prepare('INSERT INTO students (name, email, password, reg_no, section) VALUES (?, ?, ?, ?, ?)');
     const studentInfo = insertStudent.run('Test Student', 'student@test.com', hashedPass, 'REG001', 'A');
@@ -454,7 +454,7 @@ describe('Authentication & OTP', () => {
   test('POST /api/logout - revokes the current token server-side', async () => {
     const loginRes = await request(app)
       .post('/api/login')
-      .send({ email: testStudent.email, password: 'password123', role: 'student' });
+      .send({ email: testStudent.email, password: 'Student@1234', role: 'student' });
 
     expect(loginRes.status).toBe(200);
     const token = loginRes.body.token;
@@ -484,7 +484,7 @@ describe('Authentication & OTP', () => {
     
     const res = await request(app)
       .post('/api/login')
-      .send({ email: testStudent.email, password: 'password123', role: 'student' });
+      .send({ email: testStudent.email, password: 'Student@1234', role: 'student' });
     
     expect(res.status).toBe(200);
     expect(res.body.mfaRequired).toBe(true);
@@ -765,6 +765,82 @@ describe('Code Submission', () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.score).toBeDefined();
+  });
+});
+
+describe('Content Reports', () => {
+  let adminToken, studentToken, teacherToken, student, teacher;
+
+  beforeAll(() => {
+    student = db.prepare('SELECT id, email, class_dept, section FROM students WHERE class_dept IS NOT NULL LIMIT 1').get();
+    teacher = db.prepare('SELECT id, email, name FROM teachers LIMIT 1').get();
+    adminToken = jwt.sign({ email: ADMIN_EMAIL, role: 'admin' }, JWT_SECRET, { expiresIn: '1h' });
+    studentToken = jwt.sign({ id: student.id, email: student.email, role: 'student' }, JWT_SECRET);
+    teacherToken = jwt.sign({ id: teacher.id, email: teacher.email, role: 'teacher' }, JWT_SECRET);
+
+    const sectionStr = `${student.class_dept} ${student.section}`.trim().toUpperCase();
+    db.prepare(`INSERT OR REPLACE INTO modules (id, section, sections, subject, topic_title, teacher_id, teacher_name, step_count, steps)
+      VALUES (1001, ?, ?, 'Safety', 'Reportable Module', ?, ?, 1, '[]')`)
+      .run(sectionStr, JSON.stringify([sectionStr]), teacher.id, teacher.name);
+
+    db.prepare(`INSERT INTO chat_rooms (id, name, type) VALUES (1001, 'Report Test', 'direct')`).run();
+    db.prepare(`INSERT INTO chat_participants (room_id, user_id, user_role) VALUES (1001, ?, 'student')`).run(student.id);
+    db.prepare(`INSERT INTO chat_participants (room_id, user_id, user_role) VALUES (1001, ?, 'teacher')`).run(teacher.id);
+    db.prepare(`INSERT INTO chat_messages (id, room_id, sender_id, sender_role, sender_name, message)
+      VALUES (1001, 1001, ?, 'teacher', ?, 'Please review this message')`).run(teacher.id, teacher.name);
+  });
+
+  test('POST /api/reports - student reports an assigned module', async () => {
+    const res = await request(app)
+      .post('/api/reports')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        targetType: 'module',
+        targetId: 1001,
+        reason: 'Content issue',
+        details: 'Step 1'
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
+    expect(res.body.reportId).toBeDefined();
+  });
+
+  test('POST /api/reports - student reports a visible chat message', async () => {
+    const res = await request(app)
+      .post('/api/reports')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        targetType: 'chat_message',
+        targetId: 1001,
+        reason: 'Unsafe message'
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
+  });
+
+  test('POST /api/reports - rejects reporting own chat message', async () => {
+    const res = await request(app)
+      .post('/api/reports')
+      .set('Authorization', `Bearer ${teacherToken}`)
+      .send({
+        targetType: 'chat_message',
+        targetId: 1001,
+        reason: 'Own message'
+      });
+
+    expect(res.status).toBe(400);
+  });
+
+  test('GET /api/admin/reports - admin can review open reports', async () => {
+    const res = await request(app)
+      .get('/api/admin/reports')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBeGreaterThanOrEqual(2);
   });
 });
 

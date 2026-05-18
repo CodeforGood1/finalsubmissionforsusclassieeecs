@@ -55,6 +55,9 @@
     "socket.io": "^4.8.3",
     "speakeasy": "^2.0.0"
   },
+  "overrides": {
+    "ws": "8.20.1"
+  },
   "devDependencies": {
     "better-sqlite3": "^12.6.0",
     "jest": "^30.2.0",

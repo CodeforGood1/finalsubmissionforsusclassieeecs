@@ -19,22 +19,22 @@ const pool = new Pool({
 });
 
 const teachers = [
-  { name: 'Dr. Sarah Okonkwo', email: 'susclass.global+sarah.teacher@gmail.com', password: 'password123', staff_id: 'TCH001', dept: 'Science', sections: ['SS1 A', 'SS1 B', 'SS2 A'] },
-  { name: 'Mr. Emmanuel Adebayo', email: 'susclass.global+emmanuel.teacher@gmail.com', password: 'password123', staff_id: 'TCH002', dept: 'Mathematics', sections: ['SS1 A', 'SS1 B', 'SS2 A', 'SS2 B'] },
-  { name: 'Mrs. Fatima Bello', email: 'susclass.global+fatima.teacher@gmail.com', password: 'password123', staff_id: 'TCH003', dept: 'English', sections: ['SS1 A', 'SS1 B', 'SS2 A', 'SS2 B'] }
+  { name: 'Dr. Sarah Okonkwo', email: 'susclass.global+sarah.teacher@gmail.com', password: 'Teacher@1234', staff_id: 'TCH001', dept: 'Science', sections: ['SS1 A', 'SS1 B', 'SS2 A'] },
+  { name: 'Mr. Emmanuel Adebayo', email: 'susclass.global+emmanuel.teacher@gmail.com', password: 'Teacher@1234', staff_id: 'TCH002', dept: 'Mathematics', sections: ['SS1 A', 'SS1 B', 'SS2 A', 'SS2 B'] },
+  { name: 'Mrs. Fatima Bello', email: 'susclass.global+fatima.teacher@gmail.com', password: 'Teacher@1234', staff_id: 'TCH003', dept: 'English', sections: ['SS1 A', 'SS1 B', 'SS2 A', 'SS2 B'] }
 ];
 
 const students = [
-  { name: 'Amara Okafor', email: 'susclass.global+amara@gmail.com', password: 'student123', reg_no: 'STU2024001', class_dept: 'SS1', section: 'A' },
-  { name: 'Chidi Eze', email: 'susclass.global+chidi@gmail.com', password: 'student123', reg_no: 'STU2024002', class_dept: 'SS1', section: 'A' },
-  { name: 'Ngozi Uche', email: 'susclass.global+ngozi@gmail.com', password: 'student123', reg_no: 'STU2024003', class_dept: 'SS1', section: 'A' },
-  { name: 'Oluwaseun Bakare', email: 'susclass.global+seun@gmail.com', password: 'student123', reg_no: 'STU2024004', class_dept: 'SS1', section: 'B' },
-  { name: 'Aisha Mohammed', email: 'susclass.global+aisha@gmail.com', password: 'student123', reg_no: 'STU2024005', class_dept: 'SS1', section: 'B' },
-  { name: 'Kwame Asante', email: 'susclass.global+kwame@gmail.com', password: 'student123', reg_no: 'STU2024006', class_dept: 'SS2', section: 'A' },
-  { name: 'Zainab Ibrahim', email: 'susclass.global+zainab@gmail.com', password: 'student123', reg_no: 'STU2024007', class_dept: 'SS2', section: 'A' },
-  { name: 'Emeka Nwosu', email: 'susclass.global+emeka@gmail.com', password: 'student123', reg_no: 'STU2024008', class_dept: 'SS2', section: 'A' },
-  { name: 'Blessing Okoro', email: 'susclass.global+blessing@gmail.com', password: 'student123', reg_no: 'STU2024009', class_dept: 'SS2', section: 'B' },
-  { name: 'Tunde Adeyemi', email: 'susclass.global+tunde@gmail.com', password: 'student123', reg_no: 'STU2024010', class_dept: 'SS2', section: 'B' }
+  { name: 'Amara Okafor', email: 'susclass.global+amara@gmail.com', password: 'Student@1234', reg_no: 'STU2024001', class_dept: 'SS1', section: 'A' },
+  { name: 'Chidi Eze', email: 'susclass.global+chidi@gmail.com', password: 'Student@1234', reg_no: 'STU2024002', class_dept: 'SS1', section: 'A' },
+  { name: 'Ngozi Uche', email: 'susclass.global+ngozi@gmail.com', password: 'Student@1234', reg_no: 'STU2024003', class_dept: 'SS1', section: 'A' },
+  { name: 'Oluwaseun Bakare', email: 'susclass.global+seun@gmail.com', password: 'Student@1234', reg_no: 'STU2024004', class_dept: 'SS1', section: 'B' },
+  { name: 'Aisha Mohammed', email: 'susclass.global+aisha@gmail.com', password: 'Student@1234', reg_no: 'STU2024005', class_dept: 'SS1', section: 'B' },
+  { name: 'Kwame Asante', email: 'susclass.global+kwame@gmail.com', password: 'Student@1234', reg_no: 'STU2024006', class_dept: 'SS2', section: 'A' },
+  { name: 'Zainab Ibrahim', email: 'susclass.global+zainab@gmail.com', password: 'Student@1234', reg_no: 'STU2024007', class_dept: 'SS2', section: 'A' },
+  { name: 'Emeka Nwosu', email: 'susclass.global+emeka@gmail.com', password: 'Student@1234', reg_no: 'STU2024008', class_dept: 'SS2', section: 'A' },
+  { name: 'Blessing Okoro', email: 'susclass.global+blessing@gmail.com', password: 'Student@1234', reg_no: 'STU2024009', class_dept: 'SS2', section: 'B' },
+  { name: 'Tunde Adeyemi', email: 'susclass.global+tunde@gmail.com', password: 'Student@1234', reg_no: 'STU2024010', class_dept: 'SS2', section: 'B' }
 ];
 
 const modules = [
@@ -422,12 +422,12 @@ async function seed() {
     console.log('╠════════════════════════════════════════════════════════════════╣');
     console.log('║  LOGIN CREDENTIALS (emails viewable at http://localhost:8025)  ║');
     console.log('║                                                                ║');
-    console.log('║  TEACHERS (password: password123):                             ║');
+    console.log('║  TEACHERS (password: Teacher@1234):                            ║');
     console.log('║    • susclass.global+sarah.teacher@gmail.com                   ║');
     console.log('║    • susclass.global+emmanuel.teacher@gmail.com                ║');
     console.log('║    • susclass.global+fatima.teacher@gmail.com                  ║');
     console.log('║                                                                ║');
-    console.log('║  STUDENTS (password: student123):                              ║');
+    console.log('║  STUDENTS (password: Student@1234):                            ║');
     console.log('║    • susclass.global+amara@gmail.com (SS1 A)                   ║');
     console.log('║    • susclass.global+chidi@gmail.com (SS1 A)                   ║');
     console.log('║    • susclass.global+seun@gmail.com (SS1 B)                    ║');

@@ -2,8 +2,11 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import DashboardSidebar from '../components/DashboardSidebar';
 import API_BASE_URL, { clearAuthSession } from '../config/api';
 
+const REPORT_STATUS_FILTERS = ['open', 'reviewing', 'resolved', 'dismissed', 'all'];
+const REPORT_ACTION_STATUSES = ['reviewing', 'resolved', 'dismissed'];
+
 function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState('student'); // 'student', 'teacher', 'manage-students', 'manage-teachers', 'allocation'
+  const [activeTab, setActiveTab] = useState('student');
   const [loading, setLoading] = useState(false);
   
   // States for Allocation
@@ -42,6 +45,11 @@ function AdminDashboard() {
   // Profile pic upload states
   const [profilePicUploading, setProfilePicUploading] = useState(false);
 
+  // Content report review states
+  const [reports, setReports] = useState([]);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportStatusFilter, setReportStatusFilter] = useState('open');
+
   const token = localStorage.getItem('token');
   const authHeaders = useMemo(() => ({ 'Authorization': `Bearer ${token}` }), [token]);
 
@@ -75,6 +83,23 @@ function AdminDashboard() {
     }
   }, [authHeaders]);
 
+  const fetchReports = useCallback(async () => {
+    setReportsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/reports?status=${encodeURIComponent(reportStatusFilter)}&limit=100`, {
+        headers: authHeaders
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load reports');
+      setReports(Array.isArray(data) ? data : []);
+    } catch (err) {
+      alert(err.message);
+      setReports([]);
+    } finally {
+      setReportsLoading(false);
+    }
+  }, [authHeaders, reportStatusFilter]);
+
   // Load data based on active tab
   useEffect(() => {
     if (activeTab === 'allocation') {
@@ -84,8 +109,10 @@ function AdminDashboard() {
       fetchTeachers();
     } else if (activeTab === 'manage-students') {
       fetchStudents();
+    } else if (activeTab === 'reports') {
+      fetchReports();
     }
-  }, [activeTab, fetchTeachers, fetchSections, fetchStudents]);
+  }, [activeTab, fetchTeachers, fetchSections, fetchStudents, fetchReports]);
 
   // Logout handler
   const handleLogout = () => {
@@ -504,12 +531,48 @@ function AdminDashboard() {
     input.click();
   };
 
+  const updateReportStatus = async (reportId, status) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/reports/${reportId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ status })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update report');
+      setReports(prev => prev
+        .map(report => report.id === reportId ? { ...report, status } : report)
+        .filter(report => reportStatusFilter === 'all' || report.status === reportStatusFilter));
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const reportTitle = (report) => {
+    const context = report.target_context || {};
+    if (report.target_type === 'module') {
+      return context.module?.title || `Module #${report.target_id}`;
+    }
+    return context.chat_message?.preview || `Chat message #${report.target_id}`;
+  };
+
+  const reportMeta = (report) => {
+    const context = report.target_context || {};
+    if (report.target_type === 'module') {
+      const module = context.module || {};
+      return [module.subject, module.teacher_name, module.section].filter(Boolean).join(' - ') || 'Module report';
+    }
+    const message = context.chat_message || {};
+    return [message.sender_name, message.sender_role, message.room_id ? `Room ${message.room_id}` : ''].filter(Boolean).join(' - ') || 'Chat message report';
+  };
+
   const adminNavItems = [
     { id: 'student', label: 'Add Student', icon: 'user' },
     { id: 'teacher', label: 'Add Teacher', icon: 'teacher' },
     { id: 'manage-students', label: 'Manage Students', icon: 'users' },
     { id: 'manage-teachers', label: 'Manage Teachers', icon: 'settings' },
-    { id: 'allocation', label: 'Allocations', icon: 'book' }
+    { id: 'allocation', label: 'Allocations', icon: 'book' },
+    { id: 'reports', label: 'Reports', icon: 'settings' }
   ];
 
   return (
@@ -527,7 +590,82 @@ function AdminDashboard() {
 
       {/* MAIN CONTENT */}
       <div className="min-w-0 flex-1 p-4 md:p-8 lg:p-10">
-        {activeTab === 'manage-students' ? (
+        {activeTab === 'reports' ? (
+          <div className="w-full max-w-none">
+            <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <h1 className="text-3xl font-black text-slate-800 uppercase">Content <span className="text-emerald-600">Reports</span></h1>
+              <div className="flex flex-wrap gap-2">
+                {REPORT_STATUS_FILTERS.map(status => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setReportStatusFilter(status)}
+                    className={`rounded-xl px-4 py-2 text-xs font-black uppercase ${reportStatusFilter === status ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'}`}
+                  >
+                    {status}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={fetchReports}
+                  disabled={reportsLoading}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black uppercase text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {reportsLoading ? 'Loading' : 'Refresh'}
+                </button>
+              </div>
+            </div>
+
+            {reportsLoading ? (
+              <div className="rounded-3xl border border-slate-100 bg-white p-10 text-center text-sm font-bold text-slate-500 shadow-xl">
+                Loading reports...
+              </div>
+            ) : reports.length === 0 ? (
+              <div className="rounded-3xl border border-slate-100 bg-white p-10 text-center text-sm font-bold text-slate-500 shadow-xl">
+                No reports found for this status.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {reports.map(report => (
+                  <div key={report.id} className="rounded-3xl border border-slate-100 bg-white p-6 shadow-xl">
+                    <div className="mb-4 flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                          {report.target_type.replace('_', ' ')} - #{report.id}
+                        </p>
+                        <h2 className="mt-1 text-lg font-black text-slate-800">{reportTitle(report)}</h2>
+                        <p className="mt-1 text-xs font-bold text-slate-500">{reportMeta(report)}</p>
+                      </div>
+                      <span className="rounded-full bg-amber-100 px-3 py-1 text-[10px] font-black uppercase text-amber-700">
+                        {report.status}
+                      </span>
+                    </div>
+                    <div className="space-y-3 text-sm text-slate-700">
+                      <p><span className="font-black text-slate-500">Reason:</span> {report.reason}</p>
+                      {report.details && <p><span className="font-black text-slate-500">Details:</span> {report.details}</p>}
+                      <p className="text-xs text-slate-400">
+                        Reporter: {report.reporter_role} #{report.reporter_id} - {report.created_at ? new Date(report.created_at).toLocaleString() : 'Unknown time'}
+                      </p>
+                    </div>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      {REPORT_ACTION_STATUSES.map(status => (
+                        <button
+                          key={status}
+                          type="button"
+                          onClick={() => updateReportStatus(report.id, status)}
+                          disabled={report.status === status}
+                          className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black uppercase text-slate-600 hover:bg-slate-200 disabled:opacity-50"
+                        >
+                          Mark {status}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : activeTab === 'manage-students' ? (
           <div className="w-full max-w-none">
             <div className="flex items-center justify-between mb-8">
               <h1 className="text-3xl font-black text-slate-800 uppercase">Manage <span className="text-emerald-600">Students</span></h1>

@@ -40,6 +40,17 @@ docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
 
 Prometheus reads `monitoring/prometheus.yml` and `monitoring/alert-rules.yml`.
 
+## Content Reports
+
+Students can report visible chat messages and assigned modules from the UI. Admins review them from the Admin Dashboard `Reports` tab or through the API:
+
+```text
+GET   /api/admin/reports
+PATCH /api/admin/reports/:reportId
+```
+
+Allowed statuses are `open`, `reviewing`, `resolved`, and `dismissed`.
+
 ## Production Auth
 
 Use HTTPS in production. Keep `FORCE_HTTPS` enabled unless TLS is terminated in an environment that does not forward `x-forwarded-proto`.

@@ -12,6 +12,7 @@ const Chat = ({ onClose }) => {
   const [showNewChat, setShowNewChat] = useState(false);
   const [loading, setLoading] = useState(true);
   const [typingUsers, setTypingUsers] = useState({});
+  const [reportingMessageId, setReportingMessageId] = useState(null);
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const selectedRoomRef = useRef(null);
@@ -273,6 +274,35 @@ const Chat = ({ onClose }) => {
     socket.emit('stop-typing', selectedRoom.id);
   };
 
+  const reportMessage = async (message) => {
+    if (userRole !== 'student' || reportingMessageId) return;
+    const reason = window.prompt('Report this message', 'Inappropriate or unsafe message');
+    if (!reason || !reason.trim()) return;
+
+    setReportingMessageId(message.id);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/reports`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          targetType: 'chat_message',
+          targetId: message.id,
+          reason: reason.trim()
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to report message');
+      alert('Report submitted.');
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setReportingMessageId(null);
+    }
+  };
+
   const handleTyping = () => {
     if (socket && selectedRoom) {
       socket.emit('typing', selectedRoom.id);
@@ -478,9 +508,20 @@ const Chat = ({ onClose }) => {
                               </p>
                             )}
                             <p className="text-sm">{msg.message}</p>
-                            <p className={`mt-1 text-xs ${isOwn ? 'text-white/65' : 'text-[#848087]'}`}>
-                              {formatTime(msg.created_at)}
-                            </p>
+                            <div className={`mt-1 flex items-center gap-3 text-xs ${isOwn ? 'justify-end text-white/65' : 'justify-between text-[#848087]'}`}>
+                              <span>{formatTime(msg.created_at)}</span>
+                              {!isOwn && userRole === 'student' && (
+                                <button
+                                  type="button"
+                                  onClick={() => reportMessage(msg)}
+                                  disabled={reportingMessageId === msg.id}
+                                  className="rounded-full px-2 py-0.5 font-bold uppercase tracking-wide text-red-500 hover:bg-red-50 disabled:opacity-50"
+                                  title="Report message"
+                                >
+                                  {reportingMessageId === msg.id ? 'Reporting' : 'Report'}
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </React.Fragment>

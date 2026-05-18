@@ -29,6 +29,7 @@ Backend side services:
 - Admin, teacher, and student API paths are role-gated. Teacher views additionally check module ownership or teacher-to-student allocation before returning progress or submissions.
 - Student code execution uses `spawn` without a shell, fixed class names for Java, blocked network/file/process APIs, source/stdin/output limits, a rate limiter, and a FIFO execution queue.
 - Uploaded files receive random server names and are served only from the configured upload directory.
+- Students can report assigned modules and visible chat messages. The backend checks access before creating `content_reports`; admins review reports in the Admin Dashboard or through `/api/admin/reports`.
 - Logs are redacted at the console boundary to avoid writing email addresses, passwords, OTPs, bearer tokens, and secrets.
 
 ## Operations
