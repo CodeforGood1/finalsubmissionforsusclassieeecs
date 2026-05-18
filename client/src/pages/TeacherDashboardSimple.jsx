@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import API_BASE_URL from '../config/api';
+import API_BASE_URL, { clearAuthSession } from '../config/api';
 
 function TeacherDashboardSimple() {
   const navigate = useNavigate();
@@ -80,7 +80,7 @@ function TeacherDashboardSimple() {
         <h1 style={{ color: '#ef4444', marginBottom: '20px' }}>Error Loading Profile</h1>
         <p style={{ marginBottom: '20px' }}>{error}</p>
         <button 
-          onClick={() => { localStorage.clear(); navigate('/'); }}
+          onClick={() => { clearAuthSession(); navigate('/'); }}
           style={{
             backgroundColor: '#10b981',
             color: 'white',
@@ -110,7 +110,7 @@ function TeacherDashboardSimple() {
       }}>
         <h1 style={{ color: '#ef4444' }}>No Teacher Data</h1>
         <button 
-          onClick={() => { localStorage.clear(); navigate('/'); }}
+          onClick={() => { clearAuthSession(); navigate('/'); }}
           style={{
             backgroundColor: '#10b981',
             color: 'white',
@@ -182,7 +182,7 @@ function TeacherDashboardSimple() {
 
         <button
           onClick={() => {
-            localStorage.clear();
+            clearAuthSession();
             navigate('/');
           }}
           style={{

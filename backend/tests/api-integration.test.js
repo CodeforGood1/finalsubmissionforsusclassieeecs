@@ -37,6 +37,9 @@ beforeAll(async () => {
   process.env.ADMIN_EMAIL = ADMIN_EMAIL;
   process.env.ADMIN_PASSWORD = ADMIN_PASSWORD;
   process.env.NODE_ENV = 'test';
+  process.env.AUTH_LOCKOUT_MAX_FAILURES = '3';
+  process.env.AUTH_LOCKOUT_WINDOW_MS = '900000';
+  process.env.AUTH_LOCKOUT_DURATION_MS = '900000';
   
   // Create in-memory SQLite database
   db = new Database(':memory:');
@@ -428,6 +431,49 @@ describe('Authentication & OTP', () => {
     expect(res.status).toBe(401);
     expect(res.body.success).toBe(false);
   });
+
+  test('POST /api/admin/login - repeated failures temporarily lock account', async () => {
+    let lockedResponse;
+    const statuses = [];
+    for (let i = 0; i < 6; i++) {
+      const res = await request(app)
+        .post('/api/admin/login')
+        .send({ email: ADMIN_EMAIL, password: 'wrongpass' });
+      statuses.push(res.status);
+      if (res.status === 423) {
+        lockedResponse = res;
+        break;
+      }
+    }
+
+    expect(statuses).toContain(423);
+    expect(lockedResponse).toBeDefined();
+    expect(lockedResponse.headers['retry-after']).toBeDefined();
+  });
+
+  test('POST /api/logout - revokes the current token server-side', async () => {
+    const loginRes = await request(app)
+      .post('/api/login')
+      .send({ email: testStudent.email, password: 'password123', role: 'student' });
+
+    expect(loginRes.status).toBe(200);
+    const token = loginRes.body.token;
+
+    const beforeLogout = await request(app)
+      .get('/api/session')
+      .set('Authorization', `Bearer ${token}`);
+    expect(beforeLogout.status).toBe(200);
+
+    const logoutRes = await request(app)
+      .post('/api/logout')
+      .set('Authorization', `Bearer ${token}`);
+    expect(logoutRes.status).toBe(200);
+
+    const afterLogout = await request(app)
+      .get('/api/session')
+      .set('Authorization', `Bearer ${token}`);
+    expect(afterLogout.status).toBe(403);
+  });
   
   test.skip('POST /api/login - triggers OTP and email (SQLite Date limitation)', async () => {
     // SKIPPED: SQLite can't bind JavaScript Date objects for otp_expiry
@@ -478,7 +524,7 @@ describe('User Registration & Notifications', () => {
       .send({
         name: 'New Teacher',
         email: 'newteacher@test.com',
-        password: 'pass123',
+        password: 'pass1234',
         staff_id: 'STAFF002',
         dept: 'Math',
         media: '{}',
@@ -504,7 +550,7 @@ describe('User Registration & Notifications', () => {
       .send({
         name: 'New Student',
         email: 'newstudent@test.com',
-        password: 'pass123',
+        password: 'pass1234',
         reg_no: 'REG002',
         class_dept: 'CS',
         section: 'A',

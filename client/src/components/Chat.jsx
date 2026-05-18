@@ -49,7 +49,8 @@ const Chat = ({ onClose }) => {
     console.log('[Chat] Connecting to socket at:', socketUrl);
     
     const newSocket = io(socketUrl, {
-      auth: { token },
+      auth: token && token !== 'cookie-session' ? { token } : {},
+      withCredentials: true,
       transports: ['websocket', 'polling']
     });
 

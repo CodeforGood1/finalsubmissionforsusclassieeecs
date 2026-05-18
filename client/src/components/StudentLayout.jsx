@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import NotificationBell from './NotificationBell';
 import DashboardSidebar from './DashboardSidebar';
 import Chat from './Chat';
-import API_BASE_URL from '../config/api';
+import API_BASE_URL, { clearAuthSession } from '../config/api';
 
 export default function StudentLayout({ children }) {
   const navigate = useNavigate();
@@ -23,9 +23,7 @@ export default function StudentLayout({ children }) {
     Object.keys(localStorage).forEach((key) => {
       if (key.startsWith('timetracker_session')) localStorage.removeItem(key);
     });
-    localStorage.removeItem('token');
-    localStorage.removeItem('user_role');
-    localStorage.removeItem('user_data');
+    clearAuthSession();
     navigate('/');
   };
 

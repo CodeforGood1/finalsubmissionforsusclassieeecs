@@ -1,0 +1,207 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Sustainable Classroom LMS API",
+    "version": "2.1.0",
+    "description": "Production API contract for authentication, users, modules, tests, code execution, chat, notifications, backups, and monitoring."
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "susclass_auth"
+      },
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "csrfToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-CSRF-Token"
+      }
+    }
+  },
+  "security": [
+    {
+      "cookieAuth": [],
+      "csrfToken": []
+    },
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Basic service health",
+        "responses": {
+          "200": {
+            "description": "Service is reachable"
+          }
+        }
+      }
+    },
+    "/api/metrics": {
+      "get": {
+        "summary": "Prometheus metrics",
+        "responses": {
+          "200": {
+            "description": "Text metrics"
+          }
+        }
+      }
+    },
+    "/api/csrf-token": {
+      "get": {
+        "summary": "Issue a CSRF token cookie and response body token",
+        "responses": {
+          "200": {
+            "description": "CSRF token issued"
+          }
+        }
+      }
+    },
+    "/api/session": {
+      "get": {
+        "summary": "Return the current authenticated session",
+        "responses": {
+          "200": {
+            "description": "Authenticated user"
+          },
+          "401": {
+            "description": "No session token"
+          },
+          "403": {
+            "description": "Invalid, expired, or revoked session"
+          }
+        }
+      }
+    },
+    "/api/logout": {
+      "post": {
+        "summary": "Clear auth cookies and revoke the presented session token",
+        "responses": {
+          "200": {
+            "description": "Session cleared"
+          }
+        }
+      }
+    },
+    "/api/login": {
+      "post": {
+        "summary": "Student or teacher login",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Login succeeds or MFA is required"
+          },
+          "401": {
+            "description": "Invalid credentials"
+          },
+          "423": {
+            "description": "Account temporarily locked after repeated failed attempts"
+          }
+        }
+      }
+    },
+    "/api/admin/login": {
+      "post": {
+        "summary": "Admin login",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Admin session issued"
+          },
+          "401": {
+            "description": "Invalid admin credentials"
+          },
+          "423": {
+            "description": "Admin account temporarily locked after repeated failed attempts"
+          }
+        }
+      }
+    },
+    "/api/admin/backups/status": {
+      "get": {
+        "summary": "Backup service status",
+        "responses": {
+          "200": {
+            "description": "Backup status including encryption and last verification"
+          }
+        }
+      }
+    },
+    "/api/admin/backups/run": {
+      "post": {
+        "summary": "Run an encrypted verified database backup",
+        "responses": {
+          "200": {
+            "description": "Backup completed"
+          },
+          "500": {
+            "description": "Backup failed"
+          }
+        }
+      }
+    },
+    "/api/teacher/upload-module": {
+      "post": {
+        "summary": "Create or publish a teacher module",
+        "responses": {
+          "201": {
+            "description": "Module created"
+          }
+        }
+      }
+    },
+    "/api/teacher/module/{moduleId}": {
+      "get": {
+        "summary": "Get a teacher-owned module for editing",
+        "parameters": [
+          {
+            "name": "moduleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Module"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update a teacher-owned module, including MCQ steps",
+        "responses": {
+          "200": {
+            "description": "Module updated"
+          }
+        }
+      }
+    },
+    "/api/student/execute-code": {
+      "post": {
+        "summary": "Run student code in the bounded local execution queue",
+        "responses": {
+          "200": {
+            "description": "Execution result"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    }
+  }
+}

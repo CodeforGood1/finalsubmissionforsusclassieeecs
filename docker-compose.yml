@@ -75,9 +75,20 @@ services:
       DB_BACKUP_RETENTION_DAYS: ${DB_BACKUP_RETENTION_DAYS:-30}
       DB_BACKUP_MAX_FILES: ${DB_BACKUP_MAX_FILES:-14}
       DB_BACKUP_DIR: /app/backend/backups/database
+      DB_BACKUP_ENCRYPTION_ENABLED: ${DB_BACKUP_ENCRYPTION_ENABLED:-true}
+      DB_BACKUP_ENCRYPTION_KEY: ${DB_BACKUP_ENCRYPTION_KEY:-}
+      PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH:-8}
+      AUTH_LOCKOUT_MAX_FAILURES: ${AUTH_LOCKOUT_MAX_FAILURES:-5}
+      AUTH_LOCKOUT_WINDOW_MS: ${AUTH_LOCKOUT_WINDOW_MS:-900000}
+      AUTH_LOCKOUT_DURATION_MS: ${AUTH_LOCKOUT_DURATION_MS:-900000}
+      FORCE_HTTPS: ${FORCE_HTTPS:-false}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
       # Code Execution (Local - no external services required)
-      # PISTON_URL is not used — code execution uses local-code-executor.js
+      # PISTON_URL is not used - code execution uses local-code-executor.js
       CODE_EXECUTION_MODE: local
+      CODE_EXEC_MAX_CONCURRENT: ${CODE_EXEC_MAX_CONCURRENT:-10}
+      CODE_EXEC_MAX_QUEUE_DEPTH: ${CODE_EXEC_MAX_QUEUE_DEPTH:-50}
+      CODE_EXEC_QUEUE_TIMEOUT_MS: ${CODE_EXEC_QUEUE_TIMEOUT_MS:-5000}
     depends_on:
       postgres:
         condition: service_started

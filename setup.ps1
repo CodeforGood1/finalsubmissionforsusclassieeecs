@@ -125,6 +125,7 @@ if (-not (Test-Path -LiteralPath $envPath)) {
     Set-EnvValue $envPath "DB_NAME" $dbName
     Set-EnvValue $envPath "ADMIN_PASSWORD" (New-Secret 18)
     Set-EnvValue $envPath "JWT_SECRET" (New-Secret 48)
+    Set-EnvValue $envPath "DB_BACKUP_ENCRYPTION_KEY" (New-Secret 48)
     Set-EnvValue $envPath "JICOFO_AUTH_PASSWORD" (New-Secret 24)
     Set-EnvValue $envPath "JICOFO_COMPONENT_SECRET" (New-Secret 24)
     Set-EnvValue $envPath "JVB_AUTH_PASSWORD" (New-Secret 24)

@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "start:cluster": "node cluster.js",
     "dev": "nodemon server.js",
     "seed": "node seed.js",
     "db:seed": "node seed.js",
@@ -12,7 +13,7 @@
     "test:notify": "node tests/notification-db.test.js",
     "test": "jest --verbose --runInBand",
     "setup:dirs": "node -e \"require('./localStorageService').ensureUploadDirs()\"",
-    "backup:db": "pg_dump $DATABASE_URL > backup-$(date +%Y%m%d).sql"
+    "backup:db": "node -e \"require('./backupService').runDatabaseBackup('manual-cli').then((r)=>{console.log(JSON.stringify(r,null,2));process.exit(r.success?0:1);})\""
   },
   "jest": {
     "testEnvironment": "node",

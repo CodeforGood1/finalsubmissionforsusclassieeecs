@@ -5,7 +5,7 @@ import LiveSessionsCalendar from '../components/LiveSessionsCalendar';
 import Chat from '../components/Chat';
 import DashboardSidebar from '../components/DashboardSidebar';
 import PageTitle from '../components/PageTitle';
-import API_BASE_URL from '../config/api';
+import API_BASE_URL, { clearAuthSession } from '../config/api';
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -174,7 +174,7 @@ function Dashboard() {
             navItems={navItems.map((item) => ({ ...item, onClick: () => navigate(item.route) }))}
             actions={[
               { label: 'Security', icon: 'lock', onClick: () => navigate('/setup-authenticator') },
-              { label: 'Logout', icon: 'logout', danger: true, onClick: () => { localStorage.removeItem('token'); localStorage.removeItem('user_role'); localStorage.removeItem('user_data'); navigate('/'); } }
+              { label: 'Logout', icon: 'logout', danger: true, onClick: () => { clearAuthSession(); navigate('/'); } }
             ]}
           />
 
@@ -197,7 +197,7 @@ function Dashboard() {
                     <span className="student-message-badge student-message-badge-inline">{messageCount > 9 ? '9+' : messageCount}</span>
                   )}
                 </button>
-                <button onClick={() => { localStorage.removeItem('token'); navigate('/'); }} className="text-xs font-bold text-[#667085] hover:text-[#f1764f]">Logout</button>
+                <button onClick={() => { clearAuthSession(); navigate('/'); }} className="text-xs font-bold text-[#667085] hover:text-[#f1764f]">Logout</button>
               </div>
             </header>
 

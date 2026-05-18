@@ -13,13 +13,14 @@ import CoursePlayer from './pages/CoursePlayer'
 import ModuleLearning from './pages/ModuleLearning'
 import TotpSetup from './pages/TotpSetup'
 import StudentLayout from './components/StudentLayout'
+import { hasAuthSession } from './config/api'
 
 // --- THE BOUNCER (Protected Route Logic) ---
 const ProtectedRoute = ({ children, allowedRole }) => {
-  const token = localStorage.getItem('token');
+  const authenticated = hasAuthSession();
   const userRole = localStorage.getItem('user_role');
 
-  if (!token) {
+  if (!authenticated) {
     return <Navigate to="/" replace />;
   }
 

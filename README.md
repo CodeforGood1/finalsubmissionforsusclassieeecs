@@ -27,6 +27,12 @@ Offline-first Learning Management System for schools. It supports admin, teacher
 `-- README.md
 ```
 
+Additional handoff docs:
+
+- `docs/ARCHITECTURE.md` - runtime, security boundaries, and operations architecture.
+- `docs/OPERATIONS.md` - backup, monitoring, port conflict, and production runbook.
+- `CONTRIBUTING.md` - local checks and contribution rules.
+
 ## 2. Requirements
 
 - Docker Desktop or Docker Engine with Compose
@@ -192,6 +198,11 @@ DB_BACKUP_INTERVAL_HOURS=24
 DB_BACKUP_RETENTION_DAYS=30
 DB_BACKUP_MAX_FILES=14
 DB_BACKUP_DIR=./backups/database
+DB_BACKUP_ENCRYPTION_ENABLED=true
+PASSWORD_MIN_LENGTH=8
+AUTH_LOCKOUT_MAX_FAILURES=5
+AUTH_LOCKOUT_WINDOW_MS=900000
+AUTH_LOCKOUT_DURATION_MS=900000
 SMTP_HOST=localhost
 SMTP_PORT=1025
 SMTP_SECURE=false
@@ -602,7 +613,7 @@ docker compose build backend --no-cache
 docker compose up -d --force-recreate backend
 ```
 
-Backup database in full Docker:
+Manual one-off SQL export in full Docker:
 
 ```powershell
 docker compose exec postgres pg_dump -U lms_admin sustainable_classroom > backup.sql
@@ -616,7 +627,7 @@ docker compose exec -T postgres psql -U lms_admin sustainable_classroom < backup
 
 ## Automated Database Backups
 
-Backend database backups are enabled by default. The backend runs `pg_dump` every 24 hours and writes compressed SQL backups to:
+Backend database backups are enabled by default. The backend runs `pg_dump` every 24 hours, verifies the gzip dump, encrypts it with AES-256-GCM, verifies the encrypted file, and only then deletes the plaintext gzip. Encrypted backups end in `.sql.gz.enc` and are written to:
 
 ```text
 backend/backups/database/        local node server
@@ -633,6 +644,8 @@ DB_BACKUP_INTERVAL_HOURS=24
 DB_BACKUP_RETENTION_DAYS=30
 DB_BACKUP_MAX_FILES=14
 DB_BACKUP_RUN_ON_START=false
+DB_BACKUP_ENCRYPTION_ENABLED=true
+# DB_BACKUP_ENCRYPTION_KEY=<optional separate generated backup key>
 ```
 
 Admins can check or trigger a backup through the API:
@@ -642,15 +655,14 @@ curl -H "Authorization: Bearer <admin-token>" http://localhost:5000/api/admin/ba
 curl -X POST -H "Authorization: Bearer <admin-token>" http://localhost:5000/api/admin/backups/run
 ```
 
-Manual backup scripts remain available:
+Manual verified backup:
 
 ```powershell
-.\scripts\backup-database.ps1
+cd backend
+npm run backup:db
 ```
 
-```bash
-./scripts/backup-database.sh
-```
+More operations details are in `docs/OPERATIONS.md`.
 
 ## 16. Optional Monitoring
 
@@ -678,8 +690,13 @@ docker compose -f docker-compose.monitoring.yml down
 
 Before production:
 
-- Change `JWT_SECRET`.
+- Change `JWT_SECRET` and keep it 32+ characters.
 - Use the generated admin password and change it from the login screen; the backend stores the active admin password as a hash in the database.
+- Keep HTTPS enabled. Browser auth uses an httpOnly cookie plus CSRF header; JWTs are not stored in browser localStorage, and logout revokes the server-side session token.
+- Keep passwords at 8+ characters with at least one letter and one number.
+- Keep account lockout enabled with `AUTH_LOCKOUT_MAX_FAILURES`, `AUTH_LOCKOUT_WINDOW_MS`, and `AUTH_LOCKOUT_DURATION_MS`.
+- Verify `/api/docs/openapi.json`, `/api/health/detailed`, and `/api/metrics`.
+- GitHub Actions runs backend tests/audits plus frontend lint/build/audits on push and pull request.
 - Set `DOCKER_HOST_ADDRESS` to the server LAN IP.
 - Set `TZ` correctly.
 - Open firewall ports.

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import DashboardSidebar from '../components/DashboardSidebar';
-import API_BASE_URL from '../config/api';
+import API_BASE_URL, { clearAuthSession } from '../config/api';
 
 function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('student'); // 'student', 'teacher', 'manage-students', 'manage-teachers', 'allocation'
@@ -95,8 +95,8 @@ function AdminDashboard() {
         localStorage.removeItem(key);
       }
     });
-    localStorage.clear();
-    window.location.href = '/login';
+    clearAuthSession();
+    window.location.href = '/';
   };
 
   const toggleSectionSelection = (section) => {
@@ -211,9 +211,15 @@ function AdminDashboard() {
       // Validate email format before sending
       const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
       const emailToCheck = activeTab === 'student' ? studentData.email : teacherData.email;
+      const passwordToCheck = activeTab === 'student' ? studentData.password : teacherData.password;
       
       if (!emailRegex.test(emailToCheck)) {
         alert("Invalid email format! Please enter a complete email address (e.g., user@example.com)");
+        setLoading(false);
+        return;
+      }
+      if (passwordToCheck.length < 8 || !/[A-Za-z]/.test(passwordToCheck) || !/\d/.test(passwordToCheck)) {
+        alert("Password must be at least 8 characters and include a letter and number");
         setLoading(false);
         return;
       }
@@ -404,8 +410,8 @@ function AdminDashboard() {
   const handleChangePassword = async () => {
     if (!passwordTarget || !newPassword) return;
     
-    if (newPassword.length < 4) {
-      alert("Password must be at least 4 characters");
+    if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) {
+      alert("Password must be at least 8 characters and include a letter and number");
       return;
     }
     
@@ -828,7 +834,7 @@ function AdminDashboard() {
                   <input type="text" placeholder="Staff ID" required maxLength={20} className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" value={teacherData.staff_id} onChange={e => setTeacherData({...teacherData, staff_id: e.target.value.slice(0, 20)})} />
                 )}
                 
-                <input type="password" placeholder="Password" required maxLength={72} className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none" 
+                <input type="password" placeholder="Password (8+ chars, letter + number)" required minLength={8} maxLength={72} className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none"
                   value={activeTab === 'student' ? studentData.password : teacherData.password}
                   onChange={e => activeTab === 'student' ? setStudentData({...studentData, password: e.target.value.slice(0, 72)}) : setTeacherData({...teacherData, password: e.target.value.slice(0, 72)})} />
               </div>
@@ -953,6 +959,7 @@ function AdminDashboard() {
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="Enter new password" 
+              minLength={8}
               className="w-full p-4 bg-slate-50 rounded-xl font-bold outline-none border-2 border-slate-100 focus:border-purple-500 mb-6"
             />
             
@@ -965,7 +972,7 @@ function AdminDashboard() {
               </button>
               <button 
                 onClick={handleChangePassword}
-                disabled={!newPassword || newPassword.length < 4}
+                disabled={!newPassword || newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)}
                 className="flex-1 px-6 py-3 bg-purple-500 text-white rounded-xl font-bold hover:bg-purple-600 disabled:bg-slate-300"
               >
                 Change Password

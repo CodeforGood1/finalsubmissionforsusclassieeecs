@@ -41,6 +41,7 @@ RUN npm ci --omit=dev
 
 # Copy all backend source files
 COPY backend/*.js ./
+COPY backend/openapi.json ./
 
 RUN mkdir -p /app/backend/public
 
@@ -54,4 +55,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 ENV NODE_ENV=production
 ENV PORT=5000
 
-CMD ["node", "server.js"]
+CMD ["node", "cluster.js"]

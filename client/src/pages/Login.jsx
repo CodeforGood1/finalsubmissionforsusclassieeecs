@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import API_BASE_URL from '../config/api';
+import API_BASE_URL, { getCsrfToken } from '../config/api';
 
 function Login() {
   const navigate = useNavigate();
@@ -109,17 +109,21 @@ function Login() {
 
   // Helper to save data and redirect
   const completeAuth = async (data, activeRole) => {
-    localStorage.setItem('token', data.token);
+    localStorage.removeItem('token');
+    localStorage.setItem('authenticated', 'true');
     localStorage.setItem('user_role', activeRole);
     if (data.user) {
       localStorage.setItem('user_data', JSON.stringify(data.user));
+    } else if (activeRole === 'admin') {
+      localStorage.setItem('user_data', JSON.stringify({ role: 'admin', email: email.trim() }));
     }
+    await getCsrfToken(true).catch(() => null);
     
     // For teachers/students: Check if they need to set up TOTP
     if (activeRole === 'teacher' || activeRole === 'student') {
       try {
         const checkRes = await fetch(`${API_BASE_URL}/api/check-totp`, {
-          headers: { 'Authorization': `Bearer ${data.token}` }
+          headers: {}
         });
         const checkData = await checkRes.json();
         
@@ -235,9 +239,9 @@ function Login() {
       return;
     }
 
-    if (adminNewPassword.length < 6) {
+    if (adminNewPassword.length < 8 || !/[A-Za-z]/.test(adminNewPassword) || !/\d/.test(adminNewPassword)) {
       setAdminPasswordStatus('error');
-      setAdminPasswordMessage('New password must be at least 6 characters');
+      setAdminPasswordMessage('New password must be at least 8 characters and include a letter and number');
       setLoading(false);
       return;
     }
@@ -468,9 +472,9 @@ function Login() {
                 <input 
                   type="password" 
                   required 
-                  minLength="6"
+                  minLength="8"
                   value={newPassword}
-                  placeholder="New Password (min 6 chars)" 
+                  placeholder="New Password (8+ chars, letter + number)"
                   className="field" 
                   onChange={(e) => setNewPassword(e.target.value)} 
                 />
@@ -521,16 +525,16 @@ function Login() {
               <input
                 type="password"
                 required
-                minLength="6"
+                minLength="8"
                 value={adminNewPassword}
-                placeholder="New Password (min 6 chars)"
+                placeholder="New Password (8+ chars, letter + number)"
                 className="field"
                 onChange={(e) => setAdminNewPassword(e.target.value)}
               />
               <input
                 type="password"
                 required
-                minLength="6"
+                minLength="8"
                 value={adminConfirmPassword}
                 placeholder="Confirm New Password"
                 className="field"

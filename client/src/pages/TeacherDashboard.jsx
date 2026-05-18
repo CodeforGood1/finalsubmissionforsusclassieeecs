@@ -6,7 +6,7 @@ import LiveSessionsCalendar from '../components/LiveSessionsCalendar';
 import Chat from '../components/Chat';
 import DashboardSidebar from '../components/DashboardSidebar';
 import PageTitle from '../components/PageTitle';
-import API_BASE_URL from '../config/api';
+import API_BASE_URL, { clearAuthSession } from '../config/api';
 
 const toLocalDateTimeInputValue = (date = new Date()) => {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -146,7 +146,7 @@ const fetchTeacherProfile = useCallback(async () => {
     if (!res.ok) { 
       console.error("Failed to fetch teacher profile, status:", res.status);
       if (res.status === 401 || res.status === 403) {
-        localStorage.clear();
+        clearAuthSession();
         navigate('/'); 
       }
       return; 
@@ -578,7 +578,7 @@ const fetchTeacherProfile = useCallback(async () => {
         <h2 className="text-2xl font-black text-emerald-400 mb-4">Failed to Load Profile</h2>
         <p className="text-slate-400 mb-6">Unable to fetch teacher information</p>
         <button 
-          onClick={() => { localStorage.clear(); navigate('/'); }} 
+          onClick={() => { clearAuthSession(); navigate('/'); }}
           className="bg-emerald-600 px-8 py-4 rounded-xl font-black uppercase hover:bg-emerald-700"
         >
           Back to Login
@@ -611,7 +611,7 @@ const fetchTeacherProfile = useCallback(async () => {
         }))}
         actions={[
           { label: teacherInfo?.totp_enabled ? 'Disable Auth' : 'Enable Auth', icon: 'lock', onClick: () => navigate('/setup-authenticator') },
-          { label: 'Logout', icon: 'logout', danger: true, onClick: () => { localStorage.removeItem('token'); localStorage.removeItem('user_role'); localStorage.removeItem('user_data'); navigate('/'); } }
+          { label: 'Logout', icon: 'logout', danger: true, onClick: () => { clearAuthSession(); navigate('/'); } }
         ]}
       />
 

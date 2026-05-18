@@ -1,0 +1,38 @@
+groups:
+  - name: sustainable-classroom-alerts
+    rules:
+      - alert: BackendDown
+        expr: up{job="classroom-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LMS backend is down"
+          description: "Prometheus cannot scrape /api/metrics from the backend."
+
+      - alert: HighApiErrorRate
+        expr: increase(lms_http_requests_total{status="error"}[5m]) > 25
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API error rate"
+          description: "More than 25 API errors were observed in the last five minutes."
+
+      - alert: CodeExecutionQueueBackedUp
+        expr: lms_code_execution_queued > 10
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Code execution queue is backing up"
+          description: "Students are waiting for sandbox slots. Increase WEB_CONCURRENCY or CODE_EXEC_MAX_CONCURRENT carefully."
+
+      - alert: DatabasePoolWaiting
+        expr: lms_db_pool_waiting > 0
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database pool has waiting clients"
+          description: "The backend is waiting for PostgreSQL connections."

@@ -1,8 +1,10 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+require('./logger');
 const express = require('express');
 const http = require('http');
 const fs = require('fs');
+const crypto = require('crypto');
 const { Pool } = require('pg');
 const cors = require('cors');
 const compression = require('compression');
@@ -18,7 +20,7 @@ const QRCode = require('qrcode');
 // Local services for on-premise deployment
 const localStorageService = require('./localStorageService');
 const localEmailService = require('./localEmailService');
-const { executeCode, MAX_TIMEOUT_MS, MAX_MEMORY_MB } = require('./local-code-executor');
+const { executeCode, MAX_TIMEOUT_MS, MAX_MEMORY_MB, getExecutionQueueStatus } = require('./local-code-executor');
 const backupService = require('./backupService');
 
 // --- INPUT VALIDATION HELPERS ---
@@ -54,6 +56,29 @@ const LEGACY_ADMIN_PASSWORD_FILE = path.resolve(__dirname, 'data', 'admin-passwo
 function cleanText(value, maxLength = 255) {
   if (typeof value !== 'string') return '';
   return value.trim().slice(0, maxLength);
+}
+
+function validatePasswordPolicy(password, options = {}) {
+  const minLength = options.admin && process.env.NODE_ENV === 'production'
+    ? Math.max(parseInt(process.env.ADMIN_PASSWORD_MIN_LENGTH || '12', 10), 12)
+    : Math.max(parseInt(process.env.PASSWORD_MIN_LENGTH || '8', 10), 8);
+
+  if (typeof password !== 'string') {
+    return { error: 'Password is required' };
+  }
+  if (password.length > 72) {
+    return { error: 'Password too long (max 72 characters)' };
+  }
+  if (password.length < minLength) {
+    return { error: `Password must be at least ${minLength} characters` };
+  }
+  if (/\r|\n/.test(password)) {
+    return { error: 'Password cannot contain line breaks' };
+  }
+  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+    return { error: 'Password must include at least one letter and one number' };
+  }
+  return { value: password };
 }
 
 function requireText(value, fieldName, maxLength) {
@@ -302,12 +327,344 @@ const bulkUpload = createUploader({ maxFiles: 200 });
 
 const app = express();
 const isDev = process.env.NODE_ENV !== 'production';
+const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const AUTH_COOKIE_NAME = 'susclass_auth';
+const CSRF_COOKIE_NAME = 'susclass_csrf';
+const COOKIE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const AUTH_LOCKOUT_MAX_FAILURES = Math.max(parseInt(process.env.AUTH_LOCKOUT_MAX_FAILURES || '5', 10), 3);
+const AUTH_LOCKOUT_WINDOW_MS = Math.max(parseInt(process.env.AUTH_LOCKOUT_WINDOW_MS || `${15 * 60 * 1000}`, 10), 60 * 1000);
+const AUTH_LOCKOUT_DURATION_MS = Math.max(parseInt(process.env.AUTH_LOCKOUT_DURATION_MS || `${15 * 60 * 1000}`, 10), 60 * 1000);
+const revokedSessionFallback = new Map();
+const authFailureFallback = new Map();
+
+function buildAllowedStateChangeOrigins() {
+  const origins = new Set([
+    'http://localhost',
+    'http://127.0.0.1',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:5000',
+    'http://127.0.0.1:5000',
+  ]);
+  [process.env.FRONTEND_URL, process.env.VITE_API_URL].filter(Boolean).forEach((origin) => {
+    try {
+      origins.add(new URL(origin).origin);
+    } catch (_) {
+      // Ignore malformed optional env values.
+    }
+  });
+  return origins;
+}
+
+const allowedStateChangeOrigins = buildAllowedStateChangeOrigins();
+
+function parseCookieHeader(header) {
+  if (!header) return {};
+  return header.split(';').reduce((cookies, item) => {
+    const index = item.indexOf('=');
+    if (index === -1) return cookies;
+    const key = item.slice(0, index).trim();
+    const value = item.slice(index + 1).trim();
+    try {
+      cookies[key] = decodeURIComponent(value);
+    } catch (_) {
+      cookies[key] = value;
+    }
+    return cookies;
+  }, {});
+}
+
+function parseCookies(req) {
+  return parseCookieHeader(req.headers.cookie);
+}
+
+function secureCookieOptions(httpOnly = true) {
+  return {
+    httpOnly,
+    secure: !isDev,
+    sameSite: 'strict',
+    path: '/',
+    maxAge: COOKIE_MAX_AGE_MS,
+  };
+}
+
+function setCsrfCookie(res) {
+  const token = crypto.randomBytes(32).toString('hex');
+  res.cookie(CSRF_COOKIE_NAME, token, secureCookieOptions(false));
+  return token;
+}
+
+function setAuthCookies(res, token) {
+  res.cookie(AUTH_COOKIE_NAME, token, secureCookieOptions(true));
+  return setCsrfCookie(res);
+}
+
+function clearAuthCookies(res) {
+  const clearOptions = { path: '/', secure: !isDev, sameSite: 'strict' };
+  res.clearCookie(AUTH_COOKIE_NAME, clearOptions);
+  res.clearCookie(CSRF_COOKIE_NAME, clearOptions);
+}
+
+function getBearerToken(req) {
+  const authHeader = req.headers.authorization || '';
+  const [scheme, rawToken] = authHeader.split(/\s+/);
+  const headerToken = /^Bearer$/i.test(scheme) && !['null', 'undefined', 'cookie-session', ''].includes(rawToken) ? rawToken : '';
+  if (headerToken) return headerToken;
+  return parseCookies(req)[AUTH_COOKIE_NAME] || '';
+}
+
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  return aBuf.length === bBuf.length && crypto.timingSafeEqual(aBuf, bBuf);
+}
+
+function issueAuthToken(payload, expiresIn = '24h') {
+  return jwt.sign(payload, JWT_SECRET, {
+    expiresIn,
+    jwtid: crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex')
+  });
+}
+
+function hashSessionToken(token) {
+  return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+}
+
+function tokenExpiryDate(token) {
+  const decoded = jwt.decode(token);
+  if (decoded?.exp) return new Date(decoded.exp * 1000);
+  return new Date(Date.now() + COOKIE_MAX_AGE_MS);
+}
+
+async function cleanupRevokedSessions() {
+  try {
+    await pool.query('DELETE FROM revoked_sessions WHERE expires_at <= $1', [new Date()]);
+  } catch (error) {
+    for (const [hash, expiresAt] of revokedSessionFallback.entries()) {
+      if (expiresAt <= Date.now()) revokedSessionFallback.delete(hash);
+    }
+  }
+}
+
+async function isSessionTokenRevoked(token) {
+  if (!token) return false;
+  const tokenHash = hashSessionToken(token);
+  const fallbackExpiry = revokedSessionFallback.get(tokenHash);
+  if (fallbackExpiry) {
+    if (fallbackExpiry > Date.now()) return true;
+    revokedSessionFallback.delete(tokenHash);
+  }
+
+  try {
+    const result = await pool.query(
+      'SELECT 1 FROM revoked_sessions WHERE token_hash = $1 AND expires_at > $2 LIMIT 1',
+      [tokenHash, new Date()]
+    );
+    return result.rows.length > 0;
+  } catch (error) {
+    console.error('[SESSION] Revocation lookup failed:', error.message);
+    return false;
+  }
+}
+
+async function revokeSessionToken(token) {
+  if (!token) return;
+  const tokenHash = hashSessionToken(token);
+  const expiresAt = tokenExpiryDate(token);
+  if (expiresAt <= new Date()) return;
+
+  revokedSessionFallback.set(tokenHash, expiresAt.getTime());
+  try {
+    await pool.query(
+      `INSERT INTO revoked_sessions (token_hash, expires_at)
+       VALUES ($1, $2)
+       ON CONFLICT (token_hash) DO NOTHING`,
+      [tokenHash, expiresAt]
+    );
+  } catch (error) {
+    console.error('[SESSION] Failed to persist revoked session:', error.message);
+  }
+}
+
+function authFailureKey(identifier, role) {
+  return `${cleanText(role, 50).toLowerCase()}:${cleanText(identifier, 150).toLowerCase()}`;
+}
+
+function parseLockoutRow(row) {
+  if (!row) return null;
+  const lastFailedAt = row.last_failed_at ? new Date(row.last_failed_at).getTime() : 0;
+  const lockedUntil = row.locked_until ? new Date(row.locked_until).getTime() : 0;
+  return {
+    failureCount: parseInt(row.failure_count || '0', 10) || 0,
+    lastFailedAt,
+    lockedUntil
+  };
+}
+
+async function getAuthLockout(identifier, role) {
+  const key = authFailureKey(identifier, role);
+  if (!key.includes(':') || key.endsWith(':')) return { locked: false };
+  const fallback = authFailureFallback.get(key);
+  if (fallback?.lockedUntil > Date.now()) {
+    return { locked: true, lockedUntil: new Date(fallback.lockedUntil) };
+  }
+
+  try {
+    const result = await pool.query(
+      'SELECT failure_count, locked_until, last_failed_at FROM auth_failures WHERE identifier = $1 AND role = $2',
+      [cleanText(identifier, 150).toLowerCase(), cleanText(role, 50).toLowerCase()]
+    );
+    const state = parseLockoutRow(result.rows[0]);
+    if (!state) return { locked: false };
+    if (state.lockedUntil > Date.now()) {
+      return { locked: true, lockedUntil: new Date(state.lockedUntil) };
+    }
+    if (state.lastFailedAt && Date.now() - state.lastFailedAt > AUTH_LOCKOUT_WINDOW_MS) {
+      await clearAuthFailures(identifier, role);
+    }
+  } catch (error) {
+    console.error('[AUTH] Lockout lookup failed:', error.message);
+  }
+  return { locked: false };
+}
+
+async function recordAuthFailure(identifier, role) {
+  const normalizedIdentifier = cleanText(identifier, 150).toLowerCase();
+  const normalizedRole = cleanText(role, 50).toLowerCase();
+  if (!normalizedIdentifier || !normalizedRole) return;
+
+  const key = authFailureKey(normalizedIdentifier, normalizedRole);
+  const now = Date.now();
+  const nowDate = new Date(now);
+  let state = authFailureFallback.get(key) || { failureCount: 0, lastFailedAt: 0, lockedUntil: 0 };
+  if (now - state.lastFailedAt > AUTH_LOCKOUT_WINDOW_MS) {
+    state = { failureCount: 0, lastFailedAt: 0, lockedUntil: 0 };
+  }
+
+  const failureCount = state.failureCount + 1;
+  const lockedUntil = failureCount >= AUTH_LOCKOUT_MAX_FAILURES
+    ? now + AUTH_LOCKOUT_DURATION_MS
+    : 0;
+  authFailureFallback.set(key, { failureCount, lastFailedAt: now, lockedUntil });
+
+  try {
+    const existing = await pool.query(
+      'SELECT failure_count, last_failed_at FROM auth_failures WHERE identifier = $1 AND role = $2',
+      [normalizedIdentifier, normalizedRole]
+    );
+    const current = parseLockoutRow(existing.rows[0]);
+    const dbFailureCount = current && now - current.lastFailedAt <= AUTH_LOCKOUT_WINDOW_MS
+      ? current.failureCount + 1
+      : 1;
+    const dbLockedUntil = dbFailureCount >= AUTH_LOCKOUT_MAX_FAILURES
+      ? new Date(now + AUTH_LOCKOUT_DURATION_MS)
+      : null;
+
+    if (existing.rows.length > 0) {
+      await pool.query(
+        `UPDATE auth_failures
+         SET failure_count = $1, locked_until = $2, last_failed_at = $5
+         WHERE identifier = $3 AND role = $4`,
+        [dbFailureCount, dbLockedUntil, normalizedIdentifier, normalizedRole, nowDate]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO auth_failures (identifier, role, failure_count, locked_until, last_failed_at)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [normalizedIdentifier, normalizedRole, dbFailureCount, dbLockedUntil, nowDate]
+      );
+    }
+  } catch (error) {
+    console.error('[AUTH] Failed to record login failure:', error.message);
+  }
+}
+
+async function clearAuthFailures(identifier, role) {
+  const normalizedIdentifier = cleanText(identifier, 150).toLowerCase();
+  const normalizedRole = cleanText(role, 50).toLowerCase();
+  if (!normalizedIdentifier || !normalizedRole) return;
+  authFailureFallback.delete(authFailureKey(normalizedIdentifier, normalizedRole));
+  try {
+    await pool.query(
+      'DELETE FROM auth_failures WHERE identifier = $1 AND role = $2',
+      [normalizedIdentifier, normalizedRole]
+    );
+  } catch (error) {
+    console.error('[AUTH] Failed to clear login failures:', error.message);
+  }
+}
+
+function lockoutResponse(res, lockedUntil) {
+  const seconds = Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 1000));
+  res.setHeader('Retry-After', String(seconds));
+  return res.status(423).json({
+    error: `Account temporarily locked after repeated failed attempts. Try again in ${Math.ceil(seconds / 60)} minute(s).`
+  });
+}
+
+function isCsrfExemptPath(pathname) {
+  return [
+    '/api/csrf-token',
+    '/api/logout',
+    '/api/login',
+    '/api/admin/login',
+    '/api/admin/change-password',
+    '/api/verify-totp',
+    '/api/password-reset/request',
+    '/api/password-reset/confirm',
+  ].includes(pathname);
+}
 
 // Trust proxy for rate limiting behind nginx/docker
 app.set('trust proxy', 1);
 
+app.use((req, res, next) => {
+  if (
+    !isDev &&
+    process.env.FORCE_HTTPS !== 'false' &&
+    req.headers['x-forwarded-proto'] &&
+    req.headers['x-forwarded-proto'] !== 'https'
+  ) {
+    return res.redirect(308, `https://${req.headers.host}${req.originalUrl}`);
+  }
+  next();
+});
+
+app.use((req, res, next) => {
+  if (!STATE_CHANGING_METHODS.has(req.method)) return next();
+  const contentType = req.headers['content-type'] || '';
+  if (!contentType.includes('application/json')) return next();
+
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  if (!contentLength) return next();
+
+  const routeLimits = [
+    { pattern: /^\/api\/student\/execute-code$/, limit: 128 * 1024 },
+    { pattern: /^\/api\/student\/submit-code$/, limit: 256 * 1024 },
+    { pattern: /^\/api\/(login|verify-totp|password-reset\/request|password-reset\/confirm|admin\/login|admin\/change-password)$/, limit: 32 * 1024 },
+    { pattern: /^\/api\/teacher\/(upload-module|test\/create)$/, limit: 1024 * 1024 },
+    { pattern: /^\/api\/teacher\/(module|test)\//, limit: 1024 * 1024 },
+  ];
+  const matched = routeLimits.find((item) => item.pattern.test(req.path));
+  if (matched && contentLength > matched.limit) {
+    return res.status(413).json({ error: `Request body too large for this endpoint (max ${matched.limit} bytes)` });
+  }
+  next();
+});
+
 app.use(express.json({ limit: '10mb' }));
-app.use(cors());
+app.use(cors({
+  credentials: true,
+  origin(origin, callback) {
+    if (!origin || isDev) return callback(null, true);
+    try {
+      return callback(null, allowedStateChangeOrigins.has(new URL(origin).origin));
+    } catch (_) {
+      return callback(null, false);
+    }
+  }
+}));
 
 // Security Middleware
 app.use(compression());
@@ -390,27 +747,8 @@ const codeExecutionLimiter = rateLimit({
   keyGenerator: (req) => `${req.user?.role || 'anon'}:${req.user?.id || req.ip || 'unknown'}`
 });
 
-const allowedStateChangeOrigins = (() => {
-  const origins = new Set([
-    'http://localhost',
-    'http://127.0.0.1',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:5000',
-    'http://127.0.0.1:5000',
-  ]);
-  [process.env.FRONTEND_URL, process.env.VITE_API_URL].filter(Boolean).forEach((origin) => {
-    try {
-      origins.add(new URL(origin).origin);
-    } catch (_) {
-      // Ignore malformed optional env values.
-    }
-  });
-  return origins;
-})();
-
 app.use('/api/', (req, res, next) => {
-  if (isDev || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+  if (isDev || !STATE_CHANGING_METHODS.has(req.method)) {
     return next();
   }
   const origin = req.get('origin');
@@ -424,6 +762,26 @@ app.use('/api/', (req, res, next) => {
   }
 
   return res.status(403).json({ error: 'Cross-site request blocked' });
+});
+
+app.use('/api/', (req, res, next) => {
+  const pathname = req.originalUrl.split('?')[0];
+  if (!STATE_CHANGING_METHODS.has(req.method) || isCsrfExemptPath(pathname)) {
+    return next();
+  }
+
+  const cookies = parseCookies(req);
+  if (!cookies[AUTH_COOKIE_NAME]) {
+    return next();
+  }
+
+  const csrfFromCookie = cookies[CSRF_COOKIE_NAME];
+  const csrfFromHeader = req.get('x-csrf-token');
+  if (!safeEqual(csrfFromCookie, csrfFromHeader)) {
+    return res.status(403).json({ error: 'CSRF validation failed' });
+  }
+
+  return next();
 });
 
 // Apply general rate limiting to all API routes
@@ -475,6 +833,10 @@ app.use((req, res, next) => {
 // Simple health check endpoint for Docker/Kubernetes
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+app.get('/api/docs/openapi.json', (req, res) => {
+  res.sendFile(path.join(__dirname, 'openapi.json'));
 });
 
 // Detailed health check with database connectivity
@@ -537,6 +899,26 @@ lms_active_connections ${metrics.activeConnections}
 # TYPE lms_cache_entries gauge
 lms_cache_entries ${cache.data.size}
 
+# HELP lms_cache_hits_total Cache hits
+# TYPE lms_cache_hits_total counter
+lms_cache_hits_total ${cache.stats.hits}
+
+# HELP lms_cache_misses_total Cache misses
+# TYPE lms_cache_misses_total counter
+lms_cache_misses_total ${cache.stats.misses}
+
+# HELP lms_cache_evictions_total Cache evictions
+# TYPE lms_cache_evictions_total counter
+lms_cache_evictions_total ${cache.stats.evictions}
+
+# HELP lms_code_execution_active Active code executions
+# TYPE lms_code_execution_active gauge
+lms_code_execution_active ${getExecutionQueueStatus().activeExecutions}
+
+# HELP lms_code_execution_queued Queued code executions
+# TYPE lms_code_execution_queued gauge
+lms_code_execution_queued ${getExecutionQueueStatus().queuedExecutions}
+
 # HELP lms_db_pool_total Database pool total connections
 # TYPE lms_db_pool_total gauge
 lms_db_pool_total ${pool.totalCount || 0}
@@ -580,6 +962,59 @@ const pool = new Pool({
   // SSL only if explicitly enabled for on-premise deployment
   ...(process.env.DB_SSL === 'true' ? { ssl: { rejectUnauthorized: false } } : {})
 });
+
+async function teacherCanAccessStudent(teacherId, studentId) {
+  if (!isPositiveInt(teacherId) || !isPositiveInt(studentId)) return false;
+  const result = await pool.query(
+    `SELECT EXISTS (
+      SELECT 1
+      FROM teachers t
+      JOIN students s ON s.id = $2
+      WHERE t.id = $1 AND (
+        EXISTS (
+          SELECT 1 FROM teacher_student_allocations tsa
+          WHERE tsa.teacher_id = t.id AND tsa.student_id = s.id
+        )
+        OR EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof(COALESCE(t.allocated_sections, '[]'::jsonb)) = 'array'
+              THEN COALESCE(t.allocated_sections, '[]'::jsonb)
+              ELSE '[]'::jsonb
+            END
+          ) AS sec
+          WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(sec, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) =
+            UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s.class_dept || ' ' || s.section, '[-_]', ' ', 'g'), ' +', ' ', 'g')))
+        )
+        OR EXISTS (
+          SELECT 1 FROM modules m
+          WHERE m.teacher_id = t.id AND (
+            UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(m.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) =
+              UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s.class_dept || ' ' || s.section, '[-_]', ' ', 'g'), ' +', ' ', 'g')))
+            OR EXISTS (
+              SELECT 1 FROM jsonb_array_elements_text(COALESCE(m.sections, '[]'::jsonb)) AS module_sec
+              WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(module_sec, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) =
+                UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s.class_dept || ' ' || s.section, '[-_]', ' ', 'g'), ' +', ' ', 'g')))
+            )
+          )
+        )
+        OR EXISTS (
+          SELECT 1 FROM mcq_tests test
+          WHERE test.teacher_id = t.id AND (
+            UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(test.section, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) =
+              UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s.class_dept || ' ' || s.section, '[-_]', ' ', 'g'), ' +', ' ', 'g')))
+            OR EXISTS (
+              SELECT 1 FROM jsonb_array_elements_text(COALESCE(test.sections, '[]'::jsonb)) AS test_sec
+              WHERE UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(test_sec, '[-_]', ' ', 'g'), ' +', ' ', 'g'))) =
+                UPPER(TRIM(REGEXP_REPLACE(REGEXP_REPLACE(s.class_dept || ' ' || s.section, '[-_]', ' ', 'g'), ' +', ' ', 'g')))
+            )
+          )
+        )
+      )
+    ) AS can_access`,
+    [teacherId, studentId]
+  );
+  return Boolean(result.rows[0]?.can_access);
+}
 
 async function readAdminHashFromDisk() {
   try {
@@ -696,11 +1131,15 @@ const cache = {
   data: new Map(),
   ttl: 5 * 60 * 1000, // 5 minutes default TTL
   maxEntries: parseInt(process.env.CACHE_MAX_ENTRIES, 10) || 500,
+  stats: { hits: 0, misses: 0, evictions: 0 },
   
   set(key, value, ttlMs = this.ttl) {
     if (this.data.size >= this.maxEntries && !this.data.has(key)) {
       const oldestKey = this.data.keys().next().value;
-      if (oldestKey) this.data.delete(oldestKey);
+      if (oldestKey) {
+        this.data.delete(oldestKey);
+        this.stats.evictions++;
+      }
     }
     this.data.set(key, {
       value,
@@ -710,11 +1149,16 @@ const cache = {
   
   get(key) {
     const item = this.data.get(key);
-    if (!item) return null;
-    if (Date.now() > item.expiry) {
-      this.data.delete(key);
+    if (!item) {
+      this.stats.misses++;
       return null;
     }
+    if (Date.now() > item.expiry) {
+      this.data.delete(key);
+      this.stats.misses++;
+      return null;
+    }
+    this.stats.hits++;
     return item.value;
   },
   
@@ -728,6 +1172,7 @@ const cache = {
   
   clear() {
     this.data.clear();
+    this.stats = { hits: 0, misses: 0, evictions: 0 };
   }
 };
 
@@ -756,6 +1201,56 @@ const databaseReady = (async () => {
   try {
     await initializeAdminAccount();
     console.log('admin account table ready');
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS revoked_sessions (
+        id SERIAL PRIMARY KEY,
+        token_hash TEXT UNIQUE NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        revoked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_revoked_sessions_expires_at ON revoked_sessions(expires_at)');
+    await cleanupRevokedSessions();
+    console.log('revoked session table ready');
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS auth_failures (
+        id SERIAL PRIMARY KEY,
+        identifier TEXT NOT NULL,
+        role TEXT NOT NULL,
+        failure_count INTEGER NOT NULL DEFAULT 0,
+        locked_until TIMESTAMP,
+        last_failed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (identifier, role)
+      )
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_auth_failures_locked_until ON auth_failures(locked_until)');
+    console.log('auth lockout table ready');
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS teacher_allocations (
+        id SERIAL PRIMARY KEY,
+        teacher_id INTEGER NOT NULL,
+        section VARCHAR(100) NOT NULL,
+        subject VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(teacher_id, section, subject)
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS teacher_student_allocations (
+        id SERIAL PRIMARY KEY,
+        teacher_id INTEGER NOT NULL,
+        student_id INTEGER NOT NULL,
+        subject VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(teacher_id, student_id, subject)
+      )
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_teacher_student_allocations_teacher ON teacher_student_allocations(teacher_id)');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_teacher_student_allocations_student ON teacher_student_allocations(student_id)');
+    console.log('teacher allocation tables ready');
 
     await pool.query('ALTER TABLE teachers DROP CONSTRAINT IF EXISTS chk_name_length');
     await pool.query('ALTER TABLE teachers ADD CONSTRAINT chk_name_length CHECK (char_length(name) >= 1)');
@@ -832,6 +1327,10 @@ const databaseReady = (async () => {
 app.locals.databaseReady = databaseReady;
 
 backupService.initializeBackupService();
+const sessionCleanupTimer = setInterval(cleanupRevokedSessions, 60 * 60 * 1000);
+if (typeof sessionCleanupTimer.unref === 'function') {
+  sessionCleanupTimer.unref();
+}
 
 // --- LOCAL STORAGE CONFIGURATION (ON-PREMISE) ---
 // Serve uploaded files statically
@@ -841,23 +1340,56 @@ console.log('[STORAGE] Local file storage configured');
 console.log('[STORAGE] Upload directory:', localStorageService.UPLOAD_BASE_DIR);
 
 // --- MIDDLEWARE ---
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+const authenticateToken = async (req, res, next) => {
+  const token = getBearerToken(req);
   
   if (!token) return res.status(401).json({ error: "Access Denied: No Token" });
 
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) return res.status(403).json({ error: "Invalid or Expired Token" });
-    req.user = decoded; 
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (await isSessionTokenRevoked(token)) {
+      return res.status(403).json({ error: "Session has been logged out. Please sign in again." });
+    }
+    req.user = decoded;
+    req.authToken = token;
     next();
-  });
+  } catch (err) {
+    return res.status(403).json({ error: "Invalid or Expired Token" });
+  }
 };
 
 const adminOnly = (req, res, next) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: "Forbidden: Admin Only" });
   next();
 };
+
+const teacherOnly = (req, res, next) => {
+  if (req.user.role !== 'teacher') return res.status(403).json({ error: "Forbidden: Teacher Only" });
+  next();
+};
+
+const studentOnly = (req, res, next) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: "Forbidden: Student Only" });
+  next();
+};
+
+app.use(/^\/api\/teacher(?:\/|$)/, authenticateToken, teacherOnly);
+app.use(/^\/api\/student(?:\/|$)/, authenticateToken, studentOnly);
+
+app.get('/api/csrf-token', (req, res) => {
+  const token = setCsrfCookie(res);
+  res.json({ csrfToken: token });
+});
+
+app.post('/api/logout', async (req, res) => {
+  await revokeSessionToken(getBearerToken(req));
+  clearAuthCookies(res);
+  res.json({ success: true });
+});
+
+app.get('/api/session', authenticateToken, (req, res) => {
+  res.json({ authenticated: true, user: req.user });
+});
 
 // --- ROUTES: AUTHENTICATION ---
 
@@ -875,11 +1407,19 @@ const sendEmailAsync = async (mailOptions) => {
 // 1. Admin Login (database-backed password hash)
 app.post('/api/admin/login', async (req, res) => {
   const { email, password } = req.body;
+  const lockout = await getAuthLockout(email, 'admin');
+  if (lockout.locked) {
+    return lockoutResponse(res, lockout.lockedUntil);
+  }
+
   try {
     if (await verifyAdminCredentials(email, password)) {
-      const token = jwt.sign({ email: cleanText(email, 150).toLowerCase(), role: 'admin' }, JWT_SECRET, { expiresIn: '24h' });
+      await clearAuthFailures(email, 'admin');
+      const token = issueAuthToken({ email: cleanText(email, 150).toLowerCase(), role: 'admin' }, '24h');
+      setAuthCookies(res, token);
       return res.json({ success: true, token });
     }
+    await recordAuthFailure(email, 'admin');
     return res.status(401).json({ success: false, message: "Invalid Admin Credentials" });
   } catch (error) {
     console.error('[ADMIN] Login error:', error.message);
@@ -898,12 +1438,9 @@ app.post('/api/admin/change-password', authLimiter, async (req, res) => {
     return res.status(401).json({ error: 'Current admin password is incorrect' });
   }
 
-  if (newPassword.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters' });
-  }
-
-  if (/\r|\n/.test(newPassword)) {
-    return res.status(400).json({ error: 'Password cannot contain line breaks' });
+  const passwordResult = validatePasswordPolicy(newPassword, { admin: true });
+  if (passwordResult.error) {
+    return res.status(400).json({ error: passwordResult.error });
   }
 
   try {
@@ -932,6 +1469,11 @@ app.post('/api/login', async (req, res) => {
         return res.status(400).json({ error: "Role must be 'student' or 'teacher'" });
     }
 
+    const lockout = await getAuthLockout(email, activeRole);
+    if (lockout.locked) {
+        return lockoutResponse(res, lockout.lockedUntil);
+    }
+
     try {
         const result = await pool.query(`SELECT * FROM ${table} WHERE LOWER(email) = LOWER($1)`, [email]);
         
@@ -944,7 +1486,7 @@ app.post('/api/login', async (req, res) => {
                 const totpEnabled = user.totp_enabled || false;
 
                 if (totpEnabled) {
-                    // User has authenticator app — prompt for TOTP code
+                    // User has authenticator app - prompt for TOTP code
                     res.json({ 
                         success: true, 
                         mfaRequired: true, 
@@ -953,12 +1495,13 @@ app.post('/api/login', async (req, res) => {
                         message: "Enter code from your authenticator app"
                     });
                 } else {
-                    // Direct login — no MFA required
-                    const token = jwt.sign(
+                    await clearAuthFailures(email, activeRole);
+                    // Direct login - no MFA required
+                    const token = issueAuthToken(
                         { id: user.id, email: user.email, role: activeRole },
-                        JWT_SECRET,
-                        { expiresIn: '24h' }
+                        '24h'
                     );
+                    setAuthCookies(res, token);
                     delete user.password;
                     delete user.totp_secret;
                     res.json({
@@ -969,9 +1512,11 @@ app.post('/api/login', async (req, res) => {
                     });
                 }
             } else {
+                await recordAuthFailure(email, activeRole);
                 res.status(401).json({ success: false, message: "Incorrect Password" });
             }
         } else {
+            await recordAuthFailure(email, activeRole);
             res.status(404).json({ success: false, message: "Account not found" });
         }
     } catch (err) {
@@ -1082,6 +1627,12 @@ app.post('/api/verify-totp', async (req, res) => {
   if (!email || !code || !role) return res.status(400).json({ error: 'Email, code, and role required' });
   const table = roleToTable(role);
   if (!table) return res.status(400).json({ error: "Role must be 'student' or 'teacher'" });
+  const activeRole = sanitizeRole(role);
+
+  const lockout = await getAuthLockout(email, activeRole);
+  if (lockout.locked) {
+    return lockoutResponse(res, lockout.lockedUntil);
+  }
 
   try {
     const result = await pool.query(
@@ -1090,6 +1641,7 @@ app.post('/api/verify-totp', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
+      await recordAuthFailure(email, activeRole);
       return res.status(404).json({ error: "User not found or authenticator not enabled" });
     }
 
@@ -1104,12 +1656,13 @@ app.post('/api/verify-totp', async (req, res) => {
     });
 
     if (verified) {
+      await clearAuthFailures(email, activeRole);
       // Generate JWT token
-      const token = jwt.sign(
+      const token = issueAuthToken(
         { id: user.id, email: user.email, role: role.toLowerCase() },
-        JWT_SECRET,
-        { expiresIn: '24h' }
+        '24h'
       );
+      setAuthCookies(res, token);
 
       delete user.password;
       delete user.totp_secret;
@@ -1120,6 +1673,7 @@ app.post('/api/verify-totp', async (req, res) => {
         user: { ...user, role: role.toLowerCase() }
       });
     } else {
+      await recordAuthFailure(email, activeRole);
       res.status(401).json({ error: "Invalid authenticator code" });
     }
 
@@ -1185,11 +1739,13 @@ app.post('/api/disable-totp', authenticateToken, async (req, res) => {
 // 4e. Check if user has TOTP enabled (for login flow or authenticated user)
 app.get('/api/check-totp', async (req, res) => {
   try {
-    // Check for JWT auth header (authenticated user)
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.slice(7);
+    // Check for JWT auth header or httpOnly auth cookie (authenticated user)
+    const token = getBearerToken(req);
+    if (token) {
       const decoded = jwt.verify(token, JWT_SECRET);
+      if (await isSessionTokenRevoked(token)) {
+        return res.status(403).json({ error: "Session has been logged out. Please sign in again." });
+      }
       const table = decoded.role === 'student' ? 'students' : 'teachers';
       
       const result = await pool.query(
@@ -1327,8 +1883,9 @@ app.post('/api/password-reset/confirm', async (req, res) => {
     return res.status(400).json({ error: "All fields required" });
   }
   
-  if (newPassword.length < 6) {
-    return res.status(400).json({ error: "Password must be at least 6 characters" });
+  const passwordResult = validatePasswordPolicy(newPassword);
+  if (passwordResult.error) {
+    return res.status(400).json({ error: passwordResult.error });
   }
   
   const table = roleToTable(role);
@@ -1374,8 +1931,9 @@ app.post('/api/admin/reset-password', authenticateToken, adminOnly, async (req, 
     return res.status(400).json({ error: "userType must be 'teacher' or 'student'" });
   }
   
-  if (newPassword.length < 4) {
-    return res.status(400).json({ error: "Password must be at least 4 characters" });
+  const passwordResult = validatePasswordPolicy(newPassword);
+  if (passwordResult.error) {
+    return res.status(400).json({ error: passwordResult.error });
   }
   
   const table = userType.toLowerCase() === 'teacher' ? 'teachers' : 'students';
@@ -1421,6 +1979,10 @@ app.post('/api/admin/register-teacher', authenticateToken, adminOnly, async (req
   }
   if (password.length > 72) {
     return res.status(400).json({ error: "Password too long (max 72 characters)" });
+  }
+  const passwordResult = validatePasswordPolicy(password);
+  if (passwordResult.error) {
+    return res.status(400).json({ error: passwordResult.error });
   }
   if (staff_id && staff_id.length > 20) {
     return res.status(400).json({ error: "Staff ID too long (max 20 characters)" });
@@ -1507,6 +2069,10 @@ app.post('/api/admin/register-student', authenticateToken, adminOnly, async (req
     }
     if (password.length > 72) {
       return res.status(400).json({ error: "Password too long (max 72 characters)" });
+    }
+    const passwordResult = validatePasswordPolicy(password);
+    if (passwordResult.error) {
+      return res.status(400).json({ error: passwordResult.error });
     }
     if (reg_no && reg_no.length > 20) {
       return res.status(400).json({ error: "Reg No too long (max 20 characters)" });
@@ -1630,6 +2196,12 @@ app.post('/api/admin/bulk-upload-students', authenticateToken, adminOnly, upload
         results.errors.push(`Row ${i + 1}: Invalid email "${email}"`);
         continue;
       }
+      const passwordResult = validatePasswordPolicy(password);
+      if (passwordResult.error) {
+        results.failed++;
+        results.errors.push(`Row ${i + 1}: ${passwordResult.error}`);
+        continue;
+      }
       
       try {
         const hashed = await bcrypt.hash(password, SALT_ROUNDS);
@@ -1699,6 +2271,12 @@ app.post('/api/admin/bulk-upload-teachers', authenticateToken, adminOnly, upload
       if (!emailRegex.test(email)) {
         results.failed++;
         results.errors.push(`Row ${i + 1}: Invalid email "${email}"`);
+        continue;
+      }
+      const passwordResult = validatePasswordPolicy(password);
+      if (passwordResult.error) {
+        results.failed++;
+        results.errors.push(`Row ${i + 1}: ${passwordResult.error}`);
         continue;
       }
       
@@ -2190,7 +2768,13 @@ app.get('/api/admin/system-status', authenticateToken, adminOnly, async (req, re
         activeConnections: metrics.activeConnections
       },
       cache: {
-        entries: cache.data.size
+        entries: cache.data.size,
+        hits: cache.stats.hits,
+        misses: cache.stats.misses,
+        evictions: cache.stats.evictions
+      },
+      codeExecution: {
+        ...getExecutionQueueStatus()
       },
       activity: {
         last24hMessages: parseInt(recentActivity.rows[0]?.recent_messages || 0),
@@ -2886,12 +3470,12 @@ app.get('/api/student/stats', authenticateToken, async (req, res) => {
 // 10. Teacher: Upload/Publish New Module
 app.post('/api/teacher/upload-module', authenticateToken, async (req, res) => {
   try {
-    const { section, sections, subject, topic, steps } = req.body;
+    const { section, sections, subject, topic, topic_title, steps } = req.body;
     const teacherId = req.user.id;
 
     const subjectResult = requireText(subject, 'Subject', 60);
     if (subjectResult.error) return res.status(400).json({ error: subjectResult.error });
-    const topicResult = requireText(topic, 'Topic title', 100);
+    const topicResult = requireText(topic || topic_title, 'Topic title', 100);
     if (topicResult.error) return res.status(400).json({ error: topicResult.error });
     const sectionResult = normalizeSectionList(sections, section);
     if (sectionResult.error) return res.status(400).json({ error: sectionResult.error });
@@ -3057,14 +3641,14 @@ app.get('/api/teacher/module/:moduleId', authenticateToken, async (req, res) => 
 app.put('/api/teacher/module/:moduleId', authenticateToken, async (req, res) => {
   try {
     const moduleId = req.params.moduleId;
-    const { topic, subject, steps, section, sections } = req.body;
+    const { topic, topic_title, subject, steps, section, sections } = req.body;
     const teacherId = req.user.id;
 
     if (!isPositiveInt(moduleId)) {
       return res.status(400).json({ error: 'Invalid module ID' });
     }
 
-    const topicResult = requireText(topic, 'Topic title', 100);
+    const topicResult = requireText(topic || topic_title, 'Topic title', 100);
     if (topicResult.error) return res.status(400).json({ error: topicResult.error });
     const subjectResult = requireText(subject, 'Subject', 60);
     if (subjectResult.error) return res.status(400).json({ error: subjectResult.error });
@@ -3624,6 +4208,20 @@ app.get('/api/student/module-progress', authenticateToken, async (req, res) => {
 app.get('/api/teacher/module/:moduleId/statistics', authenticateToken, async (req, res) => {
   try {
     const moduleId = req.params.moduleId;
+    const teacherId = req.user.id;
+    if (req.user.role !== 'teacher' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Teacher access required" });
+    }
+    if (!isPositiveInt(moduleId)) {
+      return res.status(400).json({ error: 'Invalid module ID' });
+    }
+
+    if (req.user.role === 'teacher') {
+      const owner = await pool.query('SELECT id FROM modules WHERE id = $1 AND teacher_id = $2', [moduleId, teacherId]);
+      if (owner.rows.length === 0) {
+        return res.status(403).json({ error: "Not authorized to view this module's statistics" });
+      }
+    }
     
     const result = await pool.query(
       'SELECT * FROM v_module_statistics WHERE module_id = $1',
@@ -3644,6 +4242,9 @@ app.get('/api/teacher/module/:moduleId/statistics', authenticateToken, async (re
 // 13e. Teacher: Get Coding Submissions Dashboard
 app.get('/api/teacher/coding-submissions', authenticateToken, async (req, res) => {
   try {
+    if (req.user.role !== 'teacher') {
+      return res.status(403).json({ error: "Teacher access required" });
+    }
     const teacherId = req.user.id;
     
     // Get all coding submissions for modules created by this teacher
@@ -3680,6 +4281,9 @@ app.get('/api/teacher/coding-submissions', authenticateToken, async (req, res) =
 // 13f. Teacher: Get Coding Submissions for a Module
 app.get('/api/teacher/module/:moduleId/coding-submissions', authenticateToken, async (req, res) => {
   try {
+    if (req.user.role !== 'teacher') {
+      return res.status(403).json({ error: "Teacher access required" });
+    }
     const teacherId = req.user.id;
     const moduleId = req.params.moduleId;
     
@@ -3859,6 +4463,15 @@ app.post('/api/student/submit-code', authenticateToken, codeExecutionLimiter, as
 app.get('/api/teacher/student/:studentId/module-progress', authenticateToken, async (req, res) => {
   try {
     const studentId = req.params.studentId;
+    if (req.user.role !== 'teacher') {
+      return res.status(403).json({ error: "Teacher access required" });
+    }
+    if (!isPositiveInt(studentId)) {
+      return res.status(400).json({ error: 'Invalid student ID' });
+    }
+    if (!(await teacherCanAccessStudent(req.user.id, studentId))) {
+      return res.status(403).json({ error: "Not authorized to view this student's module progress" });
+    }
     
     const result = await pool.query(
       'SELECT * FROM v_student_module_progress WHERE student_id = $1',
@@ -3912,6 +4525,9 @@ app.post('/api/teacher/test/create', authenticateToken, async (req, res) => {
     const deadlineDate = new Date(deadline);
     if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(deadlineDate.getTime())) {
       return res.status(400).json({ error: "Invalid start date or deadline" });
+    }
+    if (startDate.getTime() < Date.now() - 60000 || deadlineDate.getTime() < Date.now() - 60000) {
+      return res.status(400).json({ error: "Start date and deadline cannot be in the past" });
     }
     if (deadlineDate <= startDate) {
       return res.status(400).json({ error: "Deadline must be after start date" });
@@ -4080,6 +4696,9 @@ app.put('/api/teacher/test/:testId', authenticateToken, async (req, res) => {
     if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(deadlineDate.getTime())) {
       return res.status(400).json({ error: 'Invalid start date or deadline' });
     }
+    if (startDate.getTime() < Date.now() - 60000 || deadlineDate.getTime() < Date.now() - 60000) {
+      return res.status(400).json({ error: 'Start date and deadline cannot be in the past' });
+    }
     if (deadlineDate <= startDate) {
       return res.status(400).json({ error: 'Deadline must be after start date' });
     }
@@ -4202,6 +4821,15 @@ app.delete('/api/teacher/test/:testId', authenticateToken, async (req, res) => {
 app.get('/api/teacher/student/:studentId/progress', authenticateToken, async (req, res) => {
   try {
     const student_id = req.params.studentId;
+    if (req.user.role !== 'teacher') {
+      return res.status(403).json({ error: "Teacher access required" });
+    }
+    if (!isPositiveInt(student_id)) {
+      return res.status(400).json({ error: 'Invalid student ID' });
+    }
+    if (!(await teacherCanAccessStudent(req.user.id, student_id))) {
+      return res.status(403).json({ error: "Not authorized to view this student's progress" });
+    }
     
     // Get student basic info
     const studentResult = await pool.query(
@@ -5078,6 +5706,12 @@ app.post('/api/chat/room', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Cannot create chat with same role' });
     }
 
+    const teacherId = userRole === 'teacher' ? userId : targetId;
+    const studentId = userRole === 'student' ? userId : targetId;
+    if (!(await teacherCanAccessStudent(teacherId, studentId))) {
+      return res.status(403).json({ error: 'Chat is only available between allocated teachers and students' });
+    }
+
     // Check if room already exists
     const existingRoom = await pool.query(`
       SELECT cr.* FROM chat_rooms cr
@@ -5468,8 +6102,7 @@ app.get('*', (req, res) => {
   }
 });
 
-// Export app for testing, only listen if run directly
-if (require.main === module) {
+function startServer() {
   const PORT = process.env.PORT || 5000;
   
   // Create HTTP server for Socket.io
@@ -5478,19 +6111,27 @@ if (require.main === module) {
   // Initialize Socket.io
   const io = new Server(server, {
     cors: {
-      origin: process.env.FRONTEND_URL || '*',
-      methods: ['GET', 'POST']
+      origin: process.env.FRONTEND_URL || true,
+      methods: ['GET', 'POST'],
+      credentials: true
     }
   });
 
   // Socket.io authentication middleware
-  io.use((socket, next) => {
-    const token = socket.handshake.auth.token;
+  io.use(async (socket, next) => {
+    const authToken = socket.handshake.auth?.token;
+    const cookieToken = parseCookieHeader(socket.handshake.headers?.cookie)[AUTH_COOKIE_NAME];
+    const token = authToken && !['null', 'undefined', 'cookie-session'].includes(authToken)
+      ? authToken
+      : cookieToken;
     if (!token) {
       return next(new Error('Authentication required'));
     }
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
+      if (await isSessionTokenRevoked(token)) {
+        return next(new Error('Session expired'));
+      }
       socket.user = decoded;
       next();
     } catch (err) {
@@ -5606,6 +6247,13 @@ if (require.main === module) {
   });
 
   server.listen(PORT, () => console.log(`SERVER ACTIVE ON PORT ${PORT}`));
+  return { server, io };
+}
+
+// Export app for testing, only listen if run directly
+if (require.main === module) {
+  startServer();
 }
 
 module.exports = app;
+module.exports.startServer = startServer;

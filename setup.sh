@@ -127,6 +127,7 @@ if [ ! -f .env ]; then
   set_env_value "DB_NAME" "$DB_NAME_DEFAULT"
   set_env_value "ADMIN_PASSWORD" "$(new_secret 18)"
   set_env_value "JWT_SECRET" "$(new_secret 48)"
+  set_env_value "DB_BACKUP_ENCRYPTION_KEY" "$(new_secret 48)"
   set_env_value "JICOFO_AUTH_PASSWORD" "$(new_secret 24)"
   set_env_value "JICOFO_COMPONENT_SECRET" "$(new_secret 24)"
   set_env_value "JVB_AUTH_PASSWORD" "$(new_secret 24)"

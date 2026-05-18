@@ -4,7 +4,7 @@
  * Works completely offline with enforced resource limits
  */
 
-const { execFile, spawn } = require('child_process');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -24,21 +24,88 @@ const MAX_OUTPUT_BYTES = 512 * 1024; // 512 KB output
 const MAX_CODE_LENGTH = 50000;  // 50 KB source code limit
 const MAX_STDIN_LENGTH = 10000; // 10 KB stdin limit
 const DEFAULT_TIMEOUT_MS = 5000;
+const SOURCE_POLICY_PATTERNS = {
+  python: [
+    /\b(import|from)\s+(socket|requests|urllib|http\.client|ftplib|smtplib|subprocess|multiprocessing|os|pathlib|shutil)\b/i,
+    /\b(open|exec|eval|compile|__import__)\s*\(/i
+  ],
+  javascript: [
+    /\b(require|import)\s*(?:\(|.*from\s*)['"](?:fs|child_process|net|dgram|dns|http|https|tls|cluster|worker_threads|os)['"]/i,
+    /\b(process\.env|process\.exit|eval|Function)\b/i
+  ],
+  java: [
+    /\bimport\s+java\.(net|nio\.file)\./i,
+    /\b(Runtime\.getRuntime|ProcessBuilder|System\.exit|new\s+File|FileReader|FileWriter|RandomAccessFile|FileInputStream|FileOutputStream)\b/i
+  ],
+  cpp: [
+    /#\s*include\s*<(sys\/socket\.h|winsock2\.h|windows\.h|unistd\.h|fstream|filesystem)>/i,
+    /\b(system|popen|fork|exec[lvpe]*|CreateProcess)\s*\(/i
+  ]
+};
 
-// Track concurrent executions to prevent resource exhaustion
+// Track concurrent executions with a FIFO queue to prevent race-based slot bypass.
 let activeExecutions = 0;
-const MAX_CONCURRENT = 10;
+function positiveIntEnv(name, fallback) {
+  const parsed = parseInt(process.env[name], 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+const MAX_CONCURRENT = positiveIntEnv('CODE_EXEC_MAX_CONCURRENT', 10);
+const MAX_QUEUE_DEPTH = positiveIntEnv('CODE_EXEC_MAX_QUEUE_DEPTH', 50);
+const EXECUTION_QUEUE_TIMEOUT_MS = positiveIntEnv('CODE_EXEC_QUEUE_TIMEOUT_MS', 5000);
+const executionQueue = [];
 
-function tryAcquireExecutionSlot() {
-  if (activeExecutions >= MAX_CONCURRENT) {
-    return false;
+function drainExecutionQueue() {
+  while (activeExecutions < MAX_CONCURRENT && executionQueue.length > 0) {
+    const waiter = executionQueue.shift();
+    if (waiter.timer) clearTimeout(waiter.timer);
+    activeExecutions += 1;
+    waiter.resolve(true);
   }
-  activeExecutions += 1;
-  return true;
+}
+
+function acquireExecutionSlot() {
+  if (activeExecutions < MAX_CONCURRENT) {
+    activeExecutions += 1;
+    return Promise.resolve(true);
+  }
+  if (executionQueue.length >= MAX_QUEUE_DEPTH) {
+    return Promise.resolve(false);
+  }
+  return new Promise((resolve) => {
+    const waiter = {
+      resolve,
+      timer: setTimeout(() => {
+        const index = executionQueue.indexOf(waiter);
+        if (index !== -1) executionQueue.splice(index, 1);
+        resolve(false);
+      }, EXECUTION_QUEUE_TIMEOUT_MS)
+    };
+    if (typeof waiter.timer.unref === 'function') waiter.timer.unref();
+    executionQueue.push(waiter);
+  });
 }
 
 function releaseExecutionSlot() {
   activeExecutions = Math.max(0, activeExecutions - 1);
+  drainExecutionQueue();
+}
+
+function normalizeLanguage(language) {
+  const lang = String(language || '').toLowerCase();
+  if (lang === 'js') return 'javascript';
+  if (lang === 'c++') return 'cpp';
+  return lang;
+}
+
+function validateSourcePolicy(code, language) {
+  const lang = normalizeLanguage(language);
+  const patterns = SOURCE_POLICY_PATTERNS[lang] || [];
+  if (patterns.some((pattern) => pattern.test(code))) {
+    return {
+      error: 'This classroom runner only supports stdin/stdout programs. File, network, process, and dynamic-code APIs are blocked.'
+    };
+  }
+  return { ok: true };
 }
 
 /**
@@ -63,10 +130,14 @@ async function executeCode(code, language, stdin = '', limits = {}) {
   if (stdin && stdin.length > MAX_STDIN_LENGTH) {
     return { stdout: '', stderr: `Stdin too large (max ${MAX_STDIN_LENGTH} chars)`, error: true };
   }
+  const policy = validateSourcePolicy(code, language);
+  if (policy.error) {
+    return { stdout: '', stderr: policy.error, error: true };
+  }
 
   // --- Concurrency guard ---
-  if (!tryAcquireExecutionSlot()) {
-    return { stdout: '', stderr: 'Server busy — too many concurrent executions. Try again shortly.', error: true };
+  if (!(await acquireExecutionSlot())) {
+    return { stdout: '', stderr: 'Server busy - too many concurrent executions. Try again shortly.', error: true };
   }
 
   // Clamp user-supplied limits to hard ceilings
@@ -99,7 +170,7 @@ async function executeCode(code, language, stdin = '', limits = {}) {
     let sourceFile;
     const isWindows = os.platform() === 'win32';
 
-    const lang = language.toLowerCase();
+    const lang = normalizeLanguage(language);
     switch (lang) {
       case 'python': {
         sourceFile = path.join(tempDir, 'main.py');
@@ -281,4 +352,14 @@ function killTree(child) {
   }
 }
 
-module.exports = { executeCode, MAX_TIMEOUT_MS, MAX_MEMORY_MB };
+module.exports = {
+  executeCode,
+  MAX_TIMEOUT_MS,
+  MAX_MEMORY_MB,
+  getExecutionQueueStatus: () => ({
+    activeExecutions,
+    queuedExecutions: executionQueue.length,
+    maxConcurrent: MAX_CONCURRENT,
+    maxQueueDepth: MAX_QUEUE_DEPTH
+  })
+};
