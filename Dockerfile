@@ -43,7 +43,14 @@ RUN npm ci --omit=dev
 COPY backend/*.js ./
 COPY backend/openapi.json ./
 
-RUN mkdir -p /app/backend/public
+RUN mkdir -p \
+    /app/backend/public \
+    /app/backend/uploads \
+    /app/backend/data \
+    /app/backend/logs \
+    /app/backend/backups \
+    /app/backend/tmp_code \
+  && chown -R node:node /app/backend
 
 COPY --from=frontend-builder /app/client/dist /app/backend/public
 
@@ -54,5 +61,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 ENV NODE_ENV=production
 ENV PORT=5000
+
+USER node
 
 CMD ["node", "cluster.js"]

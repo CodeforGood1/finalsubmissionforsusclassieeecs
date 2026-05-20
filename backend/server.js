@@ -5627,13 +5627,8 @@ app.patch('/api/admin/reports/:reportId', authenticateToken, adminOnly, async (r
 });
 
 // Send deadline reminders for upcoming tests (can be called via cron job)
-app.post('/api/admin/send-deadline-reminders', authenticateToken, async (req, res) => {
+app.post('/api/admin/send-deadline-reminders', authenticateToken, adminOnly, async (req, res) => {
   try {
-    // Check if user is admin (for security)
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
     // Find tests with deadlines in next 24 hours that haven't been submitted
     const upcomingTests = await pool.query(`
       SELECT DISTINCT t.id, t.title, t.section, t.teacher_name, t.deadline, t.total_questions

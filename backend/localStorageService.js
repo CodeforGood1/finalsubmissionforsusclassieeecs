@@ -183,10 +183,50 @@ const streamVideo = (req, res, filename) => {
     const range = req.headers.range;
     
     if (range) {
-      // Parse range header
-      const parts = range.replace(/bytes=/, '').split('-');
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const rangeMatch = /^bytes=(\d*)-(\d*)$/.exec(range);
+      const sendRangeNotSatisfiable = () => {
+        res.writeHead(416, {
+          'Content-Range': `bytes */${fileSize}`,
+          'Accept-Ranges': 'bytes'
+        });
+        res.end();
+      };
+
+      if (!rangeMatch || fileSize === 0) {
+        return sendRangeNotSatisfiable();
+      }
+
+      const [, startText, endText] = rangeMatch;
+      let start;
+      let end;
+
+      if (!startText && !endText) {
+        return sendRangeNotSatisfiable();
+      }
+
+      if (!startText) {
+        const suffixLength = parseInt(endText, 10);
+        if (!Number.isFinite(suffixLength) || suffixLength <= 0) {
+          return sendRangeNotSatisfiable();
+        }
+        start = Math.max(fileSize - suffixLength, 0);
+        end = fileSize - 1;
+      } else {
+        start = parseInt(startText, 10);
+        end = endText ? parseInt(endText, 10) : fileSize - 1;
+      }
+
+      if (
+        !Number.isFinite(start) ||
+        !Number.isFinite(end) ||
+        start < 0 ||
+        start >= fileSize ||
+        end < start
+      ) {
+        return sendRangeNotSatisfiable();
+      }
+
+      end = Math.min(end, fileSize - 1);
       const chunkSize = end - start + 1;
       
       const file = fs.createReadStream(filePath, { start, end });
@@ -213,7 +253,8 @@ const streamVideo = (req, res, filename) => {
 
 // List files in a directory
 const listFiles = (type = 'images') => {
-  const dirPath = path.join(UPLOAD_BASE_DIR, type);
+  const safeType = sanitizeStorageType(type);
+  const dirPath = path.join(UPLOAD_BASE_DIR, safeType);
   return new Promise((resolve, reject) => {
     fs.readdir(dirPath, (err, files) => {
       if (err) {
@@ -223,11 +264,19 @@ const listFiles = (type = 'images') => {
           reject(err);
         }
       } else {
-        const fileList = files.map(filename => ({
-          filename,
-          url: getFileUrl(filename, type),
-          path: path.join(dirPath, filename)
-        }));
+        const fileList = [];
+        for (const filename of files) {
+          try {
+            const safeName = sanitizeStoredFilename(filename);
+            fileList.push({
+              filename: safeName,
+              url: getFileUrl(safeName, safeType),
+              path: getFilePath(safeName, safeType)
+            });
+          } catch (_) {
+            // Ignore unexpected files in the upload directory.
+          }
+        }
         resolve(fileList);
       }
     });
